@@ -97,4 +97,14 @@ describe("bundesarchiv", () => {
     ).toBe("Berlin");
     expect(placeFromTitle("File:Bundesarchiv Bild ohne Komma.jpg")).toBeUndefined();
   });
+
+  it("placeFromTitle: без заголовка Бундесархива и с числом вместо места — undefined", () => {
+    // реальные случаи из живого прогона collect-dry
+    expect(
+      placeFromTitle("File:Die 'großzügigste Umsiedlungsaktion' with Poland superimposed, 1939.jpg"),
+    ).toBeUndefined();
+    expect(
+      placeFromTitle("File:Bundesarchiv Bild 183-E13880, 30.12.1939, polnische Juden.jpg"),
+    ).toBeUndefined();
+  });
 });

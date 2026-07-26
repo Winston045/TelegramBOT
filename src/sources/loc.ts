@@ -64,7 +64,14 @@ async function fetchQuery(query: string, count: number): Promise<LocResult[]> {
   url.searchParams.set("q", query);
   url.searchParams.set("fo", "json");
   url.searchParams.set("c", String(count));
-  const res = await fetch(url, { headers: { accept: "application/json" } });
+  // без User-Agent loc.gov отдаёт 403 с датацентровых IP (GitHub Actions — Azure)
+  const res = await fetch(url, {
+    headers: {
+      accept: "application/json",
+      "user-agent":
+        "Mozilla/5.0 (compatible; story-team-bot/0.1; historical photo curation)",
+    },
+  });
   if (!res.ok) throw new Error(`loc: ${url} → HTTP ${res.status}`);
   const body = (await res.json()) as { results?: LocResult[] };
   return body.results ?? [];

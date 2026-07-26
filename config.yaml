@@ -24,7 +24,22 @@ balance:
   max_same_tag_per_week: 3   # не долбить одну тему
 
 filters:
-  stop_words: ["execution", "corpse", "mass grave", "atrocity"]
+  # английские и немецкие: метаданные Бундесархива на немецком, и живой
+  # прогон показал, что англоязычный список их не ловит
+  stop_words:
+    - "execution"
+    - "corpse"
+    - "mass grave"
+    - "atrocity"
+    - "deportation"        # de/en одинаково
+    - "hinrichtung"
+    - "erschießung"
+    - "erschiessung"
+    - "massengrab"
+    - "konzentrationslager"
+    - "ghetto"
+    - "juden"
+    - "leichen"
   block_nazi_symbols: true
 
 glossary:

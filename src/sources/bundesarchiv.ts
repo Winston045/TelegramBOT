@@ -47,12 +47,19 @@ export function stripHtml(html: string): string {
 
 /**
  * Названия файлов Бундесархива: "Bundesarchiv Bild 183-..., <место>, <сюжет>.jpg".
- * Второй элемент через запятую — чаще всего место съёмки.
+ * Второй элемент через запятую — чаще всего место съёмки. Для файлов без
+ * стандартного заголовка Бундесархива место не угадываем (живой прогон
+ * показал: туда попадают годы и куски описаний) — такие записи отсеет
+ * префильтр как no_place.
  */
 export function placeFromTitle(title: string): string | undefined {
   const clean = title.replace(/^File:/, "").replace(/\.\w+$/, "");
+  if (!/^Bundesarchiv\b/.test(clean)) return undefined;
   const parts = clean.split(",").map((s) => s.trim());
-  return parts.length >= 2 ? parts[1] : undefined;
+  const place = parts.length >= 2 ? parts[1] : undefined;
+  // числа и куски вроде "30.12.1939" местом не считаем
+  if (!place || /^[\d.\s-]+$/.test(place)) return undefined;
+  return place;
 }
 
 export function mapCommonsPage(page: CommonsPage): RawItem | undefined {
