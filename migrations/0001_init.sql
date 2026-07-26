@@ -1,4 +1,7 @@
-create table candidates (
+-- Идемпотентно: можно выполнять и через npm run migrate, и вставив целиком
+-- в Supabase SQL Editor — повторный запуск ничего не ломает.
+
+create table if not exists candidates (
   id            bigserial primary key,
   source        text not null,          -- 'loc' | 'bundesarchiv' | 'nara'
   source_id     text not null,          -- id записи в архиве
@@ -25,18 +28,18 @@ create table candidates (
   unique (source, source_id)
 );
 
-create index on candidates (status);
-create index on candidates (image_hash);
+create index if not exists candidates_status_idx on candidates (status);
+create index if not exists candidates_image_hash_idx on candidates (image_hash);
 
 -- хэши всего, что уже выходило в канале (включая бэкфилл архива)
-create table seen_hashes (
+create table if not exists seen_hashes (
   image_hash text primary key,
   origin     text,              -- 'backfill' | 'published'
   created_at timestamptz default now()
 );
 
 -- отметки о том, что процессы живы
-create table heartbeats (
+create table if not exists heartbeats (
   job        text primary key,  -- 'collector' | 'publisher'
   last_ok    timestamptz,
   last_error text

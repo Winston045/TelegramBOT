@@ -50,10 +50,22 @@ GitHub Actions (cron)                      Supabase
 
 ### 2. База
 
-```bash
-npm install
-npm run migrate        # создаёт candidates, seen_hashes, heartbeats
-```
+Любой из трёх способов — SQL идемпотентный, повторное применение безвредно:
+
+- **Без установки чего-либо:** Supabase Dashboard → SQL Editor → вставить
+  содержимое `migrations/0001_init.sql` целиком → Run.
+- **Кнопкой в GitHub:** добавить секрет `SUPABASE_DB_URL` в
+  Settings → Secrets and variables → Actions, затем
+  Actions → `setup-db` → Run workflow.
+- **Локально:**
+  ```bash
+  npm install
+  npm run migrate
+  ```
+  `SUPABASE_DB_URL` — из Dashboard → Connect → **Session pooler**
+  (Direct connection работает только по IPv6).
+
+Проверка: в Table Editor появились `candidates`, `seen_hashes`, `heartbeats`.
 
 ### 3. Бэкфилл — строго до первого сбора
 
