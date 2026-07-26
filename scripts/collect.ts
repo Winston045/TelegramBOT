@@ -10,6 +10,7 @@ import { collectRaw, type CollectedItem } from "../src/sources/index.js";
 import { prefilter } from "../src/prefilter.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { getDb } from "../src/db.js";
+import { GeminiQuotaError, quotaTripped } from "../src/gemini.js";
 import { scoreImage, type VisionScore } from "../src/scoring.js";
 import { assembleCaptionHtml, generateCaption } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
@@ -111,6 +112,10 @@ async function main() {
       scored.push({ ...item, vision });
     } catch (err) {
       console.warn(`  скоринг упал: [${item.source}] ${item.sourceId} — ${(err as Error).message}`);
+      if (err instanceof GeminiQuotaError && quotaTripped()) {
+        console.error("❌ дневная квота Gemini исчерпана — прекращаю скоринг до следующего запуска");
+        break;
+      }
     }
   }
 
@@ -163,6 +168,10 @@ async function main() {
       await db
         .from("candidates")
         .upsert({ ...row, status: "failed" }, { onConflict: "source,source_id", ignoreDuplicates: true });
+      if (err instanceof GeminiQuotaError && quotaTripped()) {
+        console.error("❌ дневная квота Gemini исчерпана — прекращаю генерацию до следующего запуска");
+        break;
+      }
     }
   }
 

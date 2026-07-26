@@ -24,6 +24,19 @@ export type GeminiPart =
 
 const MAX_ATTEMPTS = 4;
 
+/**
+ * Предохранитель по дневной квоте: если несколько вызовов подряд умерли
+ * окончательным 429 — квота суток сожжена, дальнейшие вызовы бессмысленны
+ * (живой прогон: 30 вызовов × ретраи = 100 минут впустую).
+ */
+export class GeminiQuotaError extends Error {}
+const QUOTA_TRIP_AFTER = 3;
+let consecutiveQuotaFails = 0;
+
+export function quotaTripped(): boolean {
+  return consecutiveQuotaFails >= QUOTA_TRIP_AFTER;
+}
+
 type ModelInfo = { name: string; supportedGenerationMethods?: string[] };
 
 let resolvedModel: string | undefined;
@@ -85,6 +98,11 @@ export async function geminiJson<T>(
   parts: GeminiPart[],
   opts: { model?: string; temperature?: number } = {},
 ): Promise<T> {
+  if (quotaTripped()) {
+    throw new GeminiQuotaError("дневная квота Gemini исчерпана — предохранитель разомкнут");
+  }
+
+  let quotaFailure = false;
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const model = opts.model ?? (await resolveModel());
@@ -120,6 +138,7 @@ export async function geminiJson<T>(
 
     if (res.status === 429) {
       // квота бесплатного тарифа считается минутными окнами — ждём долго
+      quotaFailure = true;
       lastError = new Error(`gemini: HTTP 429`);
       await sleep(20_000 * attempt);
       continue;
@@ -145,7 +164,15 @@ export async function geminiJson<T>(
     };
     const text = body.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error("gemini: пустой ответ");
+    consecutiveQuotaFails = 0;
     return JSON.parse(text) as T;
+  }
+
+  if (quotaFailure) {
+    consecutiveQuotaFails++;
+    throw new GeminiQuotaError(
+      `gemini: HTTP 429 после ${MAX_ATTEMPTS} попыток (подряд: ${consecutiveQuotaFails})`,
+    );
   }
   throw lastError ?? new Error("gemini: все попытки исчерпаны");
 }
