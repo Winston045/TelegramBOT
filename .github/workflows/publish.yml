@@ -38,7 +38,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci || npm install
         if: steps.guard.outputs.ok == 'true'
       - name: Публикация по слоту
         if: steps.guard.outputs.ok == 'true'
