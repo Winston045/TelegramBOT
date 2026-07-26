@@ -8,13 +8,67 @@
 import { env } from "./env.js";
 
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-export const GEMINI_MODEL = "gemini-2.5-flash";
+
+/**
+ * Имена моделей протухают (живой прогон: gemini-2.5-flash закрыт для новых
+ * ключей). Поэтому модель не хардкодим, а выбираем из ListModels:
+ * приоритет — переменная окружения GEMINI_MODEL, затем алиас *-flash-latest,
+ * затем самая свежая стабильная gemini-N-flash.
+ */
+const FALLBACK_MODEL = "gemini-flash-latest";
 
 export type GeminiPart =
   | { text: string }
   | { inline_data: { mime_type: string; data: string } };
 
 const MAX_ATTEMPTS = 4;
+
+type ModelInfo = { name: string; supportedGenerationMethods?: string[] };
+
+let resolvedModel: string | undefined;
+const deadModels = new Set<string>();
+
+function pickModel(models: ModelInfo[]): string | undefined {
+  const usable = models
+    .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+    .map((m) => m.name.replace(/^models\//, ""))
+    .filter((name) => !deadModels.has(name));
+
+  const latestAlias = usable.filter((n) => /^gemini-flash-latest$/.test(n));
+  if (latestAlias.length) return latestAlias[0];
+
+  // стабильные gemini-N[.M]-flash, самая свежая версия
+  const stable = usable
+    .map((n) => ({ n, m: n.match(/^gemini-(\d+(?:\.\d+)?)-flash$/) }))
+    .filter((x): x is { n: string; m: RegExpMatchArray } => x.m !== null)
+    .sort((a, b) => Number(b.m[1]) - Number(a.m[1]));
+  if (stable.length) return stable[0]!.n;
+
+  // хоть какой-нибудь flash без картинко-генерации и tts
+  return usable.find((n) => n.includes("flash") && !/image|tts|audio|embed/.test(n));
+}
+
+async function resolveModel(): Promise<string> {
+  if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;
+  if (resolvedModel) return resolvedModel;
+  try {
+    const res = await fetch(`${BASE}?pageSize=1000`, {
+      headers: { "x-goog-api-key": env.geminiApiKey },
+    });
+    if (!res.ok) throw new Error(`ListModels HTTP ${res.status}`);
+    const body = (await res.json()) as { models?: ModelInfo[] };
+    const picked = pickModel(body.models ?? []);
+    if (picked) {
+      resolvedModel = picked;
+      console.log(`gemini: выбрана модель ${picked}`);
+      return picked;
+    }
+  } catch (err) {
+    console.warn(`gemini: не смог выбрать модель (${(err as Error).message}), беру ${FALLBACK_MODEL}`);
+  }
+  resolvedModel = FALLBACK_MODEL;
+  return FALLBACK_MODEL;
+}
 
 // бесплатный тариф: 10 запросов/мин — держим паузу между вызовами
 const MIN_REQUEST_INTERVAL_MS = 6500;
@@ -29,11 +83,11 @@ export async function geminiJson<T>(
   parts: GeminiPart[],
   opts: { model?: string; temperature?: number } = {},
 ): Promise<T> {
-  const model = opts.model ?? GEMINI_MODEL;
-  const url = `${BASE}/${model}:generateContent`;
-
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const model = opts.model ?? (await resolveModel());
+    const url = `${BASE}/${model}:generateContent`;
+
     const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
     if (wait > 0) await sleep(wait);
     lastRequestAt = Date.now();
@@ -56,6 +110,13 @@ export async function geminiJson<T>(
     if (res.status === 429 || res.status >= 500) {
       lastError = new Error(`gemini: HTTP ${res.status}`);
       await sleep(2000 * 2 ** (attempt - 1));
+      continue;
+    }
+    // модель протухла — вычёркиваем и на следующей попытке выбираем заново
+    if (res.status === 404 && !opts.model) {
+      deadModels.add(model);
+      resolvedModel = undefined;
+      lastError = new Error(`gemini: модель ${model} недоступна (404)`);
       continue;
     }
     if (!res.ok) {
