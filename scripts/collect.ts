@@ -5,6 +5,7 @@
  * npm run collect -- --dry  — только источники + префильтр, без Gemini и базы.
  */
 import { loadConfig } from "../src/config.js";
+import { dbCursorStore, memoryCursorStore } from "../src/cursors.js";
 import { collectRaw, type CollectedItem } from "../src/sources/index.js";
 import { prefilter } from "../src/prefilter.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
@@ -58,7 +59,9 @@ async function hashAndDedup(items: CollectedItem[], known: string[]): Promise<Ha
 async function main() {
   const cfg = loadConfig();
 
-  const raw = await collectRaw(cfg, cfg.collect.raw_limit);
+  // dry живёт без базы — курсоры в памяти (каждый раз первая страница)
+  const cursors = dry ? memoryCursorStore() : dbCursorStore();
+  const raw = await collectRaw(cfg, cfg.collect.raw_limit, cursors);
   console.log(`сырых записей: ${raw.length}`);
 
   const { kept, rejected } = prefilter(raw, cfg);

@@ -91,7 +91,7 @@ export function mapCommonsPage(page: CommonsPage): RawItem | undefined {
   };
 }
 
-async function search(term: string, limit: number): Promise<CommonsPage[]> {
+async function search(term: string, limit: number, offset: number): Promise<CommonsPage[]> {
   const url = new URL(API);
   url.searchParams.set("action", "query");
   url.searchParams.set("format", "json");
@@ -100,6 +100,7 @@ async function search(term: string, limit: number): Promise<CommonsPage[]> {
   url.searchParams.set("gsrsearch", `incategory:"${CATEGORY}" ${term}`);
   url.searchParams.set("gsrnamespace", "6"); // File:
   url.searchParams.set("gsrlimit", String(Math.min(limit, 50)));
+  url.searchParams.set("gsroffset", String(offset)); // пагинация: смещение
   url.searchParams.set("prop", "imageinfo");
   url.searchParams.set("iiprop", "url|size|extmetadata");
   url.searchParams.set(
@@ -118,16 +119,23 @@ async function search(term: string, limit: number): Promise<CommonsPage[]> {
 export const bundesarchiv: SourceAdapter = {
   name: "bundesarchiv",
 
-  async fetch(limit: number, cfg: SourceConfig): Promise<RawItem[]> {
+  async fetch(limit, cfg, cursors): Promise<RawItem[]> {
     const terms = cfg.categories?.length ? cfg.categories : [""];
     const perTerm = Math.ceil(limit / terms.length);
     const items: RawItem[] = [];
     for (const term of terms) {
-      const pages = await search(term, perTerm);
+      const offset = await cursors.get("bundesarchiv", term);
+      const pages = await search(term, perTerm, offset);
       for (const page of pages) {
         const item = mapCommonsPage(page);
         if (item) items.push(item);
       }
+      // выдача кончилась — заворачиваем на начало
+      await cursors.set(
+        "bundesarchiv",
+        term,
+        pages.length < perTerm ? 0 : offset + pages.length,
+      );
     }
     return items.slice(0, limit);
   },

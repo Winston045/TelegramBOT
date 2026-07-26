@@ -1,4 +1,5 @@
 import type { SourceConfig } from "../config.js";
+import type { CursorStore } from "../cursors.js";
 
 export type RawItem = {
   sourceId: string;
@@ -17,5 +18,5 @@ export type RawItem = {
 
 export interface SourceAdapter {
   name: string;
-  fetch(limit: number, cfg: SourceConfig): Promise<RawItem[]>;
+  fetch(limit: number, cfg: SourceConfig, cursors: CursorStore): Promise<RawItem[]>;
 }

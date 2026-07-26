@@ -64,11 +64,12 @@ export function mapLocResult(r: LocResult): RawItem | undefined {
   };
 }
 
-async function fetchQuery(query: string, count: number): Promise<LocResult[]> {
+async function fetchQuery(query: string, count: number, page: number): Promise<LocResult[]> {
   const url = new URL("https://www.loc.gov/photos/");
   url.searchParams.set("q", query);
   url.searchParams.set("fo", "json");
   url.searchParams.set("c", String(count));
+  url.searchParams.set("sp", String(page)); // пагинация: страница выдачи
   // без User-Agent loc.gov отдаёт 403 с датацентровых IP (GitHub Actions — Azure)
   const res = await fetch(url, {
     headers: {
@@ -85,16 +86,20 @@ async function fetchQuery(query: string, count: number): Promise<LocResult[]> {
 export const loc: SourceAdapter = {
   name: "loc",
 
-  async fetch(limit: number, cfg: SourceConfig): Promise<RawItem[]> {
+  async fetch(limit, cfg, cursors): Promise<RawItem[]> {
     const queries = cfg.queries?.length ? cfg.queries : [""];
     const perQuery = Math.ceil(limit / queries.length);
     const items: RawItem[] = [];
     for (const q of queries) {
-      const results = await fetchQuery(q, perQuery);
+      // курсор — номер страницы прошлого запуска; 0 значит «ещё не ходили»
+      const page = Math.max(1, (await cursors.get("loc", q)) + 1);
+      const results = await fetchQuery(q, perQuery, page);
       for (const r of results) {
         const item = mapLocResult(r);
         if (item) items.push(item);
       }
+      // выдача кончилась — заворачиваем на начало
+      await cursors.set("loc", q, results.length < perQuery ? 0 : page);
     }
     return items.slice(0, limit);
   },
