@@ -16,6 +16,10 @@ export type GeminiPart =
 
 const MAX_ATTEMPTS = 4;
 
+// бесплатный тариф: 10 запросов/мин — держим паузу между вызовами
+const MIN_REQUEST_INTERVAL_MS = 6500;
+let lastRequestAt = 0;
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -30,6 +34,10 @@ export async function geminiJson<T>(
 
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastRequestAt = Date.now();
+
     const res = await fetch(url, {
       method: "POST",
       headers: {

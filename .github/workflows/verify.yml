@@ -1,0 +1,52 @@
+name: verify
+
+# Предбоевая проверка по чек-листу: миграции → бэкфилл (с контролем числа
+# записей) → полный сбор с Gemini → подписи в лог для сверки глазами.
+# Телеграм не трогает (BOT_TOKEN не нужен).
+# Запуск: пуш в .github/verify.trigger или Actions → verify → Run workflow.
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - ".github/verify.trigger"
+
+concurrency:
+  group: verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - name: Все секреты на месте?
+        run: |
+          missing=""
+          [ -z "$SUPABASE_URL" ] && missing="$missing SUPABASE_URL"
+          [ -z "$SUPABASE_SECRET_KEY" ] && missing="$missing SUPABASE_SECRET_KEY"
+          [ -z "$SUPABASE_DB_URL" ] && missing="$missing SUPABASE_DB_URL"
+          [ -z "$GEMINI_API_KEY" ] && missing="$missing GEMINI_API_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::не настроены секреты:$missing (Settings → Secrets and variables → Actions)"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci || npm install
+      - name: "Шаг 1: миграции"
+        run: npm run migrate
+      - name: "Шаг 2: бэкфилл архива канала (~4423 фото)"
+        run: npm run backfill -- --expect 4423
+      - name: "Шаг 4: полный сбор — скоринг и подписи Gemini"
+        run: npm run collect
+      - name: "Подписи на сверку глазами"
+        run: npm run review-captions -- 10
