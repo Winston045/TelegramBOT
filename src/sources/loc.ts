@@ -77,6 +77,7 @@ async function fetchQuery(query: string, count: number, page: number): Promise<L
       "user-agent":
         "Mozilla/5.0 (compatible; story-team-bot/0.1; historical photo curation)",
     },
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`loc: ${url} → HTTP ${res.status}`);
   const body = (await res.json()) as { results?: LocResult[] };

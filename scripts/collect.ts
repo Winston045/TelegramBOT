@@ -36,7 +36,7 @@ async function hashAndDedup(items: CollectedItem[], known: string[]): Promise<Ha
   const batchHashes: string[] = [];
   for (const item of items) {
     try {
-      const res = await fetch(item.imageUrl);
+      const res = await fetch(item.imageUrl, { signal: AbortSignal.timeout(60_000) });
       if (!res.ok) {
         console.warn(`  пропуск (HTTP ${res.status}): ${item.imageUrl}`);
         continue;

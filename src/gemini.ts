@@ -55,6 +55,7 @@ async function resolveModel(): Promise<string> {
   try {
     const res = await fetch(`${BASE}?pageSize=1000`, {
       headers: { "x-goog-api-key": env.geminiApiKey },
+      signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) throw new Error(`ListModels HTTP ${res.status}`);
     const body = (await res.json()) as { models?: ModelInfo[] };
@@ -93,20 +94,29 @@ export async function geminiJson<T>(
     if (wait > 0) await sleep(wait);
     lastRequestAt = Date.now();
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-goog-api-key": env.geminiApiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: opts.temperature ?? 0.3,
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": env.geminiApiKey,
         },
-      }),
-    });
+        body: JSON.stringify({
+          contents: [{ role: "user", parts }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: opts.temperature ?? 0.3,
+          },
+        }),
+        // зависший запрос не должен вешать весь суточный сбор
+        signal: AbortSignal.timeout(90_000),
+      });
+    } catch (err) {
+      lastError = new Error(`gemini: сеть/таймаут — ${(err as Error).message}`);
+      await sleep(2000 * attempt);
+      continue;
+    }
 
     if (res.status === 429) {
       // квота бесплатного тарифа считается минутными окнами — ждём долго
@@ -148,7 +158,7 @@ export async function geminiJson<T>(
 export async function imagePart(image: string | Buffer): Promise<GeminiPart> {
   let buffer: Buffer;
   if (typeof image === "string") {
-    const res = await fetch(image);
+    const res = await fetch(image, { signal: AbortSignal.timeout(60_000) });
     if (!res.ok) throw new Error(`картинка недоступна (HTTP ${res.status}): ${image}`);
     buffer = Buffer.from(await res.arrayBuffer());
   } else {

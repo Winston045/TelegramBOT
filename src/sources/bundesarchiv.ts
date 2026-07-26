@@ -110,6 +110,7 @@ async function search(term: string, limit: number, offset: number): Promise<Comm
 
   const res = await fetch(url, {
     headers: { "user-agent": "story-team-bot/0.1 (contentbot)" },
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`bundesarchiv: ${url} → HTTP ${res.status}`);
   const body = (await res.json()) as { query?: { pages?: CommonsPage[] } };

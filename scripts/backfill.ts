@@ -45,6 +45,7 @@ async function fetchPage(slug: string, before?: number): Promise<string> {
     try {
       const res = await fetch(url, {
         headers: { "user-agent": "Mozilla/5.0 (story-team-bot backfill)" },
+        signal: AbortSignal.timeout(30_000),
       });
       if (res.ok) return await res.text();
       lastErr = new Error(`${url} → HTTP ${res.status}`);
@@ -58,7 +59,7 @@ async function fetchPage(slug: string, before?: number): Promise<string> {
 
 async function hashPhoto(url: string): Promise<string | null> {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!res.ok) {
       console.warn(`  пропуск фото (HTTP ${res.status}): ${url}`);
       return null;
