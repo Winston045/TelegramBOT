@@ -11,6 +11,8 @@ export type RawItem = {
   place?: string;
   license: string;
   attribution?: string;
+  /** ширина картинки в px, если источник её сообщает — для префильтра */
+  imageWidth?: number;
 };
 
 export interface SourceAdapter {

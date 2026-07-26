@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "migrate": "tsx scripts/migrate.ts",
-    "backfill": "tsx scripts/backfill.ts"
+    "backfill": "tsx scripts/backfill.ts",
+    "collect": "tsx scripts/collect.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
