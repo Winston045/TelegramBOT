@@ -1,0 +1,35 @@
+name: daily-collect
+
+on:
+  schedule:
+    # 03:00 UTC = 06:00 МСК — к утру у редакторов лежат карточки
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: daily-collect
+  cancel-in-progress: false
+
+jobs:
+  collect-and-send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+      EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID }}
+      EDITOR_USER_IDS: ${{ secrets.EDITOR_USER_IDS }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Сбор кандидатов (источники → скоринг → подписи)
+        run: npm run collect
+      - name: Отправка карточек редакторам
+        run: npm run send-candidates

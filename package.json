@@ -13,11 +13,13 @@
     "test": "vitest run",
     "migrate": "tsx scripts/migrate.ts",
     "backfill": "tsx scripts/backfill.ts",
-    "collect": "tsx scripts/collect.ts"
+    "collect": "tsx scripts/collect.ts",
+    "send-candidates": "tsx scripts/send-candidates.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
     "dotenv": "^16.4.7",
+    "grammy": "^1.45.1",
     "postgres": "^3.4.5",
     "sharp": "^0.35.3",
     "yaml": "^2.7.0"
