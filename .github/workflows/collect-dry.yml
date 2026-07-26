@@ -1,10 +1,14 @@
 name: collect-dry
 
 # Пробный сбор всухую: источники + префильтр, без Gemini и базы.
-# Секреты не нужны. Запуск руками: Actions → collect-dry → Run workflow.
+# Секреты не нужны. Запуск: Actions → collect-dry → Run workflow,
+# либо пушем изменения в .github/collect-dry.trigger.
 
 on:
   workflow_dispatch: {}
+  push:
+    paths:
+      - ".github/collect-dry.trigger"
 
 jobs:
   dry:
