@@ -16,6 +16,8 @@ export type AppConfig = {
     prefilter_keep: number;
     daily_candidates: number;
     min_image_width: number;
+    min_year?: number;
+    max_year?: number;
   };
   publish: {
     times: string[];

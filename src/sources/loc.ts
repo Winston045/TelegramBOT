@@ -41,6 +41,11 @@ export function mapLocResult(r: LocResult): RawItem | undefined {
 
   const image = pickLargestImage(r.image_url);
   if (!image) return undefined;
+  // у коллекций LOC вместо фото — SVG-заглушка вида
+  // /static/images/original-format/group-of-images.svg (живой прогон)
+  if (image.url.includes("/static/images/") || /\.svg(\?|#|$)/.test(image.url)) {
+    return undefined;
+  }
 
   const sourceId = r.id.replace(/^https?:\/\/www\.loc\.gov\/item\//, "").replace(/\/$/, "");
   const description = Array.isArray(r.description) ? r.description.join(" ") : r.description;

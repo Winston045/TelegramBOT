@@ -52,6 +52,15 @@ describe("mapLocResult", () => {
     expect(mapLocResult({ ...base, image_url: [] })).toBeUndefined();
     expect(mapLocResult({ ...base, access_restricted: true })).toBeUndefined();
   });
+
+  it("отбрасывает SVG-заглушки коллекций (живой прогон)", () => {
+    expect(
+      mapLocResult({
+        ...base,
+        image_url: ["https://www.loc.gov/static/images/original-format/group-of-images.svg"],
+      }),
+    ).toBeUndefined();
+  });
 });
 
 describe("bundesarchiv", () => {

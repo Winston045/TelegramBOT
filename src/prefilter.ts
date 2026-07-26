@@ -1,12 +1,22 @@
 import type { AppConfig } from "./config.js";
 import type { RawItem } from "./sources/types.js";
 
-export type RejectReason = "no_year" | "no_place" | "too_small" | "stop_word";
+export type RejectReason =
+  | "no_year"
+  | "no_place"
+  | "year_out_of_range"
+  | "too_small"
+  | "stop_word";
 
 /** Дешёвый префильтр до vision-скоринга. Возвращает причину брака или null. */
 export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null {
   if (!item.year) return "no_year";
   if (!item.place) return "no_place";
+  // живой прогон: запрос "1930s" приносит современные фото зданий 1930-х
+  const { min_year, max_year } = cfg.collect;
+  if ((min_year && item.year < min_year) || (max_year && item.year > max_year)) {
+    return "year_out_of_range";
+  }
   if (item.imageWidth !== undefined && item.imageWidth < cfg.collect.min_image_width) {
     return "too_small";
   }

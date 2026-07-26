@@ -4,7 +4,7 @@ import { prefilter, rejectReason } from "../src/prefilter.js";
 import type { RawItem } from "../src/sources/types.js";
 
 const cfg = {
-  collect: { min_image_width: 700 },
+  collect: { min_image_width: 700, min_year: 1850, max_year: 1965 },
   filters: { stop_words: ["execution", "mass grave"] },
 } as unknown as AppConfig;
 
@@ -30,6 +30,13 @@ describe("rejectReason", () => {
   it("без места — брак", () => {
     expect(rejectReason({ ...good, place: undefined }, cfg)).toBe("no_place");
   });
+  it("современные и допотопные годы — брак (живой прогон: фото 2018 года по запросу '1930s')", () => {
+    expect(rejectReason({ ...good, year: 2018 }, cfg)).toBe("year_out_of_range");
+    expect(rejectReason({ ...good, year: 1790 }, cfg)).toBe("year_out_of_range");
+    expect(rejectReason({ ...good, year: 1850 }, cfg)).toBeNull();
+    expect(rejectReason({ ...good, year: 1965 }, cfg)).toBeNull();
+  });
+
   it("мелкая картинка — брак, неизвестная ширина — пропускаем", () => {
     expect(rejectReason({ ...good, imageWidth: 400 }, cfg)).toBe("too_small");
     expect(rejectReason({ ...good, imageWidth: undefined }, cfg)).toBeNull();
