@@ -1,0 +1,27 @@
+name: keepalive
+
+# GitHub отключает cron-воркфлоу после 60 дней без активности в репозитории.
+# Раз в неделю трогаем файл-отметку, чтобы расписания жили.
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  touch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Обновить отметку и запушить
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/keepalive
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive
+          git commit -m "keepalive: расписания живы" || exit 0
+          git push
