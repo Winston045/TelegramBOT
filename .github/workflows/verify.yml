@@ -11,9 +11,10 @@ on:
     paths:
       - ".github/verify.trigger"
 
+# новый запуск снимает предыдущий: свежий пуш маркера всегда важнее
 concurrency:
   group: verify
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -42,10 +43,24 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci || npm install
+      # слово "fast" в .github/verify.trigger включает быстрый режим:
+      # бэкфилл срезом в 300 фото вместо всех ~4423
+      - name: Режим прогона
+        id: mode
+        run: |
+          if grep -q fast .github/verify.trigger 2>/dev/null; then
+            echo "fast=true" >> "$GITHUB_OUTPUT"; echo "быстрый режим"
+          else
+            echo "fast=false" >> "$GITHUB_OUTPUT"; echo "полный режим"
+          fi
       - name: "Шаг 1: миграции"
         run: npm run migrate
       - name: "Шаг 2: бэкфилл архива канала (~4423 фото)"
+        if: steps.mode.outputs.fast != 'true'
         run: npm run backfill -- --expect 4423
+      - name: "Шаг 2 (быстрый): бэкфилл срезом 300 фото"
+        if: steps.mode.outputs.fast == 'true'
+        run: npm run backfill -- --max-photos 300
       - name: "Шаг 4: полный сбор — скоринг и подписи Gemini"
         run: npm run collect
       - name: "Подписи на сверку глазами"

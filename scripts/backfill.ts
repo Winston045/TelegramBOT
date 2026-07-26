@@ -17,9 +17,8 @@ import { parseChannelPage, channelSlug } from "../src/tme.js";
 const PAGE_DELAY_MS = 700;
 const dry = process.argv.includes("--dry");
 
-/** --expect 4423 — сколько записей ждём; при недоборе >10% выходим с ошибкой */
-function expectedCount(): number | undefined {
-  const i = process.argv.findIndex((a) => a === "--expect" || a.startsWith("--expect="));
+function numArg(name: string): number | undefined {
+  const i = process.argv.findIndex((a) => a === name || a.startsWith(`${name}=`));
   if (i === -1) return undefined;
   const raw = process.argv[i]!.includes("=")
     ? process.argv[i]!.split("=")[1]
@@ -27,6 +26,11 @@ function expectedCount(): number | undefined {
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
+
+/** --expect 4423 — сколько записей ждём; при недоборе >10% выходим с ошибкой */
+const expectedCount = () => numArg("--expect");
+/** --max-photos 300 — срез для быстрой проверки конвейера, не для боя */
+const maxPhotos = () => numArg("--max-photos");
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -113,6 +117,15 @@ async function main() {
     console.log(
       `страница ${pages} (до #${page.minId}): фото ${totalPhotos}, хэшей ${totalHashes}`,
     );
+
+    const cap = maxPhotos();
+    if (cap && totalPhotos >= cap) {
+      console.log(
+        `⚡ срез для теста: обработано ${totalPhotos} фото (--max-photos ${cap}). ` +
+          "Полный бэкфилл обязателен до боевого запуска!",
+      );
+      break;
+    }
 
     if (page.minId <= 1) break;
     before = page.minId;
