@@ -5,6 +5,7 @@
  * ВАЖНО: ключ должен быть из AI Studio без привязанного биллинга,
  * иначе бесплатный тариф исчезает (см. SPEC, «Два запрета»).
  */
+import sharp from "sharp";
 import { env } from "./env.js";
 
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -107,7 +108,13 @@ export async function geminiJson<T>(
       }),
     });
 
-    if (res.status === 429 || res.status >= 500) {
+    if (res.status === 429) {
+      // квота бесплатного тарифа считается минутными окнами — ждём долго
+      lastError = new Error(`gemini: HTTP 429`);
+      await sleep(20_000 * attempt);
+      continue;
+    }
+    if (res.status >= 500) {
       lastError = new Error(`gemini: HTTP ${res.status}`);
       await sleep(2000 * 2 ** (attempt - 1));
       continue;
@@ -133,14 +140,23 @@ export async function geminiJson<T>(
   throw lastError ?? new Error("gemini: все попытки исчерпаны");
 }
 
-/** Скачивает картинку (или берёт готовый Buffer) и упаковывает в inline-парт. */
+/**
+ * Скачивает картинку (или берёт готовый Buffer), ужимает до 1024px
+ * и упаковывает в inline-парт. Полноразмерные сканы (у LOC бывают 5000px)
+ * сжигают токен-квоту бесплатного тарифа за один-два запроса.
+ */
 export async function imagePart(image: string | Buffer): Promise<GeminiPart> {
-  if (typeof image !== "string") {
-    return { inline_data: { mime_type: "image/jpeg", data: image.toString("base64") } };
+  let buffer: Buffer;
+  if (typeof image === "string") {
+    const res = await fetch(image);
+    if (!res.ok) throw new Error(`картинка недоступна (HTTP ${res.status}): ${image}`);
+    buffer = Buffer.from(await res.arrayBuffer());
+  } else {
+    buffer = image;
   }
-  const res = await fetch(image);
-  if (!res.ok) throw new Error(`картинка недоступна (HTTP ${res.status}): ${image}`);
-  const mime = res.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
-  const data = Buffer.from(await res.arrayBuffer()).toString("base64");
-  return { inline_data: { mime_type: mime, data } };
+  const resized = await sharp(buffer)
+    .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+  return { inline_data: { mime_type: "image/jpeg", data: resized.toString("base64") } };
 }
