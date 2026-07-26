@@ -15,7 +15,8 @@
     "backfill": "tsx scripts/backfill.ts",
     "collect": "tsx scripts/collect.ts",
     "send-candidates": "tsx scripts/send-candidates.ts",
-    "publish-post": "tsx scripts/publish.ts"
+    "publish-post": "tsx scripts/publish.ts",
+    "review-captions": "tsx scripts/review-captions.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",

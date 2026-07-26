@@ -23,13 +23,27 @@ jobs:
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
+      - name: Секреты настроены?
+        id: guard
+        run: |
+          if [ -n "$BOT_TOKEN" ] && [ -n "$SUPABASE_URL" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "секреты не настроены — запуск пропущен"
+          fi
       - uses: actions/checkout@v4
+        if: steps.guard.outputs.ok == 'true'
       - uses: actions/setup-node@v4
+        if: steps.guard.outputs.ok == 'true'
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+        if: steps.guard.outputs.ok == 'true'
       - name: Сбор кандидатов (источники → скоринг → подписи)
+        if: steps.guard.outputs.ok == 'true'
         run: npm run collect
       - name: Отправка карточек редакторам
+        if: steps.guard.outputs.ok == 'true'
         run: npm run send-candidates
