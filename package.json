@@ -14,7 +14,8 @@
     "migrate": "tsx scripts/migrate.ts",
     "backfill": "tsx scripts/backfill.ts",
     "collect": "tsx scripts/collect.ts",
-    "send-candidates": "tsx scripts/send-candidates.ts"
+    "send-candidates": "tsx scripts/send-candidates.ts",
+    "publish-post": "tsx scripts/publish.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
