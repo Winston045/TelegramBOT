@@ -1,0 +1,21 @@
+name: collect-dry
+
+# Пробный сбор всухую: источники + префильтр, без Gemini и базы.
+# Секреты не нужны. Запуск руками: Actions → collect-dry → Run workflow.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  dry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci || npm install
+      - name: Сбор всухую
+        run: npm run collect -- --dry
