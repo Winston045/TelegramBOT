@@ -1,0 +1,38 @@
+sources:
+  loc:
+    enabled: true
+    weight: 50           # доля в дневной выборке
+    queries: ["world war", "1930s", "street life"]
+  bundesarchiv:
+    enabled: true
+    weight: 50
+    categories: ["1939", "1940", "1941"]
+
+collect:
+  raw_limit: 150         # сколько тянем из архивов
+  prefilter_keep: 30     # сколько доживает до vision-скоринга
+  daily_candidates: 10   # сколько уходит редакторам
+  min_image_width: 700
+
+publish:
+  times: ["09:00", "12:30", "15:00", "18:00", "21:00"]
+  timezone: "Europe/Moscow"
+  min_queue_warning: 5
+  auto_publish: false    # true = публиковать без аппрува
+
+balance:
+  max_same_tag_per_week: 3   # не долбить одну тему
+
+filters:
+  stop_words: ["execution", "corpse", "mass grave", "atrocity"]
+  block_nazi_symbols: true
+
+glossary:
+  "Königsberg": "Кёнигсберг"
+  "Guards Rifle Division": "гвардейская стрелковая дивизия"
+  "Sherman": "Шерман"
+
+channel:
+  id: "@Story_Teams"
+  signature: "STORY | TEAM"
+  signature_url: "https://t.me/Story_Teams"
