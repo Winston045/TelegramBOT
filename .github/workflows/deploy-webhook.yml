@@ -92,19 +92,25 @@ jobs:
             --data-urlencode "secret_token=$TG_WEBHOOK_SECRET" \
             --data-urlencode "allowed_updates=[\"message\",\"callback_query\"]"
           echo
+      # холодный старт после деплоя иногда отдаёт 546 WORKER_RESOURCE_LIMIT
+      # (бандл компилируется при первом вызове) — поэтому до 4 попыток
       - name: Самопроверка функции
         run: |
-          code=$(curl -s -o /tmp/resp -w "%{http_code}" -X POST \
-            "$SUPABASE_URL/functions/v1/tg-webhook" \
-            -H "content-type: application/json" \
-            -H "X-Telegram-Bot-Api-Secret-Token: $TG_WEBHOOK_SECRET" \
-            -d '{"update_id":1}')
-          echo "функция ответила: HTTP $code"
-          cat /tmp/resp; echo
-          if [ "$code" -ge 500 ]; then
-            echo "::error::функция падает — смотри логи в Supabase Dashboard -> Edge Functions"
-            exit 1
-          fi
+          for attempt in 1 2 3 4; do
+            code=$(curl -s -o /tmp/resp -w "%{http_code}" --max-time 60 -X POST \
+              "$SUPABASE_URL/functions/v1/tg-webhook" \
+              -H "content-type: application/json" \
+              -H "X-Telegram-Bot-Api-Secret-Token: $TG_WEBHOOK_SECRET" \
+              -d '{"update_id":1}')
+            echo "попытка $attempt: HTTP $code"
+            cat /tmp/resp; echo
+            if [ "$code" -lt 500 ]; then break; fi
+            [ "$attempt" = 4 ] && {
+              echo "::error::функция падает — смотри логи в Supabase Dashboard -> Edge Functions"
+              exit 1
+            }
+            sleep 15
+          done
           sleep 5
           echo "--- getWebhookInfo (ищи last_error_message) ---"
           curl -sS "https://api.telegram.org/bot$BOT_TOKEN/getWebhookInfo"
