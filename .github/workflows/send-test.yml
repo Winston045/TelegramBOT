@@ -37,5 +37,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci || npm install
+      # слово "seed" в .github/send.trigger готовит тестового кандидата
+      # с ручной подписью (мини-тест без Gemini)
+      - name: Тестовый кандидат (если запрошен)
+        run: |
+          if grep -q seed .github/send.trigger 2>/dev/null; then
+            npx tsx scripts/seed-test.ts
+          else
+            echo "seed не запрошен"
+          fi
       - name: Отправить карточки в чат редакторов
         run: npm run send-candidates
