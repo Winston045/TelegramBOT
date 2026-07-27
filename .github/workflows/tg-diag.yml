@@ -1,0 +1,41 @@
+name: tg-diag
+
+# Диагностика Телеграма: состояние вебхука, права бота в канале,
+# пробная отправка в канал напрямую.
+# Запуск: пуш в .github/diag.trigger или Actions → Run workflow.
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - ".github/diag.trigger"
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+      EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID }}
+    steps:
+      - name: Вебхук (ищи pending и last_error)
+        run: 'curl -sS "https://api.telegram.org/bot$BOT_TOKEN/getWebhookInfo"; echo'
+      - name: Кто я (getMe)
+        id: me
+        run: |
+          me=$(curl -sS "https://api.telegram.org/bot$BOT_TOKEN/getMe")
+          echo "$me"
+          echo "bot_id=$(echo "$me" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["id"])')" >> "$GITHUB_OUTPUT"
+      - name: Права бота в канале
+        run: |
+          curl -sS "https://api.telegram.org/bot$BOT_TOKEN/getChatMember" \
+            --data-urlencode "chat_id=$(echo "$CHANNEL_ID" | xargs)" \
+            --data-urlencode "user_id=${{ steps.me.outputs.bot_id }}"
+          echo
+      - name: Пробный пост в канал напрямую
+        run: |
+          curl -sS "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$(echo "$CHANNEL_ID" | xargs)" \
+            --data-urlencode "text=🔧 тест публикации — если вы это видите, права в порядке (сообщение можно удалить)"
+          echo
