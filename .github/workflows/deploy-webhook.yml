@@ -101,10 +101,10 @@ jobs:
               "$SUPABASE_URL/functions/v1/tg-webhook" \
               -H "content-type: application/json" \
               -H "X-Telegram-Bot-Api-Secret-Token: $TG_WEBHOOK_SECRET" \
-              -d '{"update_id":1}')
+              -d '{"update_id":1}' || echo 000)  # 000 = таймаут/обрыв, не роняем шаг
             echo "попытка $attempt: HTTP $code"
             cat /tmp/resp; echo
-            if [ "$code" -lt 500 ]; then break; fi
+            if [ "$code" -ge 200 ] && [ "$code" -lt 500 ]; then break; fi
             [ "$attempt" = 4 ] && {
               echo "::error::функция падает — смотри логи в Supabase Dashboard -> Edge Functions"
               exit 1

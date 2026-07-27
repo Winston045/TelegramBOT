@@ -17,7 +17,9 @@
  * Деплой: workflow deploy-webhook (ставит и вебхук с callback_query).
  */
 import { Bot, webhookCallback } from "npm:grammy@1.45.1";
-import { createClient } from "npm:@supabase/supabase-js@2";
+// версия запинена: незапиненный @2 однажды подтянул свежий релиз,
+// и функция перестала отвечать — обновлять только руками, с проверкой
+import { createClient } from "npm:@supabase/supabase-js@2.110.8";
 import { entitiesToHtml } from "../_shared/entities.ts";
 import { parseCandidateId } from "../_shared/service_line.ts";
 import { replaceBody, replaceQuote } from "../_shared/edit_caption.ts";
