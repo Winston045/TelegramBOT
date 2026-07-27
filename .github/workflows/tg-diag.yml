@@ -49,8 +49,7 @@ jobs:
               --data-urlencode "params=$2" | head -c 1200
             echo; echo
           }
-          probe "photos.give" '{"limit":5}'
-          probe "photos.give" '{"year":1941,"year2":1945,"limit":5,"skip":0}'
-          probe "photo.giveNearestPhotos" '{"geo":[55.75,37.61],"limit":3}'
-          probe "photo.giveForPage" '{"cid":5000}'
-          probe "photos.givePublicIndex" '{}'
+          probe "photo.giveNearestPhotos" '{"geo":[55.75,37.61],"limit":3,"skip":0}'
+          probe "photo.giveNearestPhotos" '{"geo":[55.75,37.61],"limit":3,"skip":3}'
+          probe "photo.giveNearestPhotos" '{"geo":[55.75,37.61],"limit":5,"year":1941,"year2":1945}'
+          probe "photo.giveNearestPhotos" '{"geo":[52.52,13.40],"limit":3,"year":1939,"year2":1945}'
