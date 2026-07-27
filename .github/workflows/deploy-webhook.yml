@@ -72,7 +72,13 @@ jobs:
       - name: Переменные окружения функции
         run: |
           times=$(python3 -c "import yaml;c=yaml.safe_load(open('config.yaml'));print(','.join(c['publish']['times']))")
+          # identity бота — чтобы функция не звала getMe на буте
+          # (зависание этого вызова однажды повесило весь вебхук)
+          bot_info=$(curl -s --max-time 20 "https://api.telegram.org/bot$BOT_TOKEN/getMe" \
+            | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["result"]))' 2>/dev/null || true)
+          echo "BOT_INFO: ${bot_info:-'(getMe недоступен, функция возьмёт запасной вариант)'}"
           supabase secrets set --project-ref "${{ steps.ref.outputs.ref }}" \
+            BOT_INFO="$bot_info" \
             BOT_TOKEN="$BOT_TOKEN" \
             CHANNEL_ID="$CHANNEL_ID" \
             EDITOR_USER_IDS="$EDITOR_USER_IDS" \

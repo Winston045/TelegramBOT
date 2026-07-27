@@ -100,7 +100,32 @@ function upcomingSlots(count: number, times: string[]): Array<{ label: string; i
   return out;
 }
 
-const bot = new Bot(requireEnv("BOT_TOKEN"));
+// grammY перед первым апдейтом зовёт getMe; когда api.telegram.org
+// недоступен из сети Supabase (было 27.07), этот вызов висит без таймаута
+// и вешает весь воркер. Identity бота задаём заранее (BOT_INFO кладёт
+// деплой, зашитое значение — запасной вариант), вызовам API — таймаут.
+const FALLBACK_BOT_INFO = {
+  id: 8845582261,
+  is_bot: true as const,
+  first_name: "Тея",
+  username: "V1story_bot",
+  can_join_groups: true,
+  can_read_all_group_messages: false,
+  supports_inline_queries: false,
+  can_connect_to_business: false,
+  has_main_web_app: false,
+};
+const botInfo = (() => {
+  try {
+    return JSON.parse(Deno.env.get("BOT_INFO") ?? "") ?? FALLBACK_BOT_INFO;
+  } catch {
+    return FALLBACK_BOT_INFO;
+  }
+})();
+const bot = new Bot(requireEnv("BOT_TOKEN"), {
+  botInfo,
+  client: { timeoutSeconds: 25 },
+});
 // имена с префиксом SUPABASE_ в secrets функций зарезервированы, поэтому
 // свой ключ туда не положить — берём служебный, он всегда есть в среде
 const db = createClient(
