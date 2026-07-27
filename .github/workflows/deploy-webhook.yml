@@ -82,8 +82,25 @@ jobs:
             PUBLISH_TZ_OFFSET="+03:00" \
             GH_REPO="${{ github.repository }}" \
             GH_PAT="${{ secrets.GH_PAT }}"
-      - name: Деплой tg-webhook
-        run: supabase functions deploy tg-webhook --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
+      # оригинал завис после деплоя 20:21 — пересоздаём функцию с нуля:
+      # удаление сбрасывает пул воркеров, «No change found» этого не делает
+      - name: Пересоздать tg-webhook
+        run: |
+          supabase functions delete tg-webhook --project-ref "${{ steps.ref.outputs.ref }}" || echo "(удалить не вышло — возможно, уже нет)"
+          supabase functions deploy tg-webhook --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
+      # двойник с тем же кодом: если отвечает, а оригинал висит — дело в
+      # платформенном пуле воркеров, а не в коде
+      - name: Деплой двойника tg-webhook2
+        run: supabase functions deploy tg-webhook2 --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
+      - name: Проба двойника
+        run: |
+          code=$(curl -s -o /tmp/w2 -w "%{http_code}" --max-time 30 -X POST \
+            "$SUPABASE_URL/functions/v1/tg-webhook2" \
+            -H "content-type: application/json" \
+            -H "X-Telegram-Bot-Api-Secret-Token: $TG_WEBHOOK_SECRET" \
+            -d '{"update_id":1}') || code=timeout
+          echo "tg-webhook2: HTTP $code"
+          [ -f /tmp/w2 ] && head -c 300 /tmp/w2; echo
       # пинг-функция без зависимостей: отделяет проблемы платформы от кода
       - name: Деплой health-пинга
         run: supabase functions deploy health --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
