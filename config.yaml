@@ -8,7 +8,7 @@ sources:
     weight: 40           # почти целиком военная тематика — канал про это
     categories: ["1939", "1940", "1941", "1942", "1943", "1944", "1945"]
   pastvu:
-    enabled: false       # включим после живой проверки API
+    enabled: true        # контракт API проверен вживую (tg-diag)
     weight: 30
     years: [1914, 1960]
   nara:
