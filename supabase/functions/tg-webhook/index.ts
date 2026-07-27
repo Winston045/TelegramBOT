@@ -16,10 +16,11 @@
  *
  * Деплой: workflow deploy-webhook (ставит и вебхук с callback_query).
  */
-import { Bot, webhookCallback } from "npm:grammy@1.45.1";
-// версия запинена: незапиненный @2 однажды подтянул свежий релиз,
-// и функция перестала отвечать — обновлять только руками, с проверкой
-import { createClient } from "npm:@supabase/supabase-js@2.110.8";
+// не npm: — свежие бандлы с npm-зависимостями переставали подниматься
+// (июльский инцидент: health отвечал, любая функция с npm: висла);
+// deno.land/x и jsr идут другим пайплайном и грузятся стабильно
+import { Bot, webhookCallback } from "https://deno.land/x/grammy@v1.45.1/mod.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 import { entitiesToHtml } from "../_shared/entities.ts";
 import { parseCandidateId } from "../_shared/service_line.ts";
 import { replaceBody, replaceQuote } from "../_shared/edit_caption.ts";

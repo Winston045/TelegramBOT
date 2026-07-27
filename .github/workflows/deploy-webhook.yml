@@ -82,6 +82,15 @@ jobs:
             PUBLISH_TZ_OFFSET="+03:00" \
             GH_REPO="${{ github.repository }}" \
             GH_PAT="${{ secrets.GH_PAT }}"
+      # проба npm-бандлов: если health жив, а npmprobe виснет — платформа
+      # не поднимает свежие бандлы с npm-зависимостями
+      - name: Деплой и проба npmprobe
+        run: |
+          supabase functions deploy npmprobe --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
+          code=$(curl -s -o /tmp/np -w "%{http_code}" --max-time 30 \
+            "$SUPABASE_URL/functions/v1/npmprobe") || code=timeout
+          echo "npmprobe: HTTP $code"
+          [ -f /tmp/np ] && cat /tmp/np; echo
       # оригинал завис после деплоя 20:21 — пересоздаём функцию с нуля:
       # удаление сбрасывает пул воркеров, «No change found» этого не делает
       - name: Пересоздать tg-webhook
