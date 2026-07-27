@@ -82,15 +82,18 @@ jobs:
             PUBLISH_TZ_OFFSET="+03:00" \
             GH_REPO="${{ github.repository }}" \
             GH_PAT="${{ secrets.GH_PAT }}"
-      # проба npm-бандлов: если health жив, а npmprobe виснет — платформа
-      # не поднимает свежие бандлы с npm-зависимостями
-      - name: Деплой и проба npmprobe
+      # бисекция бута вебхука: какой из кусков вешает воркер
+      - name: Бисекция бута (bisect1-4)
         run: |
-          supabase functions deploy npmprobe --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
-          code=$(curl -s -o /tmp/np -w "%{http_code}" --max-time 30 \
-            "$SUPABASE_URL/functions/v1/npmprobe") || code=timeout
-          echo "npmprobe: HTTP $code"
-          [ -f /tmp/np ] && cat /tmp/np; echo
+          for fn in bisect1 bisect2 bisect3 bisect4; do
+            supabase functions deploy "$fn" --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}" >/dev/null 2>&1 \
+              && echo "$fn задеплоен" || echo "$fn: деплой не прошёл"
+            code=$(curl -s -o /tmp/b -w "%{http_code}" --max-time 25 \
+              "$SUPABASE_URL/functions/v1/$fn") || code=timeout
+            echo "$fn: HTTP $code"
+            [ -f /tmp/b ] && head -c 200 /tmp/b && rm -f /tmp/b
+            echo
+          done
       # оригинал завис после деплоя 20:21 — пересоздаём функцию с нуля:
       # удаление сбрасывает пул воркеров, «No change found» этого не делает
       - name: Пересоздать tg-webhook
