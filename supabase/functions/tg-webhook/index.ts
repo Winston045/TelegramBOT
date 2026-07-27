@@ -7,6 +7,7 @@
  * Команды (только вайтлист EDITOR_USER_IDS, остальных молча игнорируем):
  *   /status           — сводка: черновики, очередь, вышло, сбор, дедуп
  *   /queue            — очередь с кнопками
+ *   /schedule         — панель расписания: слоты и число постов (МСК)
  *   /published        — последние вышедшие с кнопками удаления
  *   /ok, /skip        — то же, что кнопки (реплаем на карточку)
  *   /quote <текст>    — заменить цитату (реплаем)
@@ -21,6 +22,15 @@ import { entitiesToHtml } from "../_shared/entities.ts";
 import { parseCandidateId } from "../_shared/service_line.ts";
 import { replaceBody, replaceQuote } from "../_shared/edit_caption.ts";
 import { CAPTION_LIMIT, validateHtml, visibleLength } from "../_shared/validate.ts";
+import {
+  MAX_SLOTS,
+  hourKeyboard,
+  minuteKeyboard,
+  normalizeTimes,
+  panelKeyboard,
+  schedulePanelText,
+  unpackTime,
+} from "../_shared/schedule_panel.ts";
 
 function requireEnv(name: string): string {
   const v = Deno.env.get(name)?.trim();
@@ -31,8 +41,8 @@ function requireEnv(name: string): string {
 /** Тестовый режим: одобрение публикует сразу, минуя очередь и слоты. */
 const INSTANT_PUBLISH = (Deno.env.get("INSTANT_PUBLISH") ?? "").trim() === "true";
 
-/** Слоты публикации и смещение таймзоны канала (Москва без летнего времени). */
-const PUBLISH_TIMES = (Deno.env.get("PUBLISH_TIMES") ?? "09:00,12:30,15:00,18:00,21:00")
+/** Слоты публикации по умолчанию (из config.yaml при деплое) и таймзона канала. */
+const DEFAULT_TIMES = (Deno.env.get("PUBLISH_TIMES") ?? "09:00,12:30,15:00,18:00,21:00")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -42,8 +52,29 @@ const TZ_OFFSET = (Deno.env.get("PUBLISH_TZ_OFFSET") ?? "+03:00").trim();
 const GH_PAT = Deno.env.get("GH_PAT")?.trim();
 const GH_REPO = Deno.env.get("GH_REPO")?.trim() ?? "Winston045/TelegramBOT";
 
+/** Времена публикации: настройка из бота перекрывает config.yaml. */
+async function getPublishTimes(): Promise<string[]> {
+  const { data, error } = await db
+    .from("settings")
+    .select("value")
+    .eq("key", "publish_times")
+    .maybeSingle();
+  if (error || !data) return DEFAULT_TIMES;
+  const times = normalizeTimes(data.value);
+  return times.length ? times : DEFAULT_TIMES;
+}
+
+async function savePublishTimes(times: string[]): Promise<void> {
+  const { error } = await db.from("settings").upsert({
+    key: "publish_times",
+    value: times,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw new Error(`сохранение расписания: ${error.message}`);
+}
+
 /** Ближайшие слоты публикации: [{label: "28.07 09:00", iso}]. */
-function upcomingSlots(count: number): Array<{ label: string; iso: string }> {
+function upcomingSlots(count: number, times: string[]): Array<{ label: string; iso: string }> {
   const out: Array<{ label: string; iso: string }> = [];
   const now = Date.now();
   for (let day = 0; day < 3 && out.length < count; day++) {
@@ -54,7 +85,7 @@ function upcomingSlots(count: number): Array<{ label: string; iso: string }> {
       month: "2-digit",
       day: "2-digit",
     }).format(d);
-    for (const t of PUBLISH_TIMES) {
+    for (const t of times) {
       const iso = `${ymd}T${t}:00${TZ_OFFSET}`;
       const ts = new Date(iso).getTime();
       if (ts > now + 60_000 && out.length < count) {
@@ -173,6 +204,20 @@ async function approve(id: number): Promise<string | null> {
 
 // ---------- кнопки ----------
 
+/** Перерисовать панель расписания в том же сообщении. */
+async function renderPanel(
+  ctx: { editMessageText: (text: string, other?: object) => Promise<unknown> },
+  times: string[],
+): Promise<void> {
+  try {
+    await ctx.editMessageText(schedulePanelText(times), {
+      reply_markup: { inline_keyboard: panelKeyboard(times) },
+    });
+  } catch {
+    // "message is not modified" при повторном нажатии — не ошибка
+  }
+}
+
 bot.on("callback_query:data", async (ctx) => {
   const [action, idStr] = ctx.callbackQuery.data.split(":");
   const id = Number(idStr);
@@ -217,7 +262,7 @@ bot.on("callback_query:data", async (ctx) => {
         return;
       }
       case "re": {
-        const slots = upcomingSlots(6);
+        const slots = upcomingSlots(6, await getPublishTimes());
         const rows = [];
         for (let i = 0; i < slots.length; i += 2) {
           rows.push(
@@ -353,6 +398,87 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.answerCallbackQuery({ text: "Удалено из канала" });
         return;
       }
+      // ---------- панель расписания (/schedule) ----------
+      case "tdel": {
+        const t = unpackTime(idStr ?? "");
+        const times = await getPublishTimes();
+        if (!t || !times.includes(t)) {
+          await renderPanel(ctx, times);
+          await ctx.answerCallbackQuery({ text: "Слота уже нет" });
+          return;
+        }
+        if (times.length <= 1) {
+          await ctx.answerCallbackQuery({
+            text: "Нельзя убрать последний слот: посты перестанут выходить",
+            show_alert: true,
+          });
+          return;
+        }
+        const next = times.filter((x) => x !== t);
+        await savePublishTimes(next);
+        await renderPanel(ctx, next);
+        await ctx.answerCallbackQuery({ text: `Слот ${t} убран` });
+        return;
+      }
+      case "tadd": {
+        await ctx.editMessageText("Новый слот — выберите час (МСК):", {
+          reply_markup: { inline_keyboard: hourKeyboard() },
+        });
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      case "th": {
+        const hour = Number(idStr);
+        if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+          await ctx.answerCallbackQuery({ text: "Не понял час" });
+          return;
+        }
+        await ctx.editMessageText(
+          `Час ${String(hour).padStart(2, "0")} — выберите минуты (МСК):`,
+          { reply_markup: { inline_keyboard: minuteKeyboard(hour) } },
+        );
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      case "tset": {
+        const t = unpackTime(idStr ?? "");
+        if (!t) {
+          await ctx.answerCallbackQuery({ text: "Не понял время" });
+          return;
+        }
+        const times = await getPublishTimes();
+        if (times.includes(t)) {
+          await renderPanel(ctx, times);
+          await ctx.answerCallbackQuery({ text: `Слот ${t} уже есть` });
+          return;
+        }
+        if (times.length >= MAX_SLOTS) {
+          await ctx.answerCallbackQuery({
+            text: `Больше ${MAX_SLOTS} слотов в день нельзя`,
+            show_alert: true,
+          });
+          return;
+        }
+        const next = normalizeTimes([...times, t]);
+        await savePublishTimes(next);
+        await renderPanel(ctx, next);
+        await ctx.answerCallbackQuery({ text: `Слот ${t} добавлен` });
+        return;
+      }
+      case "tback": {
+        await renderPanel(ctx, await getPublishTimes());
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      case "tclose": {
+        const times = await getPublishTimes();
+        await ctx.editMessageText(
+          `Расписание сохранено (МСК): ${times.join(", ")}.\n` +
+            `Постов в день: ${times.length}. Открыть снова: /schedule`,
+        );
+        await ctx.answerCallbackQuery();
+        return;
+      }
       default:
         await ctx.answerCallbackQuery({ text: "Уже обработано" });
     }
@@ -390,6 +516,7 @@ bot.command("status", async (ctx) => {
     .eq("status", "published")
     .gte("published_at", dayAgo);
 
+  const times = await getPublishTimes();
   const lines = [
     "Сводка",
     "",
@@ -397,6 +524,7 @@ bot.command("status", async (ctx) => {
     `Собрано, ещё не отправлено: ${fresh}`,
     `В очереди публикации: ${queued}`,
     `Вышло за сутки: ${today ?? 0} (всего: ${published})`,
+    `Расписание: ${times.length} в день — ${times.join(", ")} МСК (менять: /schedule)`,
     "",
     `Последний сбор: ${moscowTime(hb?.last_ok ?? null)}${hb?.last_error ? " — была ошибка" : ""}`,
     `База дедупа: ${seen ?? 0} фото`,
@@ -437,6 +565,13 @@ bot.command("queue", async (ctx) => {
       },
     });
   }
+});
+
+bot.command("schedule", async (ctx) => {
+  const times = await getPublishTimes();
+  await ctx.reply(schedulePanelText(times), {
+    reply_markup: { inline_keyboard: panelKeyboard(times) },
+  });
 });
 
 bot.command("more", async (ctx) => {

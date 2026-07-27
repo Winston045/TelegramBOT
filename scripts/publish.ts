@@ -11,6 +11,7 @@ import { getDb } from "../src/db.js";
 import { env } from "../src/env.js";
 import { channelSlug } from "../src/tme.js";
 import { countPublishedToday, shouldPublishNow } from "../src/schedule.js";
+import { loadPublishTimes } from "../src/settings.js";
 import { sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 
@@ -19,6 +20,8 @@ async function main() {
   const db = getDb();
   const now = new Date();
   const tz = cfg.publish.timezone;
+  // расписание, выставленное редакторами в боте, перекрывает config.yaml
+  const times = await loadPublishTimes(cfg.publish.times);
 
   // опубликованное за последние 48 часов достаточно, чтобы посчитать «сегодня»
   const twoDaysAgo = new Date(now.getTime() - 48 * 3600 * 1000).toISOString();
@@ -51,7 +54,7 @@ async function main() {
   let queue = due;
 
   if (!queue?.length) {
-    if (!shouldPublishNow(now, cfg.publish.times, tz, publishedToday)) {
+    if (!shouldPublishNow(now, times, tz, publishedToday)) {
       console.log(`слот не наступил (сегодня опубликовано: ${publishedToday})`);
       await heartbeatOk("publisher");
       return;

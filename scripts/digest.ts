@@ -7,6 +7,7 @@ import { getDb } from "../src/db.js";
 import { env } from "../src/env.js";
 import { sendMessageHtml } from "../src/telegram.js";
 import { countPublishedToday, slotsPassed } from "../src/schedule.js";
+import { loadPublishTimes } from "../src/settings.js";
 
 function moscow(iso: string | null): string {
   if (!iso) return "давно";
@@ -53,9 +54,10 @@ async function main() {
     .eq("job", "collector")
     .maybeSingle();
 
-  // какие слоты сегодня ещё впереди
-  const passed = slotsPassed(now, cfg.publish.times, tz);
-  const slotsLeft = cfg.publish.times.slice(passed);
+  // какие слоты сегодня ещё впереди (расписание из бота важнее config.yaml)
+  const times = await loadPublishTimes(cfg.publish.times);
+  const passed = slotsPassed(now, times, tz);
+  const slotsLeft = times.slice(passed);
   const willGo = Math.min(queued, slotsLeft.length);
 
   const lines = [
@@ -67,7 +69,7 @@ async function main() {
       ? `Сегодня выйдут: ${slotsLeft.slice(0, willGo).join(", ")} (МСК)`
       : queued === 0
         ? "Сегодня публиковать нечего — одобрите карточки"
-        : "Слоты на сегодня уже прошли, очередь пойдёт завтра с 09:00",
+        : `Слоты на сегодня уже прошли, очередь пойдёт завтра с ${times[0]}`,
     `Уже вышло сегодня: ${publishedToday}`,
     "",
     `Последний сбор: ${moscow(hb?.last_ok ?? null)}${hb?.last_error ? " — была ошибка, смотрите /status" : ""}`,
