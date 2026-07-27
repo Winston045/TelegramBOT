@@ -1,0 +1,27 @@
+name: db-report
+
+# Отчёт по кандидатам в базе: статусы, подписи, метаданные.
+# Запуск: пуш в .github/report.trigger или Actions → Run workflow.
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - ".github/report.trigger"
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci || npm install
+      - name: Последние кандидаты с подписями
+        run: npm run review-captions -- 15
