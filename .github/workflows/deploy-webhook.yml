@@ -84,6 +84,19 @@ jobs:
             GH_PAT="${{ secrets.GH_PAT }}"
       - name: Деплой tg-webhook
         run: supabase functions deploy tg-webhook --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
+      # пинг-функция без зависимостей: отделяет проблемы платформы от кода
+      - name: Деплой health-пинга
+        run: supabase functions deploy health --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
+      - name: Статус платформы и пинг
+        run: |
+          echo "--- status.supabase.com ---"
+          curl -s --max-time 15 "https://status.supabase.com/api/v2/status.json" || echo "(статус недоступен)"
+          echo
+          echo "--- health-пинг ---"
+          code=$(curl -s -o /tmp/h -w "%{http_code}" --max-time 25 \
+            "$SUPABASE_URL/functions/v1/health") || code=timeout
+          echo "health: HTTP $code"
+          [ -f /tmp/h ] && cat /tmp/h; echo
       - name: Настроить вебхук Телеграма
         run: |
           url="$SUPABASE_URL/functions/v1/tg-webhook"
