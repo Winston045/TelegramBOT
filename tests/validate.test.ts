@@ -47,6 +47,13 @@ describe("validateYears", () => {
     expect(validateYears("<i>1945 год.</i>", { ...meta, year: undefined }).ok).toBe(true);
     expect(validateYears("<i>1945 год.</i>", { ...meta, title: undefined }).ok).toBe(true);
   });
+
+  it("десятилетия и даты в метаданных: '1930s' разрешает 1930-е в подписи", () => {
+    const m = { title: "restored during the 1930s", description: undefined, year: 1943, place: "x" };
+    expect(validateYears("Реставрация 1930-х. <i>1943 год.</i>", m).ok).toBe(true);
+    const m2 = { title: "Polen, Lublin 30.12.1939", description: undefined, year: undefined, place: "x" };
+    expect(validateYears("<i>Декабрь 1939 года.</i>", m2).ok).toBe(true);
+  });
 });
 
 describe("validateCaption", () => {

@@ -75,7 +75,11 @@ export function validateHtml(html: string): ValidationResult {
  */
 export function validateYears(html: string, meta: CaptionMeta): ValidationResult {
   const sourceText = `${meta.title ?? ""} ${meta.description ?? ""} ${meta.year ?? ""} ${meta.place ?? ""}`;
-  const known = new Set([...sourceText.matchAll(YEAR_RE)].map((m) => m[0]));
+  // в метаданных год может быть частью "1930s", "1930-е", "30.12.1939" —
+  // сканируем без границ слова (строгие границы остаются для подписи)
+  const known = new Set(
+    [...sourceText.matchAll(/(1[89]\d{2}|20\d{2})/g)].map((m) => m[0]),
+  );
   for (const m of html.replace(/<[^>]+>/g, " ").matchAll(YEAR_RE)) {
     if (!known.has(m[0])) {
       return { ok: false, reason: `год ${m[0]} отсутствует в метаданных` };
