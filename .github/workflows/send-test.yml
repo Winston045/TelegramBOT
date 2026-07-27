@@ -6,7 +6,14 @@ name: send-test
 # Запуск: пуш в .github/send.trigger или Actions → Run workflow.
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      bot_token:
+        description: "BOT_TOKEN (если не задан в секретах)"
+        required: false
+      editors_chat_id:
+        description: "EDITORS_CHAT_ID (если не задан в секретах)"
+        required: false
   push:
     paths:
       - ".github/send.trigger"
@@ -16,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-      EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID }}
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN || inputs.bot_token }}
+      EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID || inputs.editors_chat_id }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
     steps:

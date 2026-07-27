@@ -11,7 +11,23 @@ name: deploy-webhook
 # Запуск: пуш в .github/deploy-webhook.trigger или Actions → Run workflow.
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      supabase_access_token:
+        description: "SUPABASE_ACCESS_TOKEN (sbp_...)"
+        required: false
+      bot_token:
+        description: "BOT_TOKEN"
+        required: false
+      channel_id:
+        description: "CHANNEL_ID (@канал)"
+        required: false
+      editor_user_ids:
+        description: "EDITOR_USER_IDS (через запятую)"
+        required: false
+      tg_webhook_secret:
+        description: "TG_WEBHOOK_SECRET (любая строка)"
+        required: false
   push:
     paths:
       - ".github/deploy-webhook.trigger"
@@ -21,13 +37,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN || inputs.supabase_access_token }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-      CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
-      EDITOR_USER_IDS: ${{ secrets.EDITOR_USER_IDS }}
-      TG_WEBHOOK_SECRET: ${{ secrets.TG_WEBHOOK_SECRET }}
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN || inputs.bot_token }}
+      CHANNEL_ID: ${{ secrets.CHANNEL_ID || inputs.channel_id }}
+      EDITOR_USER_IDS: ${{ secrets.EDITOR_USER_IDS || inputs.editor_user_ids }}
+      TG_WEBHOOK_SECRET: ${{ secrets.TG_WEBHOOK_SECRET || inputs.tg_webhook_secret }}
     steps:
       - name: Секреты на месте?
         run: |
