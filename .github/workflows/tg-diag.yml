@@ -42,11 +42,15 @@ jobs:
           echo
       - name: Проба API PastVu
         run: |
-          for q in \
-            'method=photos.give&params={"limit":5}' \
-            'method=photos.give&params={"year":1941,"year2":1945,"limit":5,"skip":0}' \
-            'method=photo.giveNearestPhotos&params={"geo":[55.75,37.61],"limit":3}' \
-            'method=photo.giveForPage&params={"cid":5000}'; do
-            echo "=== $q"
-            curl -sS "https://pastvu.com/api2?$q" | head -c 900; echo; echo
-          done
+          probe() {
+            echo "=== $1 $2"
+            curl -sSG "https://pastvu.com/api2" \
+              --data-urlencode "method=$1" \
+              --data-urlencode "params=$2" | head -c 1200
+            echo; echo
+          }
+          probe "photos.give" '{"limit":5}'
+          probe "photos.give" '{"year":1941,"year2":1945,"limit":5,"skip":0}'
+          probe "photo.giveNearestPhotos" '{"geo":[55.75,37.61],"limit":3}'
+          probe "photo.giveForPage" '{"cid":5000}'
+          probe "photos.givePublicIndex" '{}'
