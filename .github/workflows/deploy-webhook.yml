@@ -65,14 +65,18 @@ jobs:
           ref=$(echo "$SUPABASE_URL" | sed -E 's#https://([^.]+)\.supabase\.co/?#\1#')
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
       # ключ базы НЕ передаём: имена с префиксом SUPABASE_ зарезервированы,
-      # функция берёт служебный SUPABASE_SERVICE_ROLE_KEY из своей среды
+      # функция берёт служебный SUPABASE_SERVICE_ROLE_KEY из своей среды.
+      # INSTANT_PUBLISH=true — тестовый режим: /ok публикует сразу.
+      # Для боевого режима: Settings → Secrets and variables → Actions →
+      # вкладка Variables → INSTANT_PUBLISH=false, затем перезапустить деплой.
       - name: Переменные окружения функции
         run: |
           supabase secrets set --project-ref "${{ steps.ref.outputs.ref }}" \
             BOT_TOKEN="$BOT_TOKEN" \
             CHANNEL_ID="$CHANNEL_ID" \
             EDITOR_USER_IDS="$EDITOR_USER_IDS" \
-            TG_WEBHOOK_SECRET="$TG_WEBHOOK_SECRET"
+            TG_WEBHOOK_SECRET="$TG_WEBHOOK_SECRET" \
+            INSTANT_PUBLISH="${{ vars.INSTANT_PUBLISH || 'true' }}"
       - name: Деплой tg-webhook
         run: supabase functions deploy tg-webhook --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
       - name: Настроить вебхук Телеграма

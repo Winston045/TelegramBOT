@@ -23,10 +23,13 @@ import { replaceBody, replaceQuote } from "../_shared/edit_caption.ts";
 import { CAPTION_LIMIT, validateHtml, visibleLength } from "../_shared/validate.ts";
 
 function requireEnv(name: string): string {
-  const v = Deno.env.get(name);
+  const v = Deno.env.get(name)?.trim();
   if (!v) throw new Error(`переменная окружения ${name} не задана`);
   return v;
 }
+
+/** Тестовый режим: /ok публикует сразу, минуя очередь и слоты. */
+const INSTANT_PUBLISH = (Deno.env.get("INSTANT_PUBLISH") ?? "").trim() === "true";
 
 const bot = new Bot(requireEnv("BOT_TOKEN"));
 // имена с префиксом SUPABASE_ в secrets функций зарезервированы, поэтому
@@ -74,12 +77,38 @@ bot.command("ok", async (ctx) => {
     .update({ status: "approved" })
     .eq("id", id)
     .in("status", ["new", "shown", "rejected"])
-    .select("id");
+    .select("id, image_url, image_hash, caption_html");
   if (error) throw new Error(error.message);
-  if (!data.length) {
+  const approved = data[0];
+  if (!approved) {
     await ctx.reply(`#${id}: уже в другом статусе, не тронул`);
     return;
   }
+
+  if (INSTANT_PUBLISH && approved.caption_html) {
+    const msg = await ctx.api.sendPhoto(CHANNEL_ID, approved.image_url, {
+      caption: approved.caption_html,
+      parse_mode: "HTML",
+    });
+    await db
+      .from("candidates")
+      .update({
+        status: "published",
+        published_at: new Date().toISOString(),
+        channel_msg_id: msg.message_id,
+      })
+      .eq("id", id);
+    await db.from("seen_hashes").upsert(
+      { image_hash: approved.image_hash, origin: "published" },
+      { onConflict: "image_hash", ignoreDuplicates: true },
+    );
+    const slug = CHANNEL_ID.replace(/^@/, "");
+    await ctx.reply(
+      `🚀 #${id} опубликован сразу (тестовый режим): https://t.me/${slug}/${msg.message_id}`,
+    );
+    return;
+  }
+
   const { count } = await db
     .from("candidates")
     .select("id", { count: "exact", head: true })
