@@ -95,7 +95,10 @@ async function main() {
     );
   if (hashErr) throw new Error(`запись seen_hashes: ${hashErr.message}`);
 
-  const postUrl = `https://t.me/${channelSlug(cfg.channel.id)}/${msgId}`;
+  // ссылка — на канал, куда реально публикуем (env), а не из config:
+  // в тестовом режиме это разные каналы
+  const target = env.channelId.startsWith("@") ? env.channelId : cfg.channel.id;
+  const postUrl = `https://t.me/${channelSlug(target)}/${msgId}`;
   const { count } = await db
     .from("candidates")
     .select("id", { count: "exact", head: true })
