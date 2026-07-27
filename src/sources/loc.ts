@@ -87,6 +87,33 @@ async function fetchQuery(query: string, count: number, page: number): Promise<L
 export const loc: SourceAdapter = {
   name: "loc",
 
+  /** Полное описание с карточки предмета — контекст для подписи. */
+  async details(item: RawItem): Promise<string | undefined> {
+    try {
+      const res = await fetch(`https://www.loc.gov/item/${item.sourceId}/?fo=json`, {
+        headers: {
+          accept: "application/json",
+          "user-agent":
+            "Mozilla/5.0 (compatible; story-team-bot/0.1; historical photo curation)",
+        },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!res.ok) return undefined;
+      const body = (await res.json()) as {
+        item?: { description?: string[]; notes?: string[]; summary?: string[] };
+      };
+      const parts = [
+        ...(body.item?.description ?? []),
+        ...(body.item?.summary ?? []),
+        ...(body.item?.notes ?? []),
+      ];
+      const text = parts.join(" ").replace(/\s+/g, " ").trim();
+      return text ? text.slice(0, 1500) : undefined;
+    } catch {
+      return undefined;
+    }
+  },
+
   async fetch(limit, cfg, cursors): Promise<RawItem[]> {
     const queries = cfg.queries?.length ? cfg.queries : [""];
     const perQuery = Math.ceil(limit / queries.length);

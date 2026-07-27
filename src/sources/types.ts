@@ -19,4 +19,9 @@ export type RawItem = {
 export interface SourceAdapter {
   name: string;
   fetch(limit: number, cfg: SourceConfig, cursors: CursorStore): Promise<RawItem[]>;
+  /**
+   * Полное описание со страницы архива — дополнительный контекст для
+   * генерации подписи (те же данные источника, не внешний поиск).
+   */
+  details?(item: RawItem): Promise<string | undefined>;
 }

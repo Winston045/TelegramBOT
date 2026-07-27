@@ -21,5 +21,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci || npm install
+      # "only:<источник>" в триггер-файле — прогнать один источник
       - name: Сбор всухую
-        run: npm run collect -- --dry
+        run: |
+          only=$(grep -oP 'only:\K\S+' .github/collect-dry.trigger 2>/dev/null || true)
+          if [ -n "$only" ]; then
+            npm run collect -- --dry --only "$only"
+          else
+            npm run collect -- --dry
+          fi

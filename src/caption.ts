@@ -20,10 +20,18 @@ caption: <b>Танкисты</b> 61-й гвардейской Свердловс
 quote: Надпись на стволе пушки — «Победа за нами». У машины отсутствует третий каток ходовой части.
 quote_kind: observation`;
 
-export function buildCaptionPrompt(item: RawItem, glossary: Record<string, string>): string {
+export function buildCaptionPrompt(
+  item: RawItem,
+  glossary: Record<string, string>,
+  extraContext?: string,
+): string {
   const glossaryLines = Object.entries(glossary)
     .map(([from, to]) => `  "${from}" → "${to}"`)
     .join("\n");
+
+  const extra = extraContext
+    ? `\nПолное описание со страницы архива (тоже источник фактов, за его пределы не выходить):\n${extraContext}\n`
+    : "";
 
   return `Ты готовишь подпись к исторической фотографии для русскоязычного телеграм-канала.
 
@@ -32,6 +40,7 @@ export function buildCaptionPrompt(item: RawItem, glossary: Record<string, strin
 - описание: ${item.description ?? "(нет)"}
 - год: ${item.year ?? "(нет)"}
 - место: ${item.place ?? "(нет)"}
+${extra}
 
 Жёсткие правила:
 1. НЕ ДОБАВЛЯЙ фактов, которых нет во входных данных или не видно на самом фото.
@@ -62,10 +71,11 @@ export async function generateCaption(
   item: RawItem,
   cfg: AppConfig,
   image?: Buffer,
+  extraContext?: string,
 ): Promise<GeneratedCaption> {
   const img = await imagePart(image ?? item.imageUrl);
   return geminiJson<GeneratedCaption>([
-    { text: buildCaptionPrompt(item, cfg.glossary) },
+    { text: buildCaptionPrompt(item, cfg.glossary, extraContext) },
     img,
   ]);
 }

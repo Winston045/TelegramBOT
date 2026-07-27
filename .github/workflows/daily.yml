@@ -22,6 +22,8 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
+      EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
     steps:
       - name: Секреты настроены?
         id: guard
@@ -47,3 +49,6 @@ jobs:
       - name: Отправка карточек редакторам
         if: steps.guard.outputs.ok == 'true'
         run: npm run send-candidates
+      - name: Утренняя сводка
+        if: steps.guard.outputs.ok == 'true'
+        run: npx tsx scripts/digest.ts

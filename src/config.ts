@@ -7,6 +7,8 @@ export type SourceConfig = {
   weight: number;
   queries?: string[];
   categories?: string[];
+  /** диапазон лет для источников с фильтром по годам (pastvu) */
+  years?: number[];
 };
 
 export type AppConfig = {

@@ -31,6 +31,41 @@ function requireEnv(name: string): string {
 /** Тестовый режим: одобрение публикует сразу, минуя очередь и слоты. */
 const INSTANT_PUBLISH = (Deno.env.get("INSTANT_PUBLISH") ?? "").trim() === "true";
 
+/** Слоты публикации и смещение таймзоны канала (Москва без летнего времени). */
+const PUBLISH_TIMES = (Deno.env.get("PUBLISH_TIMES") ?? "09:00,12:30,15:00,18:00,21:00")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const TZ_OFFSET = (Deno.env.get("PUBLISH_TZ_OFFSET") ?? "+03:00").trim();
+
+/** GH_PAT + GH_REPO — для /more: запуск сбора через GitHub Actions. */
+const GH_PAT = Deno.env.get("GH_PAT")?.trim();
+const GH_REPO = Deno.env.get("GH_REPO")?.trim() ?? "Winston045/TelegramBOT";
+
+/** Ближайшие слоты публикации: [{label: "28.07 09:00", iso}]. */
+function upcomingSlots(count: number): Array<{ label: string; iso: string }> {
+  const out: Array<{ label: string; iso: string }> = [];
+  const now = Date.now();
+  for (let day = 0; day < 3 && out.length < count; day++) {
+    const d = new Date(now + day * 24 * 3600 * 1000);
+    const ymd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Moscow",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+    for (const t of PUBLISH_TIMES) {
+      const iso = `${ymd}T${t}:00${TZ_OFFSET}`;
+      const ts = new Date(iso).getTime();
+      if (ts > now + 60_000 && out.length < count) {
+        const [, m, dd] = ymd.split("-");
+        out.push({ label: `${dd}.${m} ${t}`, iso });
+      }
+    }
+  }
+  return out;
+}
+
 const bot = new Bot(requireEnv("BOT_TOKEN"));
 // имена с префиксом SUPABASE_ в secrets функций зарезервированы, поэтому
 // свой ключ туда не положить — берём служебный, он всегда есть в среде
@@ -170,10 +205,67 @@ bot.on("callback_query:data", async (ctx) => {
           await ctx.answerCallbackQuery({ text: "Уже обработано" });
           return;
         }
+        // чистота чата: пропущенная карточка удаляется целиком
+        try {
+          await ctx.deleteMessage();
+        } catch {
+          await ctx.editMessageReplyMarkup({
+            reply_markup: doneKeyboard(`Пропущено — ${who}`),
+          });
+        }
+        await ctx.answerCallbackQuery({ text: "Пропущено, карточка убрана" });
+        return;
+      }
+      case "re": {
+        const slots = upcomingSlots(6);
+        const rows = [];
+        for (let i = 0; i < slots.length; i += 2) {
+          rows.push(
+            slots.slice(i, i + 2).map((s) => ({
+              text: s.label,
+              callback_data: `sl:${id}:${s.iso.slice(0, 16)}`,
+            })),
+          );
+        }
+        rows.push([{ text: "Отмена", callback_data: `reb:${id}` }]);
+        await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: rows } });
+        await ctx.answerCallbackQuery({ text: "Выберите время" });
+        return;
+      }
+      case "sl": {
+        const isoShort = ctx.callbackQuery.data.split(":").slice(2).join(":");
+        const scheduledAt = new Date(`${isoShort}:00${TZ_OFFSET}`).toISOString();
+        const { data } = await db
+          .from("candidates")
+          .update({ scheduled_at: scheduledAt })
+          .eq("id", id)
+          .eq("status", "approved")
+          .select("id");
+        if (!data?.length) {
+          await ctx.answerCallbackQuery({ text: "Пост уже не в очереди" });
+          return;
+        }
+        const label = isoShort.slice(5, 16).replace("-", ".").replace("T", " ");
+        const [mm, rest] = [label.slice(0, 2), label.slice(3)];
         await ctx.editMessageReplyMarkup({
-          reply_markup: doneKeyboard(`Пропущено — ${who}`),
+          reply_markup: doneKeyboard(`Выйдет ${rest.slice(0, 2)}.${mm} в ${rest.slice(3)} — ${who}`),
         });
-        await ctx.answerCallbackQuery({ text: "Пропущено" });
+        await ctx.answerCallbackQuery({ text: "Запланировано" });
+        return;
+      }
+      case "reb": {
+        await ctx.editMessageReplyMarkup({
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "Опубликовать сейчас", callback_data: `now:${id}` },
+                { text: "Перенести", callback_data: `re:${id}` },
+                { text: "Убрать", callback_data: `rm:${id}` },
+              ],
+            ],
+          },
+        });
+        await ctx.answerCallbackQuery({ text: "Отменено" });
         return;
       }
       case "now": {
@@ -319,7 +411,7 @@ bot.command("status", async (ctx) => {
 bot.command("queue", async (ctx) => {
   const { data, error } = await db
     .from("candidates")
-    .select("id, caption_html")
+    .select("id, caption_html, scheduled_at")
     .eq("status", "approved")
     .order("id", { ascending: true })
     .limit(10);
@@ -330,16 +422,44 @@ bot.command("queue", async (ctx) => {
   }
   await ctx.reply(`В очереди: ${data.length}. Порядок публикации сверху вниз.`);
   for (const c of data) {
-    await ctx.reply(`#${c.id}. ${headline(c.caption_html)}`, {
+    const when = c.scheduled_at
+      ? `\nЗапланирован на ${moscowTime(c.scheduled_at)}`
+      : "";
+    await ctx.reply(`#${c.id}. ${headline(c.caption_html)}${when}`, {
       reply_markup: {
         inline_keyboard: [
           [
             { text: "Опубликовать сейчас", callback_data: `now:${c.id}` },
+            { text: "Перенести", callback_data: `re:${c.id}` },
             { text: "Убрать", callback_data: `rm:${c.id}` },
           ],
         ],
       },
     });
+  }
+});
+
+bot.command("more", async (ctx) => {
+  if (!GH_PAT) {
+    await ctx.reply(
+      "Команда не настроена: нужен секрет GH_PAT (токен GitHub с правом " +
+        "запуска Actions). Добавьте его в GitHub Secrets и перезапустите деплой вебхука.",
+    );
+    return;
+  }
+  const res = await fetch(`https://api.github.com/repos/${GH_REPO}/dispatches`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${GH_PAT}`,
+      accept: "application/vnd.github+json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ event_type: "more-candidates" }),
+  });
+  if (res.status === 204) {
+    await ctx.reply("Запустил сбор свежей партии. Карточки придут через несколько минут.");
+  } else {
+    await ctx.reply(`Не получилось запустить сбор: GitHub ответил ${res.status}.`);
   }
 });
 

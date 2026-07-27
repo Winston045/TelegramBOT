@@ -35,21 +35,40 @@ async function main() {
     tz,
   );
 
-  if (!shouldPublishNow(now, cfg.publish.times, tz, publishedToday)) {
-    console.log(`слот не наступил (сегодня опубликовано: ${publishedToday})`);
-    await heartbeatOk("publisher");
-    return;
-  }
-
-  // верхний пост очереди: одобренные в порядке одобрения (id)
-  let { data: queue, error: qErr } = await db
+  // запланированные на конкретное время публикуются, как только оно наступило,
+  // вне зависимости от слотов
+  const { data: due, error: dueErr } = await db
     .from("candidates")
     .select("id, image_url, image_hash, caption_html")
     .eq("status", "approved")
     .not("caption_html", "is", null)
-    .order("id", { ascending: true })
+    .not("scheduled_at", "is", null)
+    .lte("scheduled_at", now.toISOString())
+    .order("scheduled_at", { ascending: true })
     .limit(1);
-  if (qErr) throw new Error(`чтение очереди: ${qErr.message}`);
+  if (dueErr) throw new Error(`чтение запланированных: ${dueErr.message}`);
+
+  let queue = due;
+
+  if (!queue?.length) {
+    if (!shouldPublishNow(now, cfg.publish.times, tz, publishedToday)) {
+      console.log(`слот не наступил (сегодня опубликовано: ${publishedToday})`);
+      await heartbeatOk("publisher");
+      return;
+    }
+
+    // верхний пост очереди: одобренные без своего времени, в порядке одобрения
+    const res = await db
+      .from("candidates")
+      .select("id, image_url, image_hash, caption_html")
+      .eq("status", "approved")
+      .not("caption_html", "is", null)
+      .is("scheduled_at", null)
+      .order("id", { ascending: true })
+      .limit(1);
+    if (res.error) throw new Error(`чтение очереди: ${res.error.message}`);
+    queue = res.data;
+  }
 
   // auto_publish: без аппрува берём лучший из new
   if (!queue?.length && cfg.publish.auto_publish) {
@@ -66,6 +85,17 @@ async function main() {
 
   const post = queue?.[0];
   if (!post) {
+    // если всё в очереди запланировано на будущее — это не пустая очередь
+    const { count: future } = await db
+      .from("candidates")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "approved")
+      .not("scheduled_at", "is", null);
+    if (future && future > 0) {
+      console.log(`слот наступил, но все ${future} в очереди ждут своего времени`);
+      await heartbeatOk("publisher");
+      return;
+    }
     console.log("слот наступил, но очередь пуста");
     await sendMessageHtml(
       env.editorsChatId,

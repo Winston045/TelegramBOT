@@ -71,12 +71,17 @@ jobs:
       # вкладка Variables → INSTANT_PUBLISH=false, затем перезапустить деплой.
       - name: Переменные окружения функции
         run: |
+          times=$(python3 -c "import yaml;c=yaml.safe_load(open('config.yaml'));print(','.join(c['publish']['times']))")
           supabase secrets set --project-ref "${{ steps.ref.outputs.ref }}" \
             BOT_TOKEN="$BOT_TOKEN" \
             CHANNEL_ID="$CHANNEL_ID" \
             EDITOR_USER_IDS="$EDITOR_USER_IDS" \
             TG_WEBHOOK_SECRET="$TG_WEBHOOK_SECRET" \
-            INSTANT_PUBLISH="${{ vars.INSTANT_PUBLISH || 'true' }}"
+            INSTANT_PUBLISH="${{ vars.INSTANT_PUBLISH || 'true' }}" \
+            PUBLISH_TIMES="$times" \
+            PUBLISH_TZ_OFFSET="+03:00" \
+            GH_REPO="${{ github.repository }}" \
+            GH_PAT="${{ secrets.GH_PAT }}"
       - name: Деплой tg-webhook
         run: supabase functions deploy tg-webhook --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
       - name: Настроить вебхук Телеграма

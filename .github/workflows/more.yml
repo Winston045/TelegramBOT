@@ -1,0 +1,37 @@
+name: more-candidates
+
+# Свежая партия по команде /more из чата редакторов
+# (вебхук дёргает repository_dispatch с типом more-candidates).
+
+on:
+  repository_dispatch:
+    types: [more-candidates]
+
+concurrency:
+  group: more-candidates
+  cancel-in-progress: false
+
+jobs:
+  more:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID }}
+      CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
+      EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci || npm install
+      - name: Сбор маленькой партии
+        run: npm run collect -- --keep 8 --top 3
+      - name: Отправка карточек
+        run: npm run send-candidates

@@ -7,7 +7,7 @@
  */
 import { loadConfig } from "../src/config.js";
 import { dbCursorStore, memoryCursorStore } from "../src/cursors.js";
-import { collectRaw, type CollectedItem } from "../src/sources/index.js";
+import { ADAPTERS, collectRaw, type CollectedItem } from "../src/sources/index.js";
 import { prefilter } from "../src/prefilter.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { getDb } from "../src/db.js";
@@ -71,9 +71,12 @@ async function hashAndDedup(items: CollectedItem[], known: string[]): Promise<Ha
 async function main() {
   const cfg = loadConfig();
 
-  // dry живёт без базы — курсоры в памяти (каждый раз первая страница)
+  // dry живёт без базы — курсоры в памяти (каждый раз первая страница);
+  // --only <источник> — прогнать один источник, игнорируя enabled
+  const onlyIdx = process.argv.indexOf("--only");
+  const only = onlyIdx !== -1 ? process.argv[onlyIdx + 1] : undefined;
   const cursors = dry ? memoryCursorStore() : dbCursorStore();
-  const raw = await collectRaw(cfg, cfg.collect.raw_limit, cursors);
+  const raw = await collectRaw(cfg, cfg.collect.raw_limit, cursors, only);
   console.log(`сырых записей: ${raw.length}`);
 
   const { kept, rejected } = prefilter(raw, cfg);
@@ -156,7 +159,14 @@ async function main() {
     };
 
     try {
-      const generated = await generateCaption(item, cfg, item.imageBuffer);
+      // умные цитаты: полное описание со страницы архива как доп. контекст
+      let extraContext: string | undefined;
+      try {
+        extraContext = await ADAPTERS[item.source]?.details?.(item);
+      } catch {
+        extraContext = undefined;
+      }
+      const generated = await generateCaption(item, cfg, item.imageBuffer, extraContext);
       const captionHtml = assembleCaptionHtml(generated, item, cfg.channel);
       const check = validateCaption(captionHtml, item);
 

@@ -1,12 +1,24 @@
 sources:
   loc:
     enabled: true
-    weight: 40           # доля в дневной выборке
+    weight: 30           # доля в дневной выборке
     queries: ["world war", "infantry", "artillery", "warship"]
   bundesarchiv:
     enabled: true
-    weight: 60           # почти целиком военная тематика — канал про это
+    weight: 40           # почти целиком военная тематика — канал про это
     categories: ["1939", "1940", "1941", "1942", "1943", "1944", "1945"]
+  pastvu:
+    enabled: false       # включим после живой проверки API
+    weight: 30
+    years: [1914, 1960]
+  nara:
+    enabled: false       # нужен бесплатный ключ: секрет NARA_API_KEY
+    weight: 20
+    queries: ["world war", "infantry"]
+  europeana:
+    enabled: false       # нужен бесплатный ключ: секрет EUROPEANA_API_KEY
+    weight: 20
+    queries: ["world war 1914-1918", "world war 1939-1945"]
 
 collect:
   raw_limit: 150         # сколько тянем из архивов

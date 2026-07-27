@@ -3,10 +3,16 @@ import type { CursorStore } from "../cursors.js";
 import type { RawItem, SourceAdapter } from "./types.js";
 import { loc } from "./loc.js";
 import { bundesarchiv } from "./bundesarchiv.js";
+import { pastvu } from "./pastvu.js";
+import { nara } from "./nara.js";
+import { europeana } from "./europeana.js";
 
-const ADAPTERS: Record<string, SourceAdapter> = {
+export const ADAPTERS: Record<string, SourceAdapter> = {
   loc,
   bundesarchiv,
+  pastvu,
+  nara,
+  europeana,
 };
 
 export type CollectedItem = RawItem & { source: string };
@@ -19,8 +25,11 @@ export async function collectRaw(
   cfg: AppConfig,
   rawLimit: number,
   cursors: CursorStore,
+  only?: string,
 ): Promise<CollectedItem[]> {
-  const enabled = Object.entries(cfg.sources).filter(([, s]) => s.enabled);
+  const enabled = Object.entries(cfg.sources).filter(([name, s]) =>
+    only ? name === only : s.enabled,
+  );
   const totalWeight = enabled.reduce((sum, [, s]) => sum + s.weight, 0);
   if (totalWeight === 0) return [];
 
