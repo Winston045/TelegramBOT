@@ -1,0 +1,41 @@
+name: send-test
+
+# Ручная отправка готовых кандидатов редакторам в чат — для живой проверки
+# перед включением ежедневного крона. Кандидаты должны уже лежать в базе
+# (их наполняет verify или npm run collect).
+# Запуск: пуш в .github/send.trigger или Actions → Run workflow.
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - ".github/send.trigger"
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+    steps:
+      - name: Секреты на месте?
+        run: |
+          missing=""
+          for v in BOT_TOKEN EDITORS_CHAT_ID SUPABASE_URL SUPABASE_SECRET_KEY; do
+            [ -z "${!v}" ] && missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::не настроены секреты:$missing"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci || npm install
+      - name: Отправить карточки в чат редакторов
+        run: npm run send-candidates
