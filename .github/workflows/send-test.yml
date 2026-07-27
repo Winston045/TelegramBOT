@@ -25,6 +25,7 @@ jobs:
     env:
       BOT_TOKEN: ${{ secrets.BOT_TOKEN || inputs.bot_token }}
       EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID || inputs.editors_chat_id }}
+      CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
     steps:
@@ -52,6 +53,14 @@ jobs:
             npx tsx scripts/seed-test.ts
           else
             echo "seed не запрошен"
+          fi
+      # слово "fixcap" — разовое восстановление испорченных подписей
+      - name: Восстановление подписей (если запрошено)
+        run: |
+          if grep -q fixcap .github/send.trigger 2>/dev/null; then
+            npx tsx scripts/fix-captions.ts
+          else
+            echo "fixcap не запрошен"
           fi
       - name: Отправить карточки в чат редакторов
         run: npm run send-candidates

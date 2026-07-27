@@ -212,6 +212,36 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.answerCallbackQuery({ text: "Убрано из очереди" });
         return;
       }
+      case "apply": {
+        const { data, error } = await db
+          .from("candidates")
+          .select("caption_draft")
+          .eq("id", id)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!data?.caption_draft) {
+          await ctx.answerCallbackQuery({ text: "Черновика уже нет" });
+          return;
+        }
+        const { error: updErr } = await db
+          .from("candidates")
+          .update({ caption_html: data.caption_draft, caption_draft: null })
+          .eq("id", id);
+        if (updErr) throw new Error(updErr.message);
+        await ctx.editMessageReplyMarkup({
+          reply_markup: doneKeyboard(`Подпись заменена — ${who}`),
+        });
+        await ctx.answerCallbackQuery({ text: "Подпись заменена" });
+        return;
+      }
+      case "drop": {
+        await db.from("candidates").update({ caption_draft: null }).eq("id", id);
+        await ctx.editMessageReplyMarkup({
+          reply_markup: doneKeyboard("Правка отменена"),
+        });
+        await ctx.answerCallbackQuery({ text: "Отменено" });
+        return;
+      }
       case "del": {
         const { data, error } = await db
           .from("candidates")
@@ -410,11 +440,23 @@ bot.command("undo", async (ctx) => {
   await ctx.reply(`Пост #${last.id} удалён из канала.`);
 });
 
-// реплай обычным текстом — заменить подпись целиком
+// реплай обычным текстом — предложить замену подписи (с подтверждением:
+// живой тест показал, что случайный реплай "ok" молча стирал подпись)
 bot.on("message:text", async (ctx) => {
   if (ctx.message.text.startsWith("/")) return;
   const id = repliedCandidateId(ctx);
   if (!id) return;
+
+  const text = ctx.message.text.trim();
+  if (text.length < 20) {
+    await ctx.reply(
+      "Короткий реплай не считаю правкой подписи. " +
+        "Одобрить или пропустить пост можно кнопками под карточкой; " +
+        "чтобы заменить подпись — ответьте на карточку полным новым текстом.",
+    );
+    return;
+  }
+
   const { data: candidate, error } = await db
     .from("candidates")
     .select("caption_html")
@@ -438,10 +480,22 @@ bot.on("message:text", async (ctx) => {
 
   const { error: updErr } = await db
     .from("candidates")
-    .update({ caption_html: updated })
+    .update({ caption_draft: updated })
     .eq("id", id);
   if (updErr) throw new Error(updErr.message);
-  await ctx.reply(`Пост #${id}: подпись заменена.`);
+
+  await ctx.reply(`Новая подпись для поста #${id} — проверьте и подтвердите:\n\n${updated}`, {
+    parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "Применить", callback_data: `apply:${id}` },
+          { text: "Отмена", callback_data: `drop:${id}` },
+        ],
+      ],
+    },
+  });
 });
 
 const handler = webhookCallback(bot, "std/http", {
