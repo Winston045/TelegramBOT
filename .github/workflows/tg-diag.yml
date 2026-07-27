@@ -18,6 +18,8 @@ jobs:
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
       CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
       EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      TG_WEBHOOK_SECRET: ${{ secrets.TG_WEBHOOK_SECRET }}
     steps:
       - name: Вебхук (ищи pending и last_error)
         run: 'curl -sS "https://api.telegram.org/bot$BOT_TOKEN/getWebhookInfo"; echo'
@@ -40,6 +42,22 @@ jobs:
             --data-urlencode "chat_id=$(echo "$CHANNEL_ID" | xargs)" \
             --data-urlencode "text=Тест публикации — если вы это видите, права в порядке (сообщение можно удалить)"
           echo
+      # три запроса разной глубины: GET (бут), POST без секрета (грамми
+      # отвечает сам), POST с секретом (полная обработка). Что виснет —
+      # то и сломано: всё = бут/платформа, только последний = обработчик.
+      - name: Проба вебхука
+        run: |
+          probe_wh() {
+            code=$(curl -s -o /tmp/whresp -w "%{http_code}" --max-time 25 "$@" \
+              "$SUPABASE_URL/functions/v1/tg-webhook") || code=timeout
+            echo "-> HTTP $code"
+            [ -f /tmp/whresp ] && head -c 300 /tmp/whresp && rm -f /tmp/whresp
+            echo
+          }
+          echo "GET без всего:"; probe_wh
+          echo "POST без секрета:"; probe_wh -X POST -H "content-type: application/json" -d '{"update_id":1}'
+          echo "POST с секретом:"; probe_wh -X POST -H "content-type: application/json" \
+            -H "X-Telegram-Bot-Api-Secret-Token: $TG_WEBHOOK_SECRET" -d '{"update_id":1}'
       - name: Проба API PastVu
         run: |
           probe() {
