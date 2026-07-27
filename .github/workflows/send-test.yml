@@ -21,6 +21,10 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
     steps:
+      - name: Какие секреты видит воркфлоу (только имена)
+        env:
+          ALL_SECRET_NAMES: ${{ toJSON(secrets) }}
+        run: echo "$ALL_SECRET_NAMES" | jq -r 'keys[]'
       - name: Секреты на месте?
         run: |
           missing=""
