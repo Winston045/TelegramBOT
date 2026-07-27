@@ -118,6 +118,9 @@ export const pastvu: SourceAdapter = {
 
     const cityStart = await cursors.get("pastvu", "city");
     const items: RawItem[] = [];
+    // Геопоиск липнет к одной точке: полдюжины «Соборных площадей» подряд.
+    // Внутри партии держим не больше одного фото с одинаковым названием.
+    const seenTitles = new Set<string>();
 
     for (let i = 0; i < CITIES_PER_FETCH && items.length < limit; i++) {
       const idx = (cityStart + i) % GEO_POOL.length;
@@ -146,11 +149,14 @@ export const pastvu: SourceAdapter = {
 
       for (const p of photos) {
         if (items.length >= limit) break;
+        const titleKey = (p.title ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+        if (titleKey && seenTitles.has(titleKey)) continue;
         try {
           const photo = await fetchDetails(p.cid);
           if (photo.type === 2) continue; // живопись, не фотография
           const year = photo.year ?? p.year;
           if (year && (year < yearFrom || year > yearTo)) continue;
+          if (titleKey) seenTitles.add(titleKey);
           items.push(buildItem(p, name, photo));
         } catch (err) {
           console.warn(`  pastvu: детали ${p.cid} не получены — ${(err as Error).message}`);
