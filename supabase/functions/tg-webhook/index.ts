@@ -29,9 +29,13 @@ function requireEnv(name: string): string {
 }
 
 const bot = new Bot(requireEnv("BOT_TOKEN"));
-const db = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SECRET_KEY"), {
-  auth: { persistSession: false },
-});
+// имена с префиксом SUPABASE_ в secrets функций зарезервированы, поэтому
+// свой ключ туда не положить — берём служебный, он всегда есть в среде
+const db = createClient(
+  requireEnv("SUPABASE_URL"),
+  Deno.env.get("SUPABASE_SECRET_KEY") ?? requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
+  { auth: { persistSession: false } },
+);
 const CHANNEL_ID = requireEnv("CHANNEL_ID");
 const EDITORS = new Set(
   requireEnv("EDITOR_USER_IDS")

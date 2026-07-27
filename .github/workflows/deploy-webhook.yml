@@ -64,14 +64,15 @@ jobs:
         run: |
           ref=$(echo "$SUPABASE_URL" | sed -E 's#https://([^.]+)\.supabase\.co/?#\1#')
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      # ключ базы НЕ передаём: имена с префиксом SUPABASE_ зарезервированы,
+      # функция берёт служебный SUPABASE_SERVICE_ROLE_KEY из своей среды
       - name: Переменные окружения функции
         run: |
           supabase secrets set --project-ref "${{ steps.ref.outputs.ref }}" \
             BOT_TOKEN="$BOT_TOKEN" \
             CHANNEL_ID="$CHANNEL_ID" \
             EDITOR_USER_IDS="$EDITOR_USER_IDS" \
-            TG_WEBHOOK_SECRET="$TG_WEBHOOK_SECRET" \
-            SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY"
+            TG_WEBHOOK_SECRET="$TG_WEBHOOK_SECRET"
       - name: Деплой tg-webhook
         run: supabase functions deploy tg-webhook --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
       - name: Настроить вебхук Телеграма
@@ -82,4 +83,19 @@ jobs:
             --data-urlencode "secret_token=$TG_WEBHOOK_SECRET" \
             --data-urlencode "allowed_updates=[\"message\"]"
           echo
+      - name: Самопроверка функции
+        run: |
+          code=$(curl -s -o /tmp/resp -w "%{http_code}" -X POST \
+            "$SUPABASE_URL/functions/v1/tg-webhook" \
+            -H "content-type: application/json" \
+            -H "X-Telegram-Bot-Api-Secret-Token: $TG_WEBHOOK_SECRET" \
+            -d '{"update_id":1}')
+          echo "функция ответила: HTTP $code"
+          cat /tmp/resp; echo
+          if [ "$code" -ge 500 ]; then
+            echo "::error::функция падает — смотри логи в Supabase Dashboard -> Edge Functions"
+            exit 1
+          fi
+          sleep 5
+          echo "--- getWebhookInfo (ищи last_error_message) ---"
           curl -sS "https://api.telegram.org/bot$BOT_TOKEN/getWebhookInfo"
