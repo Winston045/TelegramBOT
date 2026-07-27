@@ -57,14 +57,22 @@ async function main() {
   for (const c of picked) {
     const serviceLine = buildServiceLine(c);
     const withService = `${c.caption_html}\n\n${serviceLine}`;
+    const buttons = {
+      inline_keyboard: [
+        [
+          { text: "Одобрить", callback_data: `ok:${c.id}` },
+          { text: "Мимо", callback_data: `skip:${c.id}` },
+        ],
+      ],
+    };
 
     try {
       // служебная строка едет в той же подписи; если вдруг не влезает —
       // отдельным ответом на карточку
       if (visibleLength(withService) <= CAPTION_LIMIT) {
-        await sendPhotoHtml(env.editorsChatId, c.image_url, withService);
+        await sendPhotoHtml(env.editorsChatId, c.image_url, withService, buttons);
       } else {
-        await sendPhotoHtml(env.editorsChatId, c.image_url, c.caption_html);
+        await sendPhotoHtml(env.editorsChatId, c.image_url, c.caption_html, buttons);
         await sendMessageHtml(env.editorsChatId, serviceLine);
       }
     } catch (err) {

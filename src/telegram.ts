@@ -8,6 +8,10 @@ export function getTelegram(): Api {
   return api;
 }
 
+export type InlineKeyboard = {
+  inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
+};
+
 /**
  * Шлёт фото по URL (изображения у себя не храним — SPEC).
  * Телеграм сам скачивает картинку; если она больше лимита или недоступна —
@@ -17,10 +21,12 @@ export async function sendPhotoHtml(
   chatId: string | number,
   photoUrl: string,
   captionHtml: string,
+  replyMarkup?: InlineKeyboard,
 ): Promise<number> {
   const msg = await getTelegram().sendPhoto(chatId, photoUrl, {
     caption: captionHtml,
     parse_mode: "HTML",
+    reply_markup: replyMarkup,
   });
   return msg.message_id;
 }

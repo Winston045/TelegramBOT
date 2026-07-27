@@ -85,7 +85,7 @@ jobs:
           curl -sS "https://api.telegram.org/bot$BOT_TOKEN/setWebhook" \
             --data-urlencode "url=$url" \
             --data-urlencode "secret_token=$TG_WEBHOOK_SECRET" \
-            --data-urlencode "allowed_updates=[\"message\"]"
+            --data-urlencode "allowed_updates=[\"message\",\"callback_query\"]"
           echo
       - name: Самопроверка функции
         run: |

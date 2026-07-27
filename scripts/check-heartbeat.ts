@@ -35,8 +35,8 @@ async function main() {
     if (age > maxAge) {
       const ageText = age === Infinity ? "никогда" : `${Math.round(age)} ч назад`;
       problems.push(
-        `❗️ ${job}: последний успех — ${ageText}` +
-          (row?.last_error ? `\nошибка: ${row.last_error}` : ""),
+        `Сбой: ${job} — последний успех ${ageText}.` +
+          (row?.last_error ? `\nОшибка: ${row.last_error}` : ""),
       );
     }
   }

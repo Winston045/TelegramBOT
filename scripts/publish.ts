@@ -69,7 +69,7 @@ async function main() {
     console.log("слот наступил, но очередь пуста");
     await sendMessageHtml(
       env.editorsChatId,
-      "⚠️ слот публикации пропущен: очередь пуста. Одобрите кандидатов (/ok).",
+      "Слот публикации пропущен: очередь пуста. Одобрите кандидатов.",
     );
     await heartbeatOk("publisher");
     return;
@@ -105,9 +105,9 @@ async function main() {
     .eq("status", "approved");
   const left = count ?? 0;
 
-  let confirmation = `📤 опубликован #${post.id}: ${postUrl}\nв очереди осталось: ${left}`;
+  let confirmation = `Опубликован пост #${post.id}: ${postUrl}\nВ очереди осталось: ${left}.`;
   if (left < cfg.publish.min_queue_warning) {
-    confirmation += `\n⚠️ очередь короче ${cfg.publish.min_queue_warning} — нужно одобрить ещё`;
+    confirmation += `\nОчередь короче ${cfg.publish.min_queue_warning} — стоит одобрить ещё.`;
   }
   await sendMessageHtml(env.editorsChatId, confirmation);
 
