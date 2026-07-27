@@ -34,8 +34,19 @@ jobs:
             --data-urlencode "user_id=${{ steps.me.outputs.bot_id }}"
           echo
       - name: Пробный пост в канал напрямую
+        if: ${{ !contains(github.event.head_commit.message, 'pastvu-probe') }}
         run: |
           curl -sS "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
             --data-urlencode "chat_id=$(echo "$CHANNEL_ID" | xargs)" \
-            --data-urlencode "text=🔧 тест публикации — если вы это видите, права в порядке (сообщение можно удалить)"
+            --data-urlencode "text=Тест публикации — если вы это видите, права в порядке (сообщение можно удалить)"
           echo
+      - name: Проба API PastVu
+        run: |
+          for q in \
+            'method=photos.give&params={"limit":5}' \
+            'method=photos.give&params={"year":1941,"year2":1945,"limit":5,"skip":0}' \
+            'method=photo.giveNearestPhotos&params={"geo":[55.75,37.61],"limit":3}' \
+            'method=photo.giveForPage&params={"cid":5000}'; do
+            echo "=== $q"
+            curl -sS "https://pastvu.com/api2?$q" | head -c 900; echo; echo
+          done
