@@ -43,25 +43,29 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci || npm install
-      # слово "fast" в .github/verify.trigger включает быстрый режим:
-      # бэкфилл срезом в 300 фото вместо всех ~4423
+      # режимы в .github/verify.trigger:
+      #   fast — бэкфилл срезом в 300 фото вместо всех ~4423
+      #   mini — без бэкфилла, крошечный сбор (6 на скоринг, 2 подписи)
       - name: Режим прогона
         id: mode
         run: |
-          if grep -q fast .github/verify.trigger 2>/dev/null; then
-            echo "fast=true" >> "$GITHUB_OUTPUT"; echo "быстрый режим"
-          else
-            echo "fast=false" >> "$GITHUB_OUTPUT"; echo "полный режим"
-          fi
+          mode=full
+          grep -q fast .github/verify.trigger 2>/dev/null && mode=fast
+          grep -q mini .github/verify.trigger 2>/dev/null && mode=mini
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"; echo "режим: $mode"
       - name: "Шаг 1: миграции"
         run: npm run migrate
       - name: "Шаг 2: бэкфилл архива канала (~4423 фото)"
-        if: steps.mode.outputs.fast != 'true'
+        if: steps.mode.outputs.mode == 'full'
         run: npm run backfill -- --expect 4423
       - name: "Шаг 2 (быстрый): бэкфилл срезом 300 фото"
-        if: steps.mode.outputs.fast == 'true'
+        if: steps.mode.outputs.mode == 'fast'
         run: npm run backfill -- --max-photos 300
-      - name: "Шаг 4: полный сбор — скоринг и подписи Gemini"
+      - name: "Шаг 4: сбор — скоринг и подписи Gemini"
+        if: steps.mode.outputs.mode != 'mini'
         run: npm run collect
+      - name: "Шаг 4 (мини): 2 подписи для теста"
+        if: steps.mode.outputs.mode == 'mini'
+        run: npm run collect -- --keep 6 --top 2
       - name: "Подписи на сверку глазами"
         run: npm run review-captions -- 10

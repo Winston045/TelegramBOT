@@ -2,7 +2,8 @@
  * Сбор кандидатов: источники → префильтр → дедуп по dHash →
  * vision-скоринг → подписи для топ-N → валидация → запись в candidates.
  *
- * npm run collect -- --dry  — только источники + префильтр, без Gemini и базы.
+ * npm run collect -- --dry        — только источники + префильтр, без Gemini и базы.
+ * npm run collect -- --keep 6 --top 2 — маленькая партия (тест): 6 на скоринг, 2 подписи.
  */
 import { loadConfig } from "../src/config.js";
 import { dbCursorStore, memoryCursorStore } from "../src/cursors.js";
@@ -17,6 +18,16 @@ import { validateCaption } from "../src/validate.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 
 const dry = process.argv.includes("--dry");
+
+function numArg(name: string): number | undefined {
+  const i = process.argv.findIndex((a) => a === name || a.startsWith(`${name}=`));
+  if (i === -1) return undefined;
+  const raw = process.argv[i]!.includes("=")
+    ? process.argv[i]!.split("=")[1]
+    : process.argv[i + 1];
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
 
 type HashedItem = CollectedItem & { imageHash: string; imageBuffer: Buffer };
 type ScoredItem = HashedItem & { vision: VisionScore };
@@ -70,8 +81,9 @@ async function main() {
     console.log(`префильтр: ${reason} × ${count}`);
   }
 
-  const survivors = kept.slice(0, cfg.collect.prefilter_keep);
-  console.log(`выжило после префильтра: ${survivors.length} (лимит ${cfg.collect.prefilter_keep})`);
+  const keepLimit = numArg("--keep") ?? cfg.collect.prefilter_keep;
+  const survivors = kept.slice(0, keepLimit);
+  console.log(`выжило после префильтра: ${survivors.length} (лимит ${keepLimit})`);
 
   if (dry) {
     for (const item of survivors) {
@@ -120,7 +132,7 @@ async function main() {
   }
 
   scored.sort((a, b) => b.vision.score - a.vision.score);
-  const top = scored.slice(0, cfg.collect.daily_candidates);
+  const top = scored.slice(0, numArg("--top") ?? cfg.collect.daily_candidates);
   console.log(`к генерации подписей: ${top.length}`);
 
   let written = 0;
