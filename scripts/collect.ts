@@ -16,6 +16,24 @@ import { scoreImage, type VisionScore } from "../src/scoring.js";
 import { assembleCaptionHtml, generateCaption } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
+import { env } from "../src/env.js";
+import { sendMessageHtml } from "../src/telegram.js";
+
+/** Квота кончилась - молчать нельзя, редакторы должны знать, почему нет карточек. */
+let quotaNotified = false;
+async function notifyQuotaExhausted() {
+  if (quotaNotified) return;
+  quotaNotified = true;
+  try {
+    await sendMessageHtml(
+      env.editorsChatId,
+      "Дневная квота Gemini исчерпана - сбор остановлен, карточек не будет. " +
+        "Квота сбрасывается в 10:00 МСК.",
+    );
+  } catch {
+    // чата может не быть в dry-запусках или при неполных секретах
+  }
+}
 
 const dry = process.argv.includes("--dry");
 
@@ -127,6 +145,7 @@ async function main() {
       console.warn(`  скоринг упал: [${item.source}] ${item.sourceId} — ${(err as Error).message}`);
       if (err instanceof GeminiQuotaError && quotaTripped()) {
         console.error("❌ дневная квота Gemini исчерпана — прекращаю скоринг до следующего запуска");
+        await notifyQuotaExhausted();
         break;
       }
     }
@@ -190,6 +209,7 @@ async function main() {
         .upsert({ ...row, status: "failed" }, { onConflict: "source,source_id", ignoreDuplicates: true });
       if (err instanceof GeminiQuotaError && quotaTripped()) {
         console.error("❌ дневная квота Gemini исчерпана — прекращаю генерацию до следующего запуска");
+        if (written === 0) await notifyQuotaExhausted();
         break;
       }
     }
