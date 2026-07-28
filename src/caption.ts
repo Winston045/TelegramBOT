@@ -53,13 +53,17 @@ ${glossaryLines || "  (пусто)"}
 5. Формат caption: жирным (<b>) — только подлежащее, одно-два слова.
    Год курсивом (<i>) в конце: «<i>${item.year} год.</i>».
    Разрешённые теги: <b>, <i>. Никакого markdown.
-6. quote — одна ПО-НАСТОЯЩЕМУ интересная деталь: то, что заставит
-   читателя задержаться (необычный факт из метаданных, любопытная деталь
-   на самом фото). Если видна на фото — quote_kind: "observation",
-   если из метаданных — "context". В quote тегов нет.
-   ВАЖНО: если интересной детали нет — верни quote: "" (пустую строку).
-   Скучная цитата («на фото изображено здание», пересказ подписи,
-   технические параметры негатива) хуже, чем никакой.
+6. quote — это мини-справка для человека, который ЛЮБИТ ИСТОРИЮ и
+   хочет узнать что-то новое: судьба людей или техники, цифры, контекст
+   события, редкость момента, значение детали. Если из фото — quote_kind:
+   "observation", если из метаданных — "context". В quote тегов нет.
+   КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО в quote:
+   - опись видимого («на заднем плане...», «слева виден...», «на фото
+     изображено...») без объяснения, ЧЕМ это важно или необычно;
+   - пересказ caption другими словами;
+   - технические сведения о негативе, съёмке, архиве.
+   Правило простое: если цитата не учит читателя ничему новому —
+   верни quote: "" (пустую строку). Пост без цитаты лучше поста с пустой.
 
 ${FEW_SHOT}
 
@@ -91,13 +95,14 @@ export function assembleCaptionHtml(
   item: Pick<RawItem, "license" | "attribution">,
   channel: AppConfig["channel"],
 ): string {
-  const parts = [generated.caption];
-  if (generated.quote) parts.push(`<blockquote>${generated.quote}</blockquote>`);
+  // цитата прижата к тексту без пустой строки — так в канале компактнее;
+  // единственный двойной перенос остаётся перед футером (его ищет splitFooter)
+  let body = generated.caption;
+  if (generated.quote) body += `\n<blockquote>${generated.quote}</blockquote>`;
   const footer: string[] = [];
   if (item.attribution && needsAttribution(item.license)) {
     footer.push(item.attribution);
   }
   footer.push(`<a href="${channel.signature_url}">${channel.signature}</a>`);
-  parts.push(footer.join("\n"));
-  return parts.join("\n\n");
+  return `${body}\n\n${footer.join("\n")}`;
 }

@@ -28,7 +28,7 @@ export function replaceQuote(captionHtml: string, newQuote: string): string {
 
   const replaced = /<blockquote>[\s\S]*?<\/blockquote>/.test(body)
     ? body.replace(/<blockquote>[\s\S]*?<\/blockquote>/, quoteHtml)
-    : `${body}\n\n${quoteHtml}`;
+    : `${body}\n${quoteHtml}`;
 
   return footer ? `${replaced}\n\n${footer}` : replaced;
 }

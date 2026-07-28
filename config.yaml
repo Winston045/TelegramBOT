@@ -39,23 +39,10 @@ balance:
   max_same_tag_per_week: 3   # не долбить одну тему
 
 filters:
-  # английские и немецкие: метаданные Бундесархива на немецком, и живой
-  # прогон показал, что англоязычный список их не ловит
-  stop_words:
-    - "execution"
-    - "corpse"
-    - "mass grave"
-    - "atrocity"
-    - "deportation"        # de/en одинаково
-    - "hinrichtung"
-    - "erschießung"
-    - "erschiessung"
-    - "massengrab"
-    - "konzentrationslager"
-    - "ghetto"
-    - "juden"
-    - "leichen"
-  block_nazi_symbols: true
+  # цензуры нет по решению редакции: каждый кандидат всё равно проходит
+  # ручной отбор в чате, автоматика ничего не отсеивает по содержанию
+  stop_words: []
+  block_nazi_symbols: false
 
 glossary:
   "Königsberg": "Кёнигсберг"

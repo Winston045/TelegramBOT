@@ -93,7 +93,7 @@ describe("replaceQuote", () => {
       "<b>Т</b> у танка.\n\n" + '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
     const updated = replaceQuote(noQuote, "Деталь.");
     expect(updated).toBe(
-      "<b>Т</b> у танка.\n\n<blockquote>Деталь.</blockquote>\n\n" +
+      "<b>Т</b> у танка.\n<blockquote>Деталь.</blockquote>\n\n" +
         '<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
     );
   });

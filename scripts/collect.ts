@@ -120,10 +120,8 @@ async function main() {
   for (const item of hashed) {
     try {
       const vision = await scoreImage(item.imageBuffer);
-      if (vision.unsafe) {
-        console.log(`  unsafe: [${item.source}] ${item.sourceId}`);
-        continue;
-      }
+      // цензуры нет: unsafe — только пометка в логе, решают редакторы
+      if (vision.unsafe) console.log(`  пометка unsafe: [${item.source}] ${item.sourceId}`);
       scored.push({ ...item, vision });
     } catch (err) {
       console.warn(`  скоринг упал: [${item.source}] ${item.sourceId} — ${(err as Error).message}`);
