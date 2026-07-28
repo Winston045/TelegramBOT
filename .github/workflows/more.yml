@@ -4,6 +4,7 @@ name: more-candidates
 # (вебхук дёргает repository_dispatch с типом more-candidates).
 
 on:
+  workflow_dispatch: {}
   repository_dispatch:
     types: [more-candidates]
 

@@ -87,6 +87,7 @@ jobs:
             PUBLISH_TIMES="$times" \
             PUBLISH_TZ_OFFSET="+03:00" \
             GH_REPO="${{ github.repository }}" \
+            GH_BRANCH="${{ github.ref_name }}" \
             GH_PAT="${{ secrets.GH_PAT }}"
       - name: Деплой tg-webhook
         run: supabase functions deploy tg-webhook --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"

@@ -51,9 +51,10 @@ const DEFAULT_TIMES = (Deno.env.get("PUBLISH_TIMES") ?? "09:00,12:30,15:00,18:00
   .filter(Boolean);
 const TZ_OFFSET = (Deno.env.get("PUBLISH_TZ_OFFSET") ?? "+03:00").trim();
 
-/** GH_PAT + GH_REPO — для /more: запуск сбора через GitHub Actions. */
+/** GH_PAT + GH_REPO + GH_BRANCH — для /more: запуск сбора через Actions. */
 const GH_PAT = Deno.env.get("GH_PAT")?.trim();
 const GH_REPO = Deno.env.get("GH_REPO")?.trim() ?? "Winston045/TelegramBOT";
+const GH_BRANCH = Deno.env.get("GH_BRANCH")?.trim() ?? "claude/starting-work-tpehs7";
 
 /** Времена публикации: настройка из бота перекрывает config.yaml. */
 async function getPublishTimes(): Promise<string[]> {
@@ -610,15 +611,20 @@ bot.command("more", async (ctx) => {
     );
     return;
   }
-  const res = await fetch(`https://api.github.com/repos/${GH_REPO}/dispatches`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${GH_PAT}`,
-      accept: "application/vnd.github+json",
-      "content-type": "application/json",
+  // workflow_dispatch, а не repository_dispatch: последнему нужно право
+  // Contents write, а у токена только Actions — и его здесь достаточно
+  const res = await fetch(
+    `https://api.github.com/repos/${GH_REPO}/actions/workflows/more.yml/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${GH_PAT}`,
+        accept: "application/vnd.github+json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ ref: GH_BRANCH }),
     },
-    body: JSON.stringify({ event_type: "more-candidates" }),
-  });
+  );
   if (res.status === 204) {
     await ctx.reply("Запустил сбор свежей партии. Карточки придут через несколько минут.");
   } else {
