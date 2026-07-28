@@ -1,9 +1,12 @@
 /**
  * Сбор кандидатов: источники → префильтр → дедуп по dHash →
- * vision-скоринг → подписи для топ-N → валидация → запись в candidates.
+ * анализ (оценка + подпись одним запросом) → валидация → запись в candidates.
  *
- * npm run collect -- --dry        — только источники + префильтр, без Gemini и базы.
- * npm run collect -- --keep 6 --top 2 — маленькая партия (тест): 6 на скоринг, 2 подписи.
+ * npm run collect -- --dry       — только источники + префильтр, без Gemini и базы.
+ * npm run collect -- --keep 6    — маленькая партия: 6 фото на анализ.
+ *
+ * Один запрос Gemini на фото (оценка + подпись сразу); все прошедшие порог
+ * пишутся в резерв (status=new), откуда send-candidates раздаёт карточки.
  */
 import { loadConfig } from "../src/config.js";
 import { dbCursorStore, memoryCursorStore } from "../src/cursors.js";
@@ -12,8 +15,8 @@ import { prefilter } from "../src/prefilter.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { getDb } from "../src/db.js";
 import { GeminiQuotaError, quotaTripped } from "../src/gemini.js";
-import { scoreImage, type VisionScore } from "../src/scoring.js";
-import { assembleCaptionHtml, generateCaption } from "../src/caption.js";
+import { analyzeImage } from "../src/analyze.js";
+import { assembleCaptionHtml } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 import { env } from "../src/env.js";
@@ -48,7 +51,6 @@ function numArg(name: string): number | undefined {
 }
 
 type HashedItem = CollectedItem & { imageHash: string; imageBuffer: Buffer };
-type ScoredItem = HashedItem & { vision: VisionScore };
 
 async function loadKnownHashes(): Promise<string[]> {
   const db = getDb();
@@ -133,63 +135,56 @@ async function main() {
   const hashed = await hashAndDedup(fresh, known);
   console.log(`уникальных: ${hashed.length}`);
 
-  console.log("vision-скоринг...");
-  const scored: ScoredItem[] = [];
-  for (const item of hashed) {
-    try {
-      const vision = await scoreImage(item.imageBuffer);
-      // цензуры нет: unsafe — только пометка в логе, решают редакторы
-      if (vision.unsafe) console.log(`  пометка unsafe: [${item.source}] ${item.sourceId}`);
-      scored.push({ ...item, vision });
-    } catch (err) {
-      console.warn(`  скоринг упал: [${item.source}] ${item.sourceId} — ${(err as Error).message}`);
-      if (err instanceof GeminiQuotaError && quotaTripped()) {
-        console.error("❌ дневная квота Gemini исчерпана — прекращаю скоринг до следующего запуска");
-        await notifyQuotaExhausted();
-        break;
-      }
-    }
-  }
-
-  scored.sort((a, b) => b.vision.score - a.vision.score);
-  const top = scored.slice(0, numArg("--top") ?? cfg.collect.daily_candidates);
-  console.log(`к генерации подписей: ${top.length}`);
-
+  // один запрос Gemini на фото: оценка + подпись сразу. Все прошедшие
+  // порог кандидаты пишутся в базу со статусом new — это резерв, из
+  // которого /more шлёт карточки вообще без обращения к Gemini
+  console.log("анализ (оценка + подпись одним запросом)...");
+  const minScore = cfg.collect.min_score ?? 45;
   let written = 0;
   let failed = 0;
-  for (const item of top) {
-    const row = {
-      source: item.source,
-      source_id: item.sourceId,
-      source_url: item.sourceUrl,
-      image_url: item.imageUrl,
-      image_hash: item.imageHash,
-      raw_title: item.title ?? null,
-      raw_desc: item.description ?? null,
-      raw_lang: item.lang,
-      year: item.year ?? null,
-      place: item.place ?? null,
-      tags: item.vision.tags,
-      score: item.vision.score,
-      license: item.license,
-      attribution: item.attribution ?? null,
-    };
+  let skippedDull = 0;
+
+  for (const item of hashed) {
+    // умные цитаты: полное описание со страницы архива как доп. контекст
+    let extraContext: string | undefined;
+    try {
+      extraContext = await ADAPTERS[item.source]?.details?.(item);
+    } catch {
+      extraContext = undefined;
+    }
 
     try {
-      // умные цитаты: полное описание со страницы архива как доп. контекст
-      let extraContext: string | undefined;
-      try {
-        extraContext = await ADAPTERS[item.source]?.details?.(item);
-      } catch {
-        extraContext = undefined;
+      const a = await analyzeImage(item, cfg, item.imageBuffer, extraContext);
+      // цензуры нет: unsafe — только пометка в логе, решают редакторы
+      if (a.unsafe) console.log(`  пометка unsafe: [${item.source}] ${item.sourceId}`);
+      if (a.score < minScore) {
+        skippedDull++;
+        console.log(`  скучное (score ${a.score} < ${minScore}): [${item.source}] ${item.sourceId}`);
+        continue;
       }
-      const generated = await generateCaption(item, cfg, item.imageBuffer, extraContext);
-      const captionHtml = assembleCaptionHtml(generated, item, cfg.channel);
-      const check = validateCaption(captionHtml, item);
 
+      const row = {
+        source: item.source,
+        source_id: item.sourceId,
+        source_url: item.sourceUrl,
+        image_url: item.imageUrl,
+        image_hash: item.imageHash,
+        raw_title: item.title ?? null,
+        raw_desc: item.description ?? null,
+        raw_lang: item.lang,
+        year: item.year ?? null,
+        place: item.place ?? null,
+        tags: a.tags,
+        score: a.score,
+        license: item.license,
+        attribution: item.attribution ?? null,
+      };
+
+      const captionHtml = assembleCaptionHtml(a, item, cfg.channel);
+      const check = validateCaption(captionHtml, item);
       const { error } = await db.from("candidates").upsert(
         check.ok
-          ? { ...row, caption_html: captionHtml, quote_kind: generated.quote_kind, status: "new" }
+          ? { ...row, caption_html: captionHtml, quote_kind: a.quote_kind, status: "new" }
           : { ...row, status: "failed" },
         { onConflict: "source,source_id", ignoreDuplicates: true },
       );
@@ -203,19 +198,18 @@ async function main() {
       }
     } catch (err) {
       failed++;
-      console.warn(`  подпись упала: [${item.source}] ${item.sourceId} — ${(err as Error).message}`);
-      await db
-        .from("candidates")
-        .upsert({ ...row, status: "failed" }, { onConflict: "source,source_id", ignoreDuplicates: true });
+      console.warn(`  анализ упал: [${item.source}] ${item.sourceId} — ${(err as Error).message}`);
       if (err instanceof GeminiQuotaError && quotaTripped()) {
-        console.error("❌ дневная квота Gemini исчерпана — прекращаю генерацию до следующего запуска");
+        console.error("❌ дневная квота Gemini исчерпана — прекращаю до следующего запуска");
         if (written === 0) await notifyQuotaExhausted();
         break;
       }
     }
   }
 
-  console.log(`готово: записано кандидатов ${written}, брака ${failed}`);
+  console.log(
+    `готово: в резерв записано ${written}, брака ${failed}, скучных отсеяно ${skippedDull}`,
+  );
   await heartbeatOk("collector");
 }
 

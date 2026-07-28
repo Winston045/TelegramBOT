@@ -6,13 +6,11 @@ export type VisionScore = {
   unsafe: boolean;
 };
 
-const SCORING_PROMPT = `Ты отбираешь исторические фотографии для публичного телеграм-канала
-о ВОЕННОЙ ИСТОРИИ: Первая мировая, Вторая мировая, холодная война.
-Оцени снимок и верни строго JSON без пояснений:
+/** Схема полей оценки в JSON-ответе — общая для скоринга и анализа. */
+export const SCORE_FIELDS_SCHEMA = `"score": <0-100>, "tags": {"period": "<эпоха, напр. "WW2" | "interwar" | "WW1" | "cold_war">", "region": "<регион, напр. "europe" | "ussr" | "usa" | "asia">", "subject": "<тема одним словом, напр. "armor" | "aviation" | "street" | "portrait" | "navy" | "homefront">"}, "unsafe": <true|false>`;
 
-{"score": <0-100>, "tags": {"period": "<эпоха, напр. "WW2" | "interwar" | "WW1" | "cold_war">", "region": "<регион, напр. "europe" | "ussr" | "usa" | "asia">", "subject": "<тема одним словом, напр. "armor" | "aviation" | "street" | "portrait" | "navy" | "homefront">"}, "unsafe": <true|false>}
-
-Критерии score:
+/** Критерии оценки — общий блок для скоринга и анализа. */
+export const SCORING_CRITERIA = `Критерии score:
 - ГЛАВНОЕ — военная тематика: солдаты, техника, фронт, флот, авиация,
   военный тыл, руины войны, парады, пленные, военачальники. Такие сюжеты
   оценивай высоко (60-100 при хорошем кадре);
@@ -33,6 +31,14 @@ const SCORING_PROMPT = `Ты отбираешь исторические фот�
 unsafe = true, если на снимке: тела погибших, казни, графическое насилие,
 нацистская символика крупным планом. Это только пометка для редакторов,
 score ставь по общим критериям.`;
+
+const SCORING_PROMPT = `Ты отбираешь исторические фотографии для публичного телеграм-канала
+о ВОЕННОЙ ИСТОРИИ: Первая мировая, Вторая мировая, холодная война.
+Оцени снимок и верни строго JSON без пояснений:
+
+{${SCORE_FIELDS_SCHEMA}}
+
+${SCORING_CRITERIA}`;
 
 export async function scoreImage(image: string | Buffer): Promise<VisionScore> {
   const img = await imagePart(image);

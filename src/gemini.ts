@@ -37,6 +37,24 @@ export function quotaTripped(): boolean {
   return consecutiveQuotaFails >= QUOTA_TRIP_AFTER;
 }
 
+/**
+ * Пул ключей: при окончательном 429 на текущем ключе переключаемся на
+ * следующий — квота у каждого своя. Предохранитель срабатывает, только
+ * когда квоту сожгли ВСЕ ключи.
+ */
+let keyIdx = 0;
+function currentKey(): string {
+  const keys = env.geminiApiKeys;
+  return keys[keyIdx % keys.length]!;
+}
+function rotateKey(): boolean {
+  const keys = env.geminiApiKeys;
+  if (keys.length < 2) return false;
+  keyIdx = (keyIdx + 1) % keys.length;
+  console.log(`gemini: квота ключа кончилась, переключаюсь на ключ #${keyIdx + 1} из ${keys.length}`);
+  return true;
+}
+
 type ModelInfo = { name: string; supportedGenerationMethods?: string[] };
 
 let resolvedModel: string | undefined;
@@ -67,7 +85,7 @@ async function resolveModel(): Promise<string> {
   if (resolvedModel) return resolvedModel;
   try {
     const res = await fetch(`${BASE}?pageSize=1000`, {
-      headers: { "x-goog-api-key": env.geminiApiKey },
+      headers: { "x-goog-api-key": currentKey() },
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) throw new Error(`ListModels HTTP ${res.status}`);
@@ -102,79 +120,88 @@ export async function geminiJson<T>(
     throw new GeminiQuotaError("дневная квота Gemini исчерпана — предохранитель разомкнут");
   }
 
-  let quotaFailure = false;
+  const totalKeys = env.geminiApiKeys.length;
   let lastError: Error | undefined;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const model = opts.model ?? (await resolveModel());
-    const url = `${BASE}/${model}:generateContent`;
 
-    const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
-    if (wait > 0) await sleep(wait);
-    lastRequestAt = Date.now();
+  for (let keyTry = 0; keyTry < totalKeys; keyTry++) {
+    let quotaFailure = false;
 
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-goog-api-key": env.geminiApiKey,
-        },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts }],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: opts.temperature ?? 0.3,
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const model = opts.model ?? (await resolveModel());
+      const url = `${BASE}/${model}:generateContent`;
+
+      const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
+      if (wait > 0) await sleep(wait);
+      lastRequestAt = Date.now();
+
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-goog-api-key": currentKey(),
           },
-        }),
-        // зависший запрос не должен вешать весь суточный сбор
-        signal: AbortSignal.timeout(90_000),
-      });
-    } catch (err) {
-      lastError = new Error(`gemini: сеть/таймаут — ${(err as Error).message}`);
-      await sleep(2000 * attempt);
-      continue;
+          body: JSON.stringify({
+            contents: [{ role: "user", parts }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: opts.temperature ?? 0.3,
+            },
+          }),
+          // зависший запрос не должен вешать весь суточный сбор
+          signal: AbortSignal.timeout(90_000),
+        });
+      } catch (err) {
+        lastError = new Error(`gemini: сеть/таймаут — ${(err as Error).message}`);
+        await sleep(2000 * attempt);
+        continue;
+      }
+
+      if (res.status === 429) {
+        quotaFailure = true;
+        lastError = new Error(`gemini: HTTP 429`);
+        // есть запасные ключи — не ждём минутные окна, после второй
+        // неудачи сразу переключаемся; единственный ключ — ждём долго
+        if (totalKeys > 1 && attempt >= 2) break;
+        await sleep(20_000 * attempt);
+        continue;
+      }
+      if (res.status >= 500) {
+        lastError = new Error(`gemini: HTTP ${res.status}`);
+        await sleep(2000 * 2 ** (attempt - 1));
+        continue;
+      }
+      // модель протухла — вычёркиваем и на следующей попытке выбираем заново
+      if (res.status === 404 && !opts.model) {
+        deadModels.add(model);
+        resolvedModel = undefined;
+        lastError = new Error(`gemini: модель ${model} недоступна (404)`);
+        continue;
+      }
+      if (!res.ok) {
+        throw new Error(`gemini: HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
+      }
+
+      const body = (await res.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      const text = body.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error("gemini: пустой ответ");
+      consecutiveQuotaFails = 0;
+      return JSON.parse(text) as T;
     }
 
-    if (res.status === 429) {
-      // квота бесплатного тарифа считается минутными окнами — ждём долго
-      quotaFailure = true;
-      lastError = new Error(`gemini: HTTP 429`);
-      await sleep(20_000 * attempt);
-      continue;
-    }
-    if (res.status >= 500) {
-      lastError = new Error(`gemini: HTTP ${res.status}`);
-      await sleep(2000 * 2 ** (attempt - 1));
-      continue;
-    }
-    // модель протухла — вычёркиваем и на следующей попытке выбираем заново
-    if (res.status === 404 && !opts.model) {
-      deadModels.add(model);
-      resolvedModel = undefined;
-      lastError = new Error(`gemini: модель ${model} недоступна (404)`);
-      continue;
-    }
-    if (!res.ok) {
-      throw new Error(`gemini: HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
-    }
-
-    const body = (await res.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
-    const text = body.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("gemini: пустой ответ");
-    consecutiveQuotaFails = 0;
-    return JSON.parse(text) as T;
+    // не квотная ошибка — ротация ключей не поможет
+    if (!quotaFailure) throw lastError ?? new Error("gemini: все попытки исчерпаны");
+    // квота этого ключа кончилась — пробуем следующий
+    if (keyTry < totalKeys - 1) rotateKey();
   }
 
-  if (quotaFailure) {
-    consecutiveQuotaFails++;
-    throw new GeminiQuotaError(
-      `gemini: HTTP 429 после ${MAX_ATTEMPTS} попыток (подряд: ${consecutiveQuotaFails})`,
-    );
-  }
-  throw lastError ?? new Error("gemini: все попытки исчерпаны");
+  consecutiveQuotaFails++;
+  throw new GeminiQuotaError(
+    `gemini: HTTP 429 на всех ключах (${totalKeys}) после ретраев (подряд: ${consecutiveQuotaFails})`,
+  );
 }
 
 /**

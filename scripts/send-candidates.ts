@@ -17,6 +17,14 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** --limit 3 - переопределить число карточек (по умолчанию daily_candidates). */
+function limitArg(): number | undefined {
+  const i = process.argv.indexOf("--limit");
+  if (i === -1) return undefined;
+  const n = Number(process.argv[i + 1]);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 async function recentSubjectCounts(): Promise<Map<string, number>> {
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
   const { data, error } = await getDb()
@@ -48,7 +56,7 @@ async function main() {
   const picked = pickBalanced(
     fresh,
     await recentSubjectCounts(),
-    cfg.collect.daily_candidates,
+    limitArg() ?? cfg.collect.daily_candidates,
     cfg.balance.max_same_tag_per_week,
   );
   console.log(`кандидатов new: ${fresh.length}, после балансира: ${picked.length}`);

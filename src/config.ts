@@ -20,6 +20,8 @@ export type AppConfig = {
     min_image_width: number;
     min_year?: number;
     max_year?: number;
+    /** ниже этой оценки кандидат в резерв не пишется (по умолчанию 45) */
+    min_score?: number;
   };
   publish: {
     times: string[];

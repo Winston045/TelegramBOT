@@ -34,4 +34,17 @@ export const env = {
   get geminiApiKey() {
     return required("GEMINI_API_KEY");
   },
+  /**
+   * Пул ключей Gemini: GEMINI_API_KEYS через запятую (несколько бесплатных
+   * ключей = кратная квота), иначе одиночный GEMINI_API_KEY.
+   */
+  get geminiApiKeys(): string[] {
+    const raw = process.env.GEMINI_API_KEYS || required("GEMINI_API_KEY");
+    const keys = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!keys.length) throw new Error("ни одного ключа Gemini не задано");
+    return keys;
+  },
 };

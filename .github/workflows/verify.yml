@@ -25,6 +25,7 @@ jobs:
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
       NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
       EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
     steps:
@@ -68,6 +69,6 @@ jobs:
         run: npm run collect
       - name: "Шаг 4 (мини): 2 подписи для теста"
         if: steps.mode.outputs.mode == 'mini'
-        run: npm run collect -- --keep 6 --top 2
+        run: npm run collect -- --keep 2
       - name: "Подписи на сверку глазами"
         run: npm run review-captions -- 10

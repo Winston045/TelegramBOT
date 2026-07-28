@@ -23,6 +23,7 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
       NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
       EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
     steps:

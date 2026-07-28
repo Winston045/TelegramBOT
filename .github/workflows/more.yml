@@ -23,6 +23,7 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
       NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
       EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
     steps:
@@ -32,7 +33,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci || npm install
-      - name: Сбор маленькой партии
-        run: npm run collect -- --keep 8 --top 3
+      # сначала резерв: готовые кандидаты в базе не тратят квоту Gemini
+      - name: Карточки из резерва
+        id: reserve
+        run: |
+          out=$(npm run send-candidates -- --limit 3 | tee /dev/stderr) || exit 1
+          sent=$(echo "$out" | grep -oP 'отправлено карточек: \K\d+' || echo 0)
+          echo "sent=$sent" >> "$GITHUB_OUTPUT"
+      - name: Сбор новой партии (резерв пуст)
+        if: steps.reserve.outputs.sent == '0'
+        run: npm run collect -- --keep 8
       - name: Отправка карточек
-        run: npm run send-candidates
+        if: steps.reserve.outputs.sent == '0'
+        run: npm run send-candidates -- --limit 3

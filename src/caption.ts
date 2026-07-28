@@ -8,7 +8,7 @@ export type GeneratedCaption = {
   quote_kind: "observation" | "context";
 };
 
-const FEW_SHOT = `Примеры эталонного стиля (регистр речи держать такой же):
+export const FEW_SHOT = `Примеры эталонного стиля (регистр речи держать такой же):
 
 Пример 1:
 caption: <b>Солдаты-мусульмане</b> Российской императорской армии на утренней молитве. <i>1915 год.</i>
@@ -20,29 +20,25 @@ caption: <b>Танкисты</b> 61-й гвардейской Свердловс
 quote: Надпись на стволе пушки — «Победа за нами». У машины отсутствует третий каток ходовой части.
 quote_kind: observation`;
 
-export function buildCaptionPrompt(
-  item: RawItem,
-  glossary: Record<string, string>,
-  extraContext?: string,
-): string {
-  const glossaryLines = Object.entries(glossary)
-    .map(([from, to]) => `  "${from}" → "${to}"`)
-    .join("\n");
-
+/** Блок метаданных снимка — общий для промптов подписи и анализа. */
+export function metadataBlock(item: RawItem, extraContext?: string): string {
   const extra = extraContext
     ? `\nПолное описание со страницы архива (тоже источник фактов, за его пределы не выходить):\n${extraContext}\n`
     : "";
-
-  return `Ты готовишь подпись к исторической фотографии для русскоязычного телеграм-канала.
-
-Исходные метаданные (язык: ${item.lang}):
+  return `Исходные метаданные (язык: ${item.lang}):
 - заголовок: ${item.title ?? "(нет)"}
 - описание: ${item.description ?? "(нет)"}
 - год: ${item.year ?? "(нет)"}
 - место: ${item.place ?? "(нет)"}
-${extra}
+${extra}`;
+}
 
-Жёсткие правила:
+/** Жёсткие правила подписи — общий блок для промптов подписи и анализа. */
+export function captionRules(item: RawItem, glossary: Record<string, string>): string {
+  const glossaryLines = Object.entries(glossary)
+    .map(([from, to]) => `  "${from}" → "${to}"`)
+    .join("\n");
+  return `Жёсткие правила подписи:
 1. НЕ ДОБАВЛЯЙ фактов, которых нет во входных данных или не видно на самом фото.
    Нет точной даты — пиши «начало 1943», а не выдумывай число.
 2. Топонимы — в названии, актуальном на дату снимка.
@@ -63,7 +59,18 @@ ${glossaryLines || "  (пусто)"}
    - пересказ caption другими словами;
    - технические сведения о негативе, съёмке, архиве.
    Правило простое: если цитата не учит читателя ничему новому —
-   верни quote: "" (пустую строку). Пост без цитаты лучше поста с пустой.
+   верни quote: "" (пустую строку). Пост без цитаты лучше поста с пустой.`;
+}
+
+export function buildCaptionPrompt(
+  item: RawItem,
+  glossary: Record<string, string>,
+  extraContext?: string,
+): string {
+  return `Ты готовишь подпись к исторической фотографии для русскоязычного телеграм-канала.
+
+${metadataBlock(item, extraContext)}
+${captionRules(item, glossary)}
 
 ${FEW_SHOT}
 
