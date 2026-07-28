@@ -1,10 +1,10 @@
 /**
- * Этап 7 — публикатор. Крон каждые 15 минут.
+ * Этап 7 - публикатор. Крон каждые 15 минут.
  *
- * Если сегодня прошло больше слотов publish.times, чем уже опубликовано, —
+ * Если сегодня прошло больше слотов publish.times, чем уже опубликовано, -
  * публикуем верхний пост очереди: сообщение в канал, channel_msg_id в базу,
  * хэш в seen_hashes, подтверждение со ссылкой в чат редакторов.
- * При короткой очереди — предупреждение.
+ * При короткой очереди - предупреждение.
  */
 import { loadConfig } from "../src/config.js";
 import { getDb } from "../src/db.js";
@@ -88,7 +88,7 @@ async function main() {
 
   const post = queue?.[0];
   if (!post) {
-    // если всё в очереди запланировано на будущее — это не пустая очередь
+    // если всё в очереди запланировано на будущее - это не пустая очередь
     const { count: future } = await db
       .from("candidates")
       .select("id", { count: "exact", head: true })
@@ -128,7 +128,7 @@ async function main() {
     );
   if (hashErr) throw new Error(`запись seen_hashes: ${hashErr.message}`);
 
-  // ссылка — на канал, куда реально публикуем (env), а не из config:
+  // ссылка - на канал, куда реально публикуем (env), а не из config:
   // в тестовом режиме это разные каналы
   const target = env.channelId.startsWith("@") ? env.channelId : cfg.channel.id;
   const postUrl = `https://t.me/${channelSlug(target)}/${msgId}`;
@@ -140,7 +140,7 @@ async function main() {
 
   let confirmation = `Опубликован пост #${post.id}: ${postUrl}\nВ очереди осталось: ${left}.`;
   if (left < cfg.publish.min_queue_warning) {
-    confirmation += `\nОчередь короче ${cfg.publish.min_queue_warning} — стоит одобрить ещё.`;
+    confirmation += `\nОчередь короче ${cfg.publish.min_queue_warning} - стоит одобрить ещё.`;
   }
   await sendMessageHtml(env.editorsChatId, confirmation);
 
@@ -153,7 +153,7 @@ main().catch(async (err) => {
   try {
     await heartbeatError("publisher", String(err));
   } catch {
-    // база недоступна — heartbeat-проверка увидит устаревший last_ok
+    // база недоступна - heartbeat-проверка увидит устаревший last_ok
   }
   process.exit(1);
 });

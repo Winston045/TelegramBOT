@@ -8,7 +8,7 @@ export function buildServiceLine(c: {
   source: string;
   quote_kind: string | null;
 }): string {
-  return `<i>#${c.id} · ${c.source} · ${c.quote_kind ?? "—"}</i>`;
+  return `<i>#${c.id} · ${c.source} · ${c.quote_kind ?? "-"}</i>`;
 }
 
 /** Достаёт id кандидата из текста/подписи карточки ("#123 · loc · …"). */

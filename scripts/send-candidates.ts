@@ -1,5 +1,5 @@
 /**
- * Этап 5 — раз в сутки отдать свежих кандидатов редакторам.
+ * Этап 5 - раз в сутки отдать свежих кандидатов редакторам.
  *
  * Берёт из candidates status='new' по убыванию score, прогоняет через
  * балансир тегов, шлёт карточки в групповой чат и помечает shown.
@@ -67,7 +67,7 @@ async function main() {
     };
 
     try {
-      // служебная строка едет в той же подписи; если вдруг не влезает —
+      // служебная строка едет в той же подписи; если вдруг не влезает -
       // отдельным ответом на карточку
       if (visibleLength(withService) <= CAPTION_LIMIT) {
         await sendPhotoHtml(env.editorsChatId, c.image_url, withService, buttons);
@@ -99,7 +99,7 @@ main().catch(async (err) => {
   try {
     await heartbeatError("collector", String(err));
   } catch {
-    // база недоступна — heartbeat-проверка увидит устаревший last_ok
+    // база недоступна - heartbeat-проверка увидит устаревший last_ok
   }
   process.exit(1);
 });

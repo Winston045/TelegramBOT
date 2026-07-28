@@ -68,11 +68,11 @@ async function main() {
     willGo > 0
       ? `Сегодня выйдут: ${slotsLeft.slice(0, willGo).join(", ")} (МСК)`
       : queued === 0
-        ? "Сегодня публиковать нечего — одобрите карточки"
+        ? "Сегодня публиковать нечего - одобрите карточки"
         : `Слоты на сегодня уже прошли, очередь пойдёт завтра с ${times[0]}`,
     `Уже вышло сегодня: ${publishedToday}`,
     "",
-    `Последний сбор: ${moscow(hb?.last_ok ?? null)}${hb?.last_error ? " — была ошибка, смотрите /status" : ""}`,
+    `Последний сбор: ${moscow(hb?.last_ok ?? null)}${hb?.last_error ? " - была ошибка, смотрите /status" : ""}`,
   ];
 
   await sendMessageHtml(env.editorsChatId, lines.join("\n"));

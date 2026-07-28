@@ -1,22 +1,22 @@
 /**
- * Вебхук бота (Supabase Edge Function, Deno + grammY) — админ-панель в чате.
+ * Вебхук бота (Supabase Edge Function, Deno + grammY) - админ-панель в чате.
  *
  * Кнопки под карточками: Одобрить / Мимо. В очереди: Сейчас / Убрать.
  * У опубликованных: Удалить из канала.
  *
  * Команды (только вайтлист EDITOR_USER_IDS, остальных молча игнорируем):
- *   /status           — сводка: черновики, очередь, вышло, сбор, дедуп
- *   /queue            — очередь с кнопками
- *   /schedule         — панель расписания: слоты и число постов (МСК)
- *   /published        — последние вышедшие с кнопками удаления
- *   /ok, /skip        — то же, что кнопки (реплаем на карточку)
- *   /quote <текст>    — заменить цитату (реплаем)
- *   текст реплаем     — заменить подпись целиком
- *   /undo             — удалить последний опубликованный
+ *   /status           - сводка: черновики, очередь, вышло, сбор, дедуп
+ *   /queue            - очередь с кнопками
+ *   /schedule         - панель расписания: слоты и число постов (МСК)
+ *   /published        - последние вышедшие с кнопками удаления
+ *   /ok, /skip        - то же, что кнопки (реплаем на карточку)
+ *   /quote <текст>    - заменить цитату (реплаем)
+ *   текст реплаем     - заменить подпись целиком
+ *   /undo             - удалить последний опубликованный
  *
  * Деплой: workflow deploy-webhook (ставит и вебхук с callback_query).
  */
-// не npm: — свежие бандлы с npm-зависимостями переставали подниматься
+// не npm: - свежие бандлы с npm-зависимостями переставали подниматься
 // (июльский инцидент: health отвечал, любая функция с npm: висла);
 // deno.land/x и jsr идут другим пайплайном и грузятся стабильно
 import { Bot, webhookCallback } from "https://deno.land/x/grammy@v1.45.1/mod.ts";
@@ -51,7 +51,7 @@ const DEFAULT_TIMES = (Deno.env.get("PUBLISH_TIMES") ?? "09:00,12:30,15:00,18:00
   .filter(Boolean);
 const TZ_OFFSET = (Deno.env.get("PUBLISH_TZ_OFFSET") ?? "+03:00").trim();
 
-/** GH_PAT + GH_REPO + GH_BRANCH — для /more: запуск сбора через Actions. */
+/** GH_PAT + GH_REPO + GH_BRANCH - для /more: запуск сбора через Actions. */
 const GH_PAT = Deno.env.get("GH_PAT")?.trim();
 const GH_REPO = Deno.env.get("GH_REPO")?.trim() ?? "Winston045/TelegramBOT";
 const GH_BRANCH = Deno.env.get("GH_BRANCH")?.trim() ?? "claude/starting-work-tpehs7";
@@ -104,7 +104,7 @@ function upcomingSlots(count: number, times: string[]): Array<{ label: string; i
 // grammY перед первым апдейтом зовёт getMe; когда api.telegram.org
 // недоступен из сети Supabase (было 27.07), этот вызов висит без таймаута
 // и вешает весь воркер. Identity бота задаём заранее (BOT_INFO кладёт
-// деплой, зашитое значение — запасной вариант), вызовам API — таймаут.
+// деплой, зашитое значение - запасной вариант), вызовам API - таймаут.
 const FALLBACK_BOT_INFO = {
   id: 8845582261,
   is_bot: true as const,
@@ -128,7 +128,7 @@ const bot = new Bot(requireEnv("BOT_TOKEN"), {
   client: { timeoutSeconds: 25 },
 });
 // имена с префиксом SUPABASE_ в secrets функций зарезервированы, поэтому
-// свой ключ туда не положить — берём служебный, он всегда есть в среде
+// свой ключ туда не положить - берём служебный, он всегда есть в среде
 const db = createClient(
   requireEnv("SUPABASE_URL"),
   Deno.env.get("SUPABASE_SECRET_KEY") ?? requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
@@ -143,7 +143,7 @@ const EDITORS = new Set(
     .filter((n) => Number.isFinite(n)),
 );
 
-// не редактор — молча игнорируем (и сообщения, и нажатия кнопок)
+// не редактор - молча игнорируем (и сообщения, и нажатия кнопок)
 bot.use((ctx, next) => {
   if (ctx.from && EDITORS.has(ctx.from.id)) return next();
 });
@@ -163,7 +163,7 @@ function headline(captionHtml: string | null): string {
 }
 
 function moscowTime(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Intl.DateTimeFormat("ru-RU", {
     timeZone: "Europe/Moscow",
     day: "2-digit",
@@ -243,7 +243,7 @@ async function renderPanel(
       reply_markup: { inline_keyboard: panelKeyboard(times) },
     });
   } catch {
-    // "message is not modified" при повторном нажатии — не ошибка
+    // "message is not modified" при повторном нажатии - не ошибка
   }
 }
 
@@ -261,8 +261,8 @@ bot.on("callback_query:data", async (ctx) => {
           return;
         }
         const label = result.includes("опубликован")
-          ? `Опубликовано — ${who}`
-          : `В очереди — ${who}`;
+          ? `Опубликовано - ${who}`
+          : `В очереди - ${who}`;
         await ctx.editMessageReplyMarkup({ reply_markup: doneKeyboard(label) });
         await ctx.answerCallbackQuery({ text: label });
         if (result.includes("https://")) await ctx.reply(result);
@@ -284,7 +284,7 @@ bot.on("callback_query:data", async (ctx) => {
           await ctx.deleteMessage();
         } catch {
           await ctx.editMessageReplyMarkup({
-            reply_markup: doneKeyboard(`Пропущено — ${who}`),
+            reply_markup: doneKeyboard(`Пропущено - ${who}`),
           });
         }
         await ctx.answerCallbackQuery({ text: "Пропущено, карточка убрана" });
@@ -322,7 +322,7 @@ bot.on("callback_query:data", async (ctx) => {
         const label = isoShort.slice(5, 16).replace("-", ".").replace("T", " ");
         const [mm, rest] = [label.slice(0, 2), label.slice(3)];
         await ctx.editMessageReplyMarkup({
-          reply_markup: doneKeyboard(`Выйдет ${rest.slice(0, 2)}.${mm} в ${rest.slice(3)} — ${who}`),
+          reply_markup: doneKeyboard(`Выйдет ${rest.slice(0, 2)}.${mm} в ${rest.slice(3)} - ${who}`),
         });
         await ctx.answerCallbackQuery({ text: "Запланировано" });
         return;
@@ -355,7 +355,7 @@ bot.on("callback_query:data", async (ctx) => {
         }
         const url = await publishCandidate(data);
         await ctx.editMessageReplyMarkup({
-          reply_markup: doneKeyboard(`Опубликовано — ${who}`),
+          reply_markup: doneKeyboard(`Опубликовано - ${who}`),
         });
         await ctx.answerCallbackQuery({ text: "Опубликовано" });
         await ctx.reply(`Пост #${id} опубликован: ${url}`);
@@ -373,7 +373,7 @@ bot.on("callback_query:data", async (ctx) => {
           return;
         }
         await ctx.editMessageReplyMarkup({
-          reply_markup: doneKeyboard(`Убрано из очереди — ${who}`),
+          reply_markup: doneKeyboard(`Убрано из очереди - ${who}`),
         });
         await ctx.answerCallbackQuery({ text: "Убрано из очереди" });
         return;
@@ -395,7 +395,7 @@ bot.on("callback_query:data", async (ctx) => {
           .eq("id", id);
         if (updErr) throw new Error(updErr.message);
         await ctx.editMessageReplyMarkup({
-          reply_markup: doneKeyboard(`Подпись заменена — ${who}`),
+          reply_markup: doneKeyboard(`Подпись заменена - ${who}`),
         });
         await ctx.answerCallbackQuery({ text: "Подпись заменена" });
         return;
@@ -422,7 +422,7 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.api.deleteMessage(CHANNEL_ID, Number(data.channel_msg_id));
         await db.from("candidates").update({ status: "rejected" }).eq("id", id);
         await ctx.editMessageReplyMarkup({
-          reply_markup: doneKeyboard(`Удалено из канала — ${who}`),
+          reply_markup: doneKeyboard(`Удалено из канала - ${who}`),
         });
         await ctx.answerCallbackQuery({ text: "Удалено из канала" });
         return;
@@ -450,7 +450,7 @@ bot.on("callback_query:data", async (ctx) => {
         return;
       }
       case "tadd": {
-        await ctx.editMessageText("Новый слот — выберите час (МСК):", {
+        await ctx.editMessageText("Новый слот - выберите час (МСК):", {
           reply_markup: { inline_keyboard: hourKeyboard() },
         });
         await ctx.answerCallbackQuery();
@@ -463,7 +463,7 @@ bot.on("callback_query:data", async (ctx) => {
           return;
         }
         await ctx.editMessageText(
-          `Час ${String(hour).padStart(2, "0")} — выберите минуты (МСК):`,
+          `Час ${String(hour).padStart(2, "0")} - выберите минуты (МСК):`,
           { reply_markup: { inline_keyboard: minuteKeyboard(hour) } },
         );
         await ctx.answerCallbackQuery();
@@ -553,14 +553,14 @@ bot.command("status", async (ctx) => {
     `Собрано, ещё не отправлено: ${fresh}`,
     `В очереди публикации: ${queued}`,
     `Вышло за сутки: ${today ?? 0} (всего: ${published})`,
-    `Расписание: ${times.length} в день — ${times.join(", ")} МСК (менять: /schedule)`,
+    `Расписание: ${times.length} в день - ${times.join(", ")} МСК (менять: /schedule)`,
     "",
-    `Последний сбор: ${moscowTime(hb?.last_ok ?? null)}${hb?.last_error ? " — была ошибка" : ""}`,
+    `Последний сбор: ${moscowTime(hb?.last_ok ?? null)}${hb?.last_error ? " - была ошибка" : ""}`,
     `База дедупа: ${seen ?? 0} фото`,
     "",
     INSTANT_PUBLISH
-      ? "Режим: тестовый — одобрение публикует сразу"
-      : "Режим: боевой — публикация по расписанию",
+      ? "Режим: тестовый - одобрение публикует сразу"
+      : "Режим: боевой - публикация по расписанию",
   ];
   await ctx.reply(lines.join("\n"));
 });
@@ -612,7 +612,7 @@ bot.command("more", async (ctx) => {
     return;
   }
   // workflow_dispatch, а не repository_dispatch: последнему нужно право
-  // Contents write, а у токена только Actions — и его здесь достаточно
+  // Contents write, а у токена только Actions - и его здесь достаточно
   const res = await fetch(
     `https://api.github.com/repos/${GH_REPO}/actions/workflows/more.yml/dispatches`,
     {
@@ -717,7 +717,7 @@ bot.command("undo", async (ctx) => {
   if (error) throw new Error(error.message);
   const last = data[0];
   if (!last?.channel_msg_id) {
-    await ctx.reply("Опубликованных постов нет — удалять нечего.");
+    await ctx.reply("Опубликованных постов нет - удалять нечего.");
     return;
   }
   await ctx.api.deleteMessage(CHANNEL_ID, Number(last.channel_msg_id));
@@ -729,7 +729,7 @@ bot.command("undo", async (ctx) => {
   await ctx.reply(`Пост #${last.id} удалён из канала.`);
 });
 
-// реплай обычным текстом — предложить замену подписи (с подтверждением:
+// реплай обычным текстом - предложить замену подписи (с подтверждением:
 // живой тест показал, что случайный реплай "ok" молча стирал подпись)
 bot.on("message:text", async (ctx) => {
   if (ctx.message.text.startsWith("/")) return;
@@ -741,7 +741,7 @@ bot.on("message:text", async (ctx) => {
     await ctx.reply(
       "Короткий реплай не считаю правкой подписи. " +
         "Одобрить или пропустить пост можно кнопками под карточкой; " +
-        "чтобы заменить подпись — ответьте на карточку полным новым текстом.",
+        "чтобы заменить подпись - ответьте на карточку полным новым текстом.",
     );
     return;
   }
@@ -773,7 +773,7 @@ bot.on("message:text", async (ctx) => {
     .eq("id", id);
   if (updErr) throw new Error(updErr.message);
 
-  await ctx.reply(`Новая подпись для поста #${id} — проверьте и подтвердите:\n\n${updated}`, {
+  await ctx.reply(`Новая подпись для поста #${id} - проверьте и подтвердите:\n\n${updated}`, {
     parse_mode: "HTML",
     link_preview_options: { is_disabled: true },
     reply_markup: {
