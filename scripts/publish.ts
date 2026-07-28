@@ -10,7 +10,7 @@ import { loadConfig } from "../src/config.js";
 import { getDb } from "../src/db.js";
 import { env } from "../src/env.js";
 import { channelSlug } from "../src/tme.js";
-import { countPublishedToday, shouldPublishNow } from "../src/schedule.js";
+import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/schedule.js";
 import { loadPublishTimes } from "../src/settings.js";
 import { sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
@@ -99,11 +99,30 @@ async function main() {
       await heartbeatOk("publisher");
       return;
     }
+    // предупреждаем один раз на слот: крон ходит каждые 15 минут, и без
+    // этой защиты пустая очередь превращается в спам (живой прогон)
+    const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(now);
+    const slotKey = `${ymd}:${slotsPassed(now, times, tz)}`;
+    const { data: warned } = await db
+      .from("settings")
+      .select("value")
+      .eq("key", "empty_queue_warned")
+      .maybeSingle();
+    if (warned?.value === slotKey) {
+      console.log(`слот наступил, очередь пуста — уже предупреждали (${slotKey})`);
+      await heartbeatOk("publisher");
+      return;
+    }
     console.log("слот наступил, но очередь пуста");
     await sendMessageHtml(
       env.editorsChatId,
       "Слот публикации пропущен: очередь пуста. Одобрите кандидатов.",
     );
+    await db.from("settings").upsert({
+      key: "empty_queue_warned",
+      value: slotKey,
+      updated_at: new Date().toISOString(),
+    });
     await heartbeatOk("publisher");
     return;
   }
