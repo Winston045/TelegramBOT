@@ -23,11 +23,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci || npm install
-      # "style" в триггер-файле - выгрузить тексты постов канала вместо отчёта
+      # "style" в триггер-файле - выгрузить тексты постов канала вместо
+      # отчёта; "before:5000" - нырнуть в архив старше поста #5000
       - name: Отчёт
         run: |
           if grep -q style .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/channel-posts.ts 30
+            before=$(grep -oP 'before:\K\d+' .github/report.trigger || true)
+            npx tsx scripts/channel-posts.ts 30 ${before:+--before $before}
           else
             npm run review-captions -- 15
           fi

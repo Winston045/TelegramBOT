@@ -9,6 +9,13 @@ import { channelSlug } from "../src/tme.js";
 
 const WANT = Number(process.argv[2]) || 20;
 
+/** --before 5000 - начать с постов старше этого id (нырнуть в архив). */
+function beforeArg(): number | undefined {
+  const i = process.argv.indexOf("--before");
+  const n = Number(process.argv[i + 1]);
+  return i !== -1 && Number.isFinite(n) && n > 1 ? n : undefined;
+}
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -45,8 +52,8 @@ async function fetchPage(slug: string, before?: number): Promise<string> {
 
 async function main() {
   const slug = channelSlug(loadConfig().channel.id);
-  const found: Array<{ id: number; text: string }> = [];
-  let before: number | undefined;
+  const found: Array<{ id: number; date: string; text: string }> = [];
+  let before = beforeArg();
 
   for (let page = 0; page < 15 && found.length < WANT; page++) {
     const html = await fetchPage(slug, before);
@@ -61,8 +68,9 @@ async function main() {
       const chunk = html.slice(markers[i]!.start, end);
       const m = chunk.match(TEXT_BLOCK);
       if (!m) continue;
+      const date = chunk.match(/datetime="(\d{4}-\d{2}-\d{2})/)?.[1] ?? "?";
       const text = textFromHtml(m[1]!);
-      if (text.length > 60) found.push({ id: markers[i]!.id, text });
+      if (text.length > 60) found.push({ id: markers[i]!.id, date, text });
     }
 
     before = Math.min(...markers.map((m) => m.id));
@@ -76,7 +84,7 @@ async function main() {
   unique.sort((a, b) => b.id - a.id);
 
   for (const p of unique.slice(0, WANT)) {
-    console.log(`\n══════════ пост #${p.id} ══════════`);
+    console.log(`\n══════════ пост #${p.id} (${p.date}) ══════════`);
     console.log(p.text);
   }
   console.log(`\nвсего с текстом: ${unique.length}`);
