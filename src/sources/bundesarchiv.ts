@@ -15,7 +15,7 @@ const CATEGORY = "Images from the German Federal Archive";
 
 type ExtValue = { value: string } | undefined;
 
-type CommonsPage = {
+export type CommonsPage = {
   pageid: number;
   title: string;             // "File:Bundesarchiv Bild 101I-..., Ort, Sujet.jpg"
   imageinfo?: Array<{
@@ -62,7 +62,10 @@ export function placeFromTitle(title: string): string | undefined {
   return place;
 }
 
-export function mapCommonsPage(page: CommonsPage): RawItem | undefined {
+export function mapCommonsPage(
+  page: CommonsPage,
+  opts: { lang?: string; attributionPrefix?: string } = {},
+): RawItem | undefined {
   const info = page.imageinfo?.[0];
   if (!info) return undefined;
 
@@ -72,6 +75,7 @@ export function mapCommonsPage(page: CommonsPage): RawItem | undefined {
     : undefined;
   const artist = meta.Artist?.value ? stripHtml(meta.Artist.value) : undefined;
   const license = meta.LicenseShortName?.value ?? "CC BY-SA 3.0 de";
+  const prefix = opts.attributionPrefix ?? "Bundesarchiv";
 
   return {
     sourceId: String(page.pageid),
@@ -80,14 +84,14 @@ export function mapCommonsPage(page: CommonsPage): RawItem | undefined {
     imageWidth: info.width,
     title: page.title.replace(/^File:/, "").replace(/\.\w+$/, ""),
     description,
-    lang: "de",
+    lang: opts.lang ?? "de",
     year:
       parseYear(meta.DateTimeOriginal?.value) ??
       parseYear(page.title) ??
       parseYear(description),
     place: placeFromTitle(page.title),
     license,
-    attribution: `Bundesarchiv${artist ? `, ${artist}` : ""} / ${license}`,
+    attribution: `${prefix}${artist ? `, ${artist}` : ""} / ${license}`,
   };
 }
 

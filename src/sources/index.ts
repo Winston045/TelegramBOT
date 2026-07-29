@@ -3,13 +3,15 @@ import type { CursorStore } from "../cursors.js";
 import type { RawItem, SourceAdapter } from "./types.js";
 import { loc } from "./loc.js";
 import { bundesarchiv } from "./bundesarchiv.js";
+import { commons } from "./commons.js";
 import { pastvu } from "./pastvu.js";
 import { nara } from "./nara.js";
 import { europeana } from "./europeana.js";
 
 export const ADAPTERS: Record<string, SourceAdapter> = {
   loc,
-  bundesarchiv,
+  bundesarchiv, // прежнее имя: старые кандидаты в базе ссылаются на него
+  commons,
   pastvu,
   nara,
   europeana,

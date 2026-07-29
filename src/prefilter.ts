@@ -11,7 +11,9 @@ export type RejectReason =
 /** Дешёвый префильтр до vision-скоринга. Возвращает причину брака или null. */
 export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null {
   if (!item.year) return "no_year";
-  if (!item.place) return "no_place";
+  // место обязательно, но запись с содержательным описанием пропускаем:
+  // у архивов вне Бундесархива места в заголовке нет, а контекст в тексте есть
+  if (!item.place && (item.description?.length ?? 0) < 60) return "no_place";
   // живой прогон: запрос "1930s" приносит современные фото зданий 1930-х
   const { min_year, max_year } = cfg.collect;
   if ((min_year && item.year < min_year) || (max_year && item.year > max_year)) {

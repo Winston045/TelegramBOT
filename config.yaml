@@ -1,11 +1,46 @@
 sources:
   loc:
     enabled: true
-    weight: 30           # доля в дневной выборке
-    queries: ["world war", "infantry", "artillery", "warship"]
-  bundesarchiv:
+    weight: 25           # доля в дневной выборке
+    # без дат запросы вида "infantry" тянут Гражданскую войну США 1860-х —
+    # пул шире и с привязкой к конкретным войнам и странам
+    queries:
+      - "world war 1914"
+      - "world war 1918 soldiers"
+      - "world war 1939"
+      - "world war 1944"
+      - "red army"
+      - "royal air force"
+      - "navy pacific 1942"
+      - "tank battle"
+      - "military aviation 1940"
+      - "korean war"
+  # архивы разных стран на Wikimedia Commons - главный источник разнообразия
+  commons:
     enabled: true
-    weight: 40           # почти целиком военная тематика — канал про это
+    weight: 45
+    categories: ["1915", "1916", "1918", "1940", "1941", "1942", "1943", "1944", "1945"]
+    archives:
+      - category: "Images from the German Federal Archive"
+        attribution: "Bundesarchiv"
+        lang: "de"
+      - category: "Photographs from the Imperial War Museums"
+        attribution: "IWM"
+        lang: "en"
+      - category: "Images from RIA Novosti"
+        attribution: "РИА Новости"
+        lang: "ru"
+      - category: "Images from the National Archives and Records Administration"
+        attribution: "NARA"
+        lang: "en"
+      - category: "Photographs by the Australian War Memorial"
+        attribution: "AWM"
+        lang: "en"
+  # прежний узкий источник: остался ради истории, включать не нужно -
+  # Бундесархив теперь один из архивов commons
+  bundesarchiv:
+    enabled: false
+    weight: 0
     categories: ["1939", "1940", "1941", "1942", "1943", "1944", "1945"]
   pastvu:
     enabled: true        # контракт API проверен вживую (tg-diag)

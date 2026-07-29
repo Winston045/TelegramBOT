@@ -9,6 +9,8 @@ export type SourceConfig = {
   categories?: string[];
   /** диапазон лет для источников с фильтром по годам (pastvu) */
   years?: number[];
+  /** пул архивов на Wikimedia Commons (источник commons) */
+  archives?: Array<{ category: string; attribution: string; lang: string }>;
 };
 
 export type AppConfig = {
