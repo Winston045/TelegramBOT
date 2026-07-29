@@ -27,7 +27,9 @@ jobs:
       # отчёта; "before:5000" - нырнуть в архив старше поста #5000
       - name: Отчёт
         run: |
-          if grep -q style .github/report.trigger 2>/dev/null; then
+          if grep -q stripattr .github/report.trigger 2>/dev/null; then
+            npx tsx scripts/strip-attribution.ts
+          elif grep -q style .github/report.trigger 2>/dev/null; then
             before=$(grep -oP 'before:\K\d+' .github/report.trigger || true)
             npx tsx scripts/channel-posts.ts 30 ${before:+--before $before}
           else

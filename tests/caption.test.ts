@@ -36,15 +36,14 @@ describe("assembleCaptionHtml", () => {
     );
   });
 
-  it("CC-BY-SA: строка атрибуции перед подписью канала", () => {
+  it("CC-BY-SA: атрибуция в пост не добавляется (решение редакции)", () => {
     const html = assembleCaptionHtml(
       generated,
       { license: "CC BY-SA 3.0 de", attribution: "Bundesarchiv, Koch / CC BY-SA 3.0 de" },
       channel,
     );
-    expect(html).toContain(
-      '<i>Bundesarchiv, Koch / CC BY-SA 3.0 de</i>\n<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
-    );
+    expect(html).not.toContain("Bundesarchiv");
+    expect(html).toContain('<a href="https://t.me/Story_Teams">STORY | TEAM</a>');
   });
 
   it("без цитаты blockquote не появляется", () => {

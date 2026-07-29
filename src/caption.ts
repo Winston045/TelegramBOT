@@ -139,11 +139,7 @@ export function assembleCaptionHtml(
   // единственный двойной перенос остаётся перед футером (его ищет splitFooter)
   let body = generated.caption;
   if (generated.quote) body += `\n<blockquote>${generated.quote}</blockquote>`;
-  const footer: string[] = [];
-  if (item.attribution && needsAttribution(item.license)) {
-    // курсивом - обязательная по CC BY-SA строка не должна спорить с текстом
-    footer.push(`<i>${item.attribution}</i>`);
-  }
-  footer.push(`<a href="${channel.signature_url}">${channel.signature}</a>`);
-  return `${body}\n\n${footer.join("\n")}`;
+  // строка атрибуции в пост не идёт - решение редакции (29.07.2026);
+  // источник и лицензия сохраняются в базе, у Бундесархива вотермарка в кадре
+  return `${body}\n\n<a href="${channel.signature_url}">${channel.signature}</a>`;
 }

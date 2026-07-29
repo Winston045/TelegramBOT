@@ -1,1 +1,1 @@
-style before:4000 1785321368
+stripattr 1785325787
