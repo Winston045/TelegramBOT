@@ -11,7 +11,7 @@ import { getDb } from "../src/db.js";
 import { env } from "../src/env.js";
 import { channelSlug } from "../src/tme.js";
 import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/schedule.js";
-import { loadPublishTimes } from "../src/settings.js";
+import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 
@@ -73,16 +73,18 @@ async function main() {
     queue = res.data;
   }
 
-  // auto_publish: без аппрува берём лучший из new
-  if (!queue?.length && cfg.publish.auto_publish) {
+  // полная автоматизация (тумблер /auto в боте): очередь одобренных пуста -
+  // берём лучший неопубликованный кандидат без аппрува админов
+  const autoPublish = await loadBoolSetting("auto_publish", cfg.publish.auto_publish);
+  if (!queue?.length && autoPublish) {
     const res = await db
       .from("candidates")
       .select("id, image_url, image_hash, caption_html")
-      .eq("status", "new")
+      .in("status", ["new", "shown"])
       .not("caption_html", "is", null)
       .order("score", { ascending: false })
       .limit(1);
-    if (res.error) throw new Error(`чтение new: ${res.error.message}`);
+    if (res.error) throw new Error(`чтение кандидатов автопостинга: ${res.error.message}`);
     queue = res.data;
   }
 
@@ -116,7 +118,9 @@ async function main() {
     console.log("слот наступил, но очередь пуста");
     await sendMessageHtml(
       env.editorsChatId,
-      "Слот публикации пропущен: очередь пуста. Одобрите кандидатов.",
+      autoPublish
+        ? "Слот публикации пропущен: готовых кандидатов нет совсем. Запустите /more."
+        : "Слот публикации пропущен: очередь пуста. Одобрите кандидатов.",
     );
     await db.from("settings").upsert({
       key: "empty_queue_warned",
@@ -127,7 +131,27 @@ async function main() {
     return;
   }
 
-  const msgId = await sendPhotoHtml(env.channelId, post.image_url, post.caption_html);
+  // битая ссылка на фото не должна вечно блокировать очередь: архивы
+  // иногда перекладывают файлы, пока пост ждёт публикации
+  let msgId: number;
+  try {
+    msgId = await sendPhotoHtml(env.channelId, post.image_url, post.caption_html);
+  } catch (err) {
+    const msg = (err as Error).message;
+    const deadImage =
+      /failed to get http url content|wrong type of the web page content|wrong file identifier|photo_invalid/i.test(
+        msg,
+      );
+    if (!deadImage) throw err; // временная ошибка телеграма - пробуем в следующий заход
+    await db.from("candidates").update({ status: "failed" }).eq("id", post.id);
+    await sendMessageHtml(
+      env.editorsChatId,
+      `Пост #${post.id} не отправился: архив больше не отдаёт фото. Помечен браком, очередь едет дальше.`,
+    );
+    console.warn(`битая ссылка у #${post.id}: ${msg}`);
+    await heartbeatOk("publisher");
+    return;
+  }
 
   const { error: updErr } = await db
     .from("candidates")

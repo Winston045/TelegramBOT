@@ -8,6 +8,7 @@
  *   /status           - сводка: черновики, очередь, вышло, сбор, дедуп
  *   /queue            - очередь с кнопками
  *   /schedule         - панель расписания: слоты и число постов (МСК)
+ *   /auto             - тумблер полной автоматизации (посты без одобрения)
  *   /published        - последние вышедшие с кнопками удаления
  *   /ok, /skip        - то же, что кнопки (реплаем на карточку)
  *   /quote <текст>    - заменить цитату (реплаем)
@@ -66,6 +67,45 @@ async function getPublishTimes(): Promise<string[]> {
   if (error || !data) return DEFAULT_TIMES;
   const times = normalizeTimes(data.value);
   return times.length ? times : DEFAULT_TIMES;
+}
+
+/** Тумблер полной автоматизации: посты уходят в канал без одобрения. */
+async function getAutoPublish(): Promise<boolean> {
+  const { data, error } = await db
+    .from("settings")
+    .select("value")
+    .eq("key", "auto_publish")
+    .maybeSingle();
+  if (error || !data) return false;
+  return data.value === true;
+}
+
+async function setAutoPublish(on: boolean): Promise<void> {
+  const { error } = await db.from("settings").upsert({
+    key: "auto_publish",
+    value: on,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw new Error(`сохранение auto_publish: ${error.message}`);
+}
+
+function autoPanelText(on: boolean): string {
+  return on
+    ? "Автопостинг ВКЛЮЧЁН: посты уходят в канал по расписанию без одобрения.\n" +
+        "Карточки в чат приходят как обычно - кнопкой 'Мимо' можно снять кандидата до публикации."
+    : "Автопостинг выключен: в канал уходят только одобренные посты.";
+}
+
+function autoPanelKeyboard(on: boolean) {
+  return {
+    inline_keyboard: [
+      [
+        on
+          ? { text: "Выключить автопостинг", callback_data: "aoff" }
+          : { text: "Включить автопостинг", callback_data: "aon" },
+      ],
+    ],
+  };
 }
 
 async function savePublishTimes(times: string[]): Promise<void> {
@@ -427,6 +467,23 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.answerCallbackQuery({ text: "Удалено из канала" });
         return;
       }
+      // ---------- автопостинг (/auto) ----------
+      case "aon":
+      case "aoff": {
+        const on = action === "aon";
+        await setAutoPublish(on);
+        try {
+          await ctx.editMessageText(autoPanelText(on), {
+            reply_markup: autoPanelKeyboard(on),
+          });
+        } catch {
+          // message is not modified - не ошибка
+        }
+        await ctx.answerCallbackQuery({
+          text: on ? "Автопостинг включён" : "Автопостинг выключен",
+        });
+        return;
+      }
       // ---------- панель расписания (/schedule) ----------
       case "tdel": {
         const t = unpackTime(idStr ?? "");
@@ -546,6 +603,7 @@ bot.command("status", async (ctx) => {
     .gte("published_at", dayAgo);
 
   const times = await getPublishTimes();
+  const autoOn = await getAutoPublish();
   const lines = [
     "Сводка",
     "",
@@ -561,6 +619,9 @@ bot.command("status", async (ctx) => {
     INSTANT_PUBLISH
       ? "Режим: тестовый - одобрение публикует сразу"
       : "Режим: боевой - публикация по расписанию",
+    autoOn
+      ? "Автопостинг: ВКЛЮЧЁН - без одобрения (менять: /auto)"
+      : "Автопостинг: выключен - только одобренные (менять: /auto)",
   ];
   await ctx.reply(lines.join("\n"));
 });
@@ -594,6 +655,11 @@ bot.command("queue", async (ctx) => {
       },
     });
   }
+});
+
+bot.command("auto", async (ctx) => {
+  const on = await getAutoPublish();
+  await ctx.reply(autoPanelText(on), { reply_markup: autoPanelKeyboard(on) });
 });
 
 bot.command("schedule", async (ctx) => {

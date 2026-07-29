@@ -35,13 +35,8 @@ jobs:
             --data-urlencode "chat_id=$(echo "$CHANNEL_ID" | xargs)" \
             --data-urlencode "user_id=${{ steps.me.outputs.bot_id }}"
           echo
-      - name: Пробный пост в канал напрямую
-        if: ${{ !contains(github.event.head_commit.message, 'pastvu-probe') }}
-        run: |
-          curl -sS "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-            --data-urlencode "chat_id=$(echo "$CHANNEL_ID" | xargs)" \
-            --data-urlencode "text=Тест публикации — если вы это видите, права в порядке (сообщение можно удалить)"
-          echo
+      # шаг с пробным постом в канал удалён: в боевом режиме случайный
+      # запуск диагностики не должен писать подписчикам
       # три запроса разной глубины: GET (бут), POST без секрета (грамми
       # отвечает сам), POST с секретом (полная обработка). Что виснет —
       # то и сломано: всё = бут/платформа, только последний = обработчик.

@@ -61,9 +61,11 @@ jobs:
       - name: "Шаг 2: бэкфилл архива канала (~4423 фото)"
         if: steps.mode.outputs.mode == 'full'
         run: npm run backfill -- --expect 4423
-      - name: "Шаг 2 (быстрый): бэкфилл срезом 300 фото"
+      # решение редакции: полный бэкфилл не нужен, повторы глубокой истории
+      # канала не страшны - достаточно помнить ~1200 свежих постов
+      - name: "Шаг 2 (быстрый): бэкфилл срезом свежих фото"
         if: steps.mode.outputs.mode == 'fast'
-        run: npm run backfill -- --max-photos 300
+        run: npm run backfill -- --max-photos 1200
       - name: "Шаг 4: сбор — скоринг и подписи Gemini"
         if: steps.mode.outputs.mode != 'mini'
         run: npm run collect

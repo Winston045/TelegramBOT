@@ -6,6 +6,21 @@ import { normalizeTimes } from "./schedule_panel.js";
  * перекрывает config.yaml. Если в базе пусто или таблицы ещё нет —
  * работаем по конфигу.
  */
+/** Булев тумблер из settings; нет записи или таблицы - fallback. */
+export async function loadBoolSetting(key: string, fallback: boolean): Promise<boolean> {
+  try {
+    const { data, error } = await getDb()
+      .from("settings")
+      .select("value")
+      .eq("key", key)
+      .maybeSingle();
+    if (error || !data) return fallback;
+    return data.value === true;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function loadPublishTimes(fallback: string[]): Promise<string[]> {
   try {
     const { data, error } = await getDb()
