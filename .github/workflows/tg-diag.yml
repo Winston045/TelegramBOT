@@ -60,7 +60,7 @@ jobs:
             -H "X-Telegram-Bot-Api-Secret-Token: $TG_WEBHOOK_SECRET" -d '{"update_id":1}'
       - name: Проба категорий Commons
         run: |
-          titles="Category:Images from the Imperial War Museums|Category:Photographs from the Imperial War Museums|Category:Images from RIA Novosti|Category:Photographs by RIA Novosti|Category:Files from RIA Novosti|Category:RIA Novosti|Category:Images from the Australian War Memorial|Category:Photographs by the Australian War Memorial|Category:Files from the Australian War Memorial"
+          titles="Category:Images from the Imperial War Museum|Category:Files from the Imperial War Museum|Category:Photographs from the Imperial War Museum|Category:Imperial War Museum|Category:World War II photographs from the Imperial War Museum"
           curl -sSG "https://commons.wikimedia.org/w/api.php" \
             --data-urlencode "action=query" \
             --data-urlencode "format=json" \
@@ -75,6 +75,16 @@ jobs:
               missing=p.get('missing',False)
               print(('НЕТ ' if missing or not ci else f\"файлов {ci['files']:>7} \") + p['title'])
           "
+          echo "--- поиск по названиям файлов ---"
+          for q in 'intitle:\"RIAN archive\" 1943' 'incategory:\"Images from the Australian War Memorial\" 1943' 'incategory:\"Images from RIA Novosti\" war'; do
+            n=$(curl -sSG "https://commons.wikimedia.org/w/api.php" \
+              --data-urlencode "action=query" --data-urlencode "format=json" \
+              --data-urlencode "list=search" --data-urlencode "srnamespace=6" \
+              --data-urlencode "srlimit=1" --data-urlencode "srinfo=totalhits" \
+              --data-urlencode "srsearch=$q" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["query"]["searchinfo"]["totalhits"])')
+            echo "хитов $n  <-  $q"
+          done
       - name: Проба API PastVu
         run: |
           probe() {
