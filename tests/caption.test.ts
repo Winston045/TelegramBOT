@@ -43,7 +43,7 @@ describe("assembleCaptionHtml", () => {
       channel,
     );
     expect(html).toContain(
-      'Bundesarchiv, Koch / CC BY-SA 3.0 de\n<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
+      '<i>Bundesarchiv, Koch / CC BY-SA 3.0 de</i>\n<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
     );
   });
 

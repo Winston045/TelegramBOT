@@ -75,7 +75,10 @@ export function mapCommonsPage(
   const description = meta.ImageDescription?.value
     ? stripHtml(meta.ImageDescription.value)
     : undefined;
-  const artist = meta.Artist?.value ? stripHtml(meta.Artist.value) : undefined;
+  // безымянных авторов ("Unknown", "o.Ang.") в атрибуцию не тащим
+  const rawArtist = meta.Artist?.value ? stripHtml(meta.Artist.value) : undefined;
+  const artist =
+    rawArtist && !/unknown|o\.\s*ang|anonym/i.test(rawArtist) ? rawArtist : undefined;
   const license = meta.LicenseShortName?.value ?? "CC BY-SA 3.0 de";
   const prefix = opts.attributionPrefix ?? "Bundesarchiv";
 

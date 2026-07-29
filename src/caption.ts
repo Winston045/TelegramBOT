@@ -141,7 +141,8 @@ export function assembleCaptionHtml(
   if (generated.quote) body += `\n<blockquote>${generated.quote}</blockquote>`;
   const footer: string[] = [];
   if (item.attribution && needsAttribution(item.license)) {
-    footer.push(item.attribution);
+    // курсивом - обязательная по CC BY-SA строка не должна спорить с текстом
+    footer.push(`<i>${item.attribution}</i>`);
   }
   footer.push(`<a href="${channel.signature_url}">${channel.signature}</a>`);
   return `${body}\n\n${footer.join("\n")}`;
