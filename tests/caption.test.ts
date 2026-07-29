@@ -31,7 +31,7 @@ describe("assembleCaptionHtml", () => {
     const html = assembleCaptionHtml(generated, { license: "PD" }, channel);
     expect(html).toBe(
       "<b>Танкисты</b> у танка Т-34-85. <i>1945 год.</i>\n" +
-        "<blockquote>Надпись на стволе пушки — «Победа за нами».</blockquote>\n\n" +
+        "<blockquote>Надпись на стволе пушки - «Победа за нами».</blockquote>\n\n" +
         '<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
     );
   });
