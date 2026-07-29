@@ -20,6 +20,8 @@ export type CommonsPage = {
   title: string;             // "File:Bundesarchiv Bild 101I-..., Ort, Sujet.jpg"
   imageinfo?: Array<{
     url: string;
+    /** рендер до iiurlwidth px - всегда jpeg, в отличие от .tif-оригиналов */
+    thumburl?: string;
     descriptionurl: string;
     width: number;
     height: number;
@@ -80,7 +82,7 @@ export function mapCommonsPage(
   return {
     sourceId: String(page.pageid),
     sourceUrl: info.descriptionurl,
-    imageUrl: info.url,
+    imageUrl: info.thumburl ?? info.url,
     imageWidth: info.width,
     title: page.title.replace(/^File:/, "").replace(/\.\w+$/, ""),
     description,

@@ -35,6 +35,9 @@ async function search(
   url.searchParams.set("gsroffset", String(offset));
   url.searchParams.set("prop", "imageinfo");
   url.searchParams.set("iiprop", "url|size|extmetadata");
+  // рендер вместо оригинала: у NARA и IWM оригиналы - гигантские .tif,
+  // которые Телеграм не примет; thumburl всегда jpeg разумного размера
+  url.searchParams.set("iiurlwidth", "1600");
   url.searchParams.set(
     "iiextmetadatafilter",
     "ImageDescription|DateTimeOriginal|LicenseShortName|Artist|Credit",

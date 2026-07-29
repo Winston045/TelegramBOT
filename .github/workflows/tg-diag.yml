@@ -58,6 +58,23 @@ jobs:
           echo "POST без секрета:"; probe_wh -X POST -H "content-type: application/json" -d '{"update_id":1}'
           echo "POST с секретом:"; probe_wh -X POST -H "content-type: application/json" \
             -H "X-Telegram-Bot-Api-Secret-Token: $TG_WEBHOOK_SECRET" -d '{"update_id":1}'
+      - name: Проба категорий Commons
+        run: |
+          titles="Category:Images from the Imperial War Museums|Category:Photographs from the Imperial War Museums|Category:Images from RIA Novosti|Category:Photographs by RIA Novosti|Category:Files from RIA Novosti|Category:RIA Novosti|Category:Images from the Australian War Memorial|Category:Photographs by the Australian War Memorial|Category:Files from the Australian War Memorial"
+          curl -sSG "https://commons.wikimedia.org/w/api.php" \
+            --data-urlencode "action=query" \
+            --data-urlencode "format=json" \
+            --data-urlencode "formatversion=2" \
+            --data-urlencode "prop=categoryinfo" \
+            --data-urlencode "titles=$titles" \
+            | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          for p in d.get('query',{}).get('pages',[]):
+              ci=p.get('categoryinfo')
+              missing=p.get('missing',False)
+              print(('НЕТ ' if missing or not ci else f\"файлов {ci['files']:>7} \") + p['title'])
+          "
       - name: Проба API PastVu
         run: |
           probe() {
