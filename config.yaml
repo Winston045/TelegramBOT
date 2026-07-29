@@ -20,20 +20,24 @@ sources:
     enabled: true
     weight: 45
     categories: ["1915", "1916", "1918", "1940", "1941", "1942", "1943", "1944", "1945"]
+    # имена категорий проверены пробой tg-diag 29.07: у IWM единственное
+    # число, у РИА Новости и Австралии Images from ...
     archives:
       - category: "Images from the German Federal Archive"
         attribution: "Bundesarchiv"
         lang: "de"
-      - category: "Photographs from the Imperial War Museums"
+      - category: "Photographs from the Imperial War Museum"
         attribution: "IWM"
         lang: "en"
       - category: "Images from RIA Novosti"
         attribution: "РИА Новости"
         lang: "ru"
+        terms: [""]        # в названиях файлов нет годов - листаем всё подряд
       - category: "Images from the National Archives and Records Administration"
         attribution: "NARA"
         lang: "en"
-      - category: "Photographs by the Australian War Memorial"
+        terms: ["photograph 1918", "photograph 1942", "photograph 1944", "photograph 1945", "photograph 1951"]
+      - category: "Images from the Australian War Memorial"
         attribution: "AWM"
         lang: "en"
   # прежний узкий источник: остался ради истории, включать не нужно -

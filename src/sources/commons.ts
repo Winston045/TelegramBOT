@@ -61,11 +61,14 @@ export const commons: SourceAdapter = {
       console.warn("  commons: пул архивов в config пуст");
       return [];
     }
-    const terms = cfg.categories?.length ? cfg.categories : [""];
+    const sharedTerms = cfg.categories?.length ? cfg.categories : [""];
     const perArchive = Math.max(5, Math.ceil(limit / archives.length));
     const items: RawItem[] = [];
 
     for (const archive of archives) {
+      // у архива могут быть свои слова: у РИА Новости в названиях файлов
+      // нет годов, ей нужен пустой фильтр — просто листаем категорию
+      const terms = archive.terms?.length ? archive.terms : sharedTerms;
       // ротация поисковых слов и смещение внутри слова — как в других
       // источниках, чтобы каждый день приходила новая страница выдачи
       const termIdx = await cursors.get("commons", `term:${archive.category}`);
