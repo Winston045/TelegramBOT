@@ -23,5 +23,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci || npm install
-      - name: Последние кандидаты с подписями
-        run: npm run review-captions -- 15
+      # "style" в триггер-файле - выгрузить тексты постов канала вместо отчёта
+      - name: Отчёт
+        run: |
+          if grep -q style .github/report.trigger 2>/dev/null; then
+            npx tsx scripts/channel-posts.ts 30
+          else
+            npm run review-captions -- 15
+          fi
