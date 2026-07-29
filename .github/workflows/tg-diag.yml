@@ -35,6 +35,14 @@ jobs:
             --data-urlencode "chat_id=$(echo "$CHANNEL_ID" | xargs)" \
             --data-urlencode "user_id=${{ steps.me.outputs.bot_id }}"
           echo
+      # куда реально смотрят секреты: имена канала и чата (не сами секреты)
+      - name: Куда постим и где чат
+        run: |
+          for chat in "$CHANNEL_ID" "$EDITORS_CHAT_ID"; do
+            curl -sS "https://api.telegram.org/bot$BOT_TOKEN/getChat" \
+              --data-urlencode "chat_id=$(echo "$chat" | xargs)" \
+              | python3 -c 'import json,sys; r=json.load(sys.stdin).get("result",{}); print("тип:", r.get("type"), "| название:", r.get("title") or r.get("username"))'
+          done
       # шаг с пробным постом в канал удалён: в боевом режиме случайный
       # запуск диагностики не должен писать подписчикам
       # три запроса разной глубины: GET (бут), POST без секрета (грамми
