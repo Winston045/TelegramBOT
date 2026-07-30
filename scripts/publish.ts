@@ -12,6 +12,7 @@ import { env } from "../src/env.js";
 import { channelSlug } from "../src/tme.js";
 import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/schedule.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
+import { isDuplicate } from "../src/dhash.js";
 import { sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 
@@ -76,6 +77,7 @@ async function main() {
   // полная автоматизация (тумблер /auto в боте): очередь одобренных пуста -
   // берём лучший неопубликованный кандидат без аппрува админов
   const autoPublish = await loadBoolSetting("auto_publish", cfg.publish.auto_publish);
+  let autoPicked = false;
   if (!queue?.length && autoPublish) {
     const res = await db
       .from("candidates")
@@ -83,9 +85,23 @@ async function main() {
       .in("status", ["new", "shown"])
       .not("caption_html", "is", null)
       .order("score", { ascending: false })
-      .limit(1);
+      .limit(10);
     if (res.error) throw new Error(`чтение кандидатов автопостинга: ${res.error.message}`);
-    queue = res.data;
+    // без глаз редактора хэш сверяем ещё раз прямо перед публикацией:
+    // в резерве могут лежать кадры, собранные до пополнения базы дедупа
+    const { data: seen, error: seenErr } = await db.from("seen_hashes").select("image_hash");
+    if (seenErr) throw new Error(`чтение seen_hashes: ${seenErr.message}`);
+    const seenHashes = (seen ?? []).map((r) => r.image_hash as string);
+    for (const cand of res.data ?? []) {
+      if (seenHashes.some((h) => isDuplicate(h, cand.image_hash))) {
+        await db.from("candidates").update({ status: "rejected" }).eq("id", cand.id);
+        console.log(`автопостинг: #${cand.id} - дубликат уже вышедшего, отклонён`);
+        continue;
+      }
+      queue = [cand];
+      autoPicked = true;
+      break;
+    }
   }
 
   const post = queue?.[0];
@@ -181,7 +197,9 @@ async function main() {
     .eq("status", "approved");
   const left = count ?? 0;
 
-  let confirmation = `Опубликован пост #${post.id}: ${postUrl}\nВ очереди осталось: ${left}.`;
+  let confirmation = autoPicked
+    ? `Автопостинг: опубликован пост #${post.id} (выбран ботом): ${postUrl}\nВ очереди осталось: ${left}.`
+    : `Опубликован пост #${post.id}: ${postUrl}\nВ очереди осталось: ${left}.`;
   if (left < cfg.publish.min_queue_warning) {
     confirmation += `\nОчередь короче ${cfg.publish.min_queue_warning} - стоит одобрить ещё.`;
   }
