@@ -46,7 +46,10 @@ export function validateHtml(html: string): ValidationResult {
     if (!closing && tag === "a" && !/^\s+href="[^"]+"$/.test(attrs)) {
       return { ok: false, reason: "у <a> допустим только href в кавычках" };
     }
-    if (!closing && tag !== "a" && attrs.trim() !== "") {
+    if (!closing && tag === "blockquote" && attrs.trim() !== "" && attrs.trim() !== "expandable") {
+      return { ok: false, reason: "у <blockquote> допустим только expandable" };
+    }
+    if (!closing && tag !== "a" && tag !== "blockquote" && attrs.trim() !== "") {
       return { ok: false, reason: `атрибуты у <${tag}> запрещены` };
     }
 

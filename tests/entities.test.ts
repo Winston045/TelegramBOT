@@ -26,6 +26,11 @@ describe("entitiesToHtml", () => {
     expect(
       entitiesToHtml("цитата тут", [{ type: "blockquote", offset: 0, length: 10 }]),
     ).toBe("<blockquote>цитата тут</blockquote>");
+    expect(
+      entitiesToHtml("цитата тут", [
+        { type: "expandable_blockquote", offset: 0, length: 10 },
+      ]),
+    ).toBe("<blockquote expandable>цитата тут</blockquote>");
 
     expect(
       entitiesToHtml("STORY | TEAM", [
@@ -83,7 +88,7 @@ describe("splitFooter", () => {
 describe("replaceQuote", () => {
   it("заменяет существующую цитату, футер не трогает", () => {
     const updated = replaceQuote(CAPTION, "Новая деталь & факт.");
-    expect(updated).toContain("<blockquote>Новая деталь &amp; факт.</blockquote>");
+    expect(updated).toContain("<blockquote expandable>Новая деталь &amp; факт.</blockquote>");
     expect(updated).not.toContain("Старая цитата");
     expect(updated).toContain('<a href="https://t.me/Story_Teams">STORY | TEAM</a>');
   });
@@ -93,7 +98,7 @@ describe("replaceQuote", () => {
       "<b>Т</b> у танка.\n\n" + '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
     const updated = replaceQuote(noQuote, "Деталь.");
     expect(updated).toBe(
-      "<b>Т</b> у танка.\n<blockquote>Деталь.</blockquote>\n\n" +
+      "<b>Т</b> у танка.\n<blockquote expandable>Деталь.</blockquote>\n\n" +
         '<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
     );
   });

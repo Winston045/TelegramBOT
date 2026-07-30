@@ -31,6 +31,10 @@ describe("validateHtml", () => {
     expect(validateHtml('<a onclick="js">z</a>').ok).toBe(false);
     expect(validateHtml('<b class="x">z</b>').ok).toBe(false);
   });
+  it("свёрнутая цитата: expandable разрешён, прочие атрибуты нет", () => {
+    expect(validateHtml("<blockquote expandable>x</blockquote>").ok).toBe(true);
+    expect(validateHtml('<blockquote class="x">x</blockquote>').ok).toBe(false);
+  });
   it("ловит голые < и >", () => {
     expect(validateHtml("a < b").ok).toBe(false);
   });

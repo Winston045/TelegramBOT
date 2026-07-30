@@ -20,6 +20,11 @@ const TAG_BY_TYPE: Record<string, string> = {
   expandable_blockquote: "blockquote",
 };
 
+// свёрнутая цитата открывается с атрибутом, а закрывается обычным тегом
+const OPEN_TAG_BY_TYPE: Record<string, string> = {
+  expandable_blockquote: "blockquote expandable",
+};
+
 export function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -56,7 +61,7 @@ export function entitiesToHtml(text: string, entities: MessageEntity[] = []): st
         out += `<a href="${escapeHtml(e.url!)}">${content}</a>`;
       } else {
         const tag = TAG_BY_TYPE[e.type]!;
-        out += `<${tag}>${content}</${tag}>`;
+        out += `<${OPEN_TAG_BY_TYPE[e.type] ?? tag}>${content}</${tag}>`;
       }
 
       cursor = entEnd;

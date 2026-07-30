@@ -24,10 +24,10 @@ export function splitFooter(captionHtml: string): { body: string; footer: string
 /** /quote <текст> — заменить только цитату (текст приходит без тегов). */
 export function replaceQuote(captionHtml: string, newQuote: string): string {
   const { body, footer } = splitFooter(captionHtml);
-  const quoteHtml = `<blockquote>${escape(newQuote.trim())}</blockquote>`;
+  const quoteHtml = `<blockquote expandable>${escape(newQuote.trim())}</blockquote>`;
 
-  const replaced = /<blockquote>[\s\S]*?<\/blockquote>/.test(body)
-    ? body.replace(/<blockquote>[\s\S]*?<\/blockquote>/, quoteHtml)
+  const replaced = /<blockquote[^>]*>[\s\S]*?<\/blockquote>/.test(body)
+    ? body.replace(/<blockquote[^>]*>[\s\S]*?<\/blockquote>/, quoteHtml)
     : `${body}\n${quoteHtml}`;
 
   return footer ? `${replaced}\n\n${footer}` : replaced;

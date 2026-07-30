@@ -141,8 +141,12 @@ export function assembleCaptionHtml(
   const dash = (s: string) => s.replace(/[—–]/g, "-");
   // цитата прижата к тексту без пустой строки - так в канале компактнее;
   // единственный двойной перенос остаётся перед футером (его ищет splitFooter)
+  // expandable: длинная цитата в канале свёрнута и раскрывается по клику,
+  // короткая помещается целиком и выглядит как обычная
   let body = dash(generated.caption);
-  if (generated.quote) body += `\n<blockquote>${dash(generated.quote)}</blockquote>`;
+  if (generated.quote) {
+    body += `\n<blockquote expandable>${dash(generated.quote)}</blockquote>`;
+  }
   // строка атрибуции в пост не идёт - решение редакции (29.07.2026);
   // источник и лицензия сохраняются в базе, у Бундесархива вотермарка в кадре
   return `${body}\n\n<a href="${channel.signature_url}">${channel.signature}</a>`;
