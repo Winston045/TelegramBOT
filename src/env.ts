@@ -1,7 +1,9 @@
 import "dotenv/config";
 
+// trim обязателен: в секретах GitHub легко остаётся случайный пробел или
+// перевод строки, а "@Story_Teams" с пробелом ломает и chat_id, и ссылки
 function required(name: string): string {
-  const value = process.env[name];
+  const value = process.env[name]?.trim();
   if (!value) throw new Error(`переменная окружения ${name} не задана`);
   return value;
 }
