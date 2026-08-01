@@ -124,11 +124,14 @@ async function main() {
       .map((r) => r.cand);
 
     // первый проход - в обход недавних тем, второй - если других нет
+    const dropped = new Set<number>();
     for (const pass of ["fresh", "any"] as const) {
       for (const cand of ranked) {
+        if (dropped.has(cand.id)) continue; // отбраковали на первом проходе
         if (seenHashes.some((h) => isDuplicate(h, cand.image_hash))) {
           await db.from("candidates").update({ status: "rejected" }).eq("id", cand.id);
           console.log(`автопостинг: #${cand.id} - дубликат уже вышедшего, отклонён`);
+          dropped.add(cand.id);
           continue;
         }
         const subject = (cand.tags as { subject?: string } | null)?.subject;
