@@ -1,0 +1,60 @@
+name: topup
+
+# Автодобор резерва: в режиме /auto бот сам ходит за новыми кандидатами,
+# когда готовых меньше, чем слотов впереди. Ручной /more больше не нужен.
+# Сторож бережёт квоту Gemini: не чаще двух внеплановых сборов в сутки.
+
+on:
+  schedule:
+    # каждые три часа; реальную нужду решает сторож, а не расписание
+    - cron: "5 */3 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: topup
+  cancel-in-progress: false
+
+jobs:
+  topup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+      EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID }}
+      EDITOR_USER_IDS: ${{ secrets.EDITOR_USER_IDS }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+      NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
+      EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
+    steps:
+      - name: Секреты настроены?
+        id: guard
+        run: |
+          if [ -n "$BOT_TOKEN" ] && [ -n "$SUPABASE_URL" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "секреты не настроены — запуск пропущен"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.ok == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.ok == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci || npm install
+        if: steps.guard.outputs.ok == 'true'
+      - name: Нужен ли добор
+        id: need
+        if: steps.guard.outputs.ok == 'true'
+        run: npx tsx scripts/topup-guard.ts
+      - name: Сбор свежей партии
+        if: steps.need.outputs.need == 'true'
+        run: npm run collect -- --keep 8
+      - name: Карточки редакторам
+        if: steps.need.outputs.need == 'true'
+        run: npm run send-candidates -- --limit 3
