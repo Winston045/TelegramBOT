@@ -110,4 +110,83 @@ export const commons: SourceAdapter = {
     }
     return items.slice(0, limit);
   },
+
+  /**
+   * Подписи архивов вроде «Frankreich, Lorettohöhe, Artilleriebeschuss» -
+   * это одна строка, из которой познавательную цитату не сделать. Зато у
+   * файла есть тематические категории (люди, сражения, корабли), и по ним
+   * находится статья Википедии - её вступление и даёт материал для
+   * развёрнутой справки. Факты остаются документальными, не выдуманными.
+   */
+  async details(item: RawItem): Promise<string | undefined> {
+    try {
+      const topics = await fileTopics(item.sourceId);
+      if (!topics.length) return undefined;
+      for (const topic of topics) {
+        const intro = (await wikiIntro("ru", topic)) ?? (await wikiIntro("en", topic));
+        if (intro && intro.length >= 200) {
+          return `Справка из Википедии о теме снимка («${topic}»), использовать только если она прямо относится к тому, что на фото:\n${intro}`;
+        }
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  },
 };
+
+// служебные категории Викисклада, из которых темы не выйдет
+const SERVICE_CATEGORY =
+  /images? from|photographs? from|files? from|media (from|needing)|cc-|pd-|licen|scan|uploaded|wikimedia|self-published|extracted|retouched|flickr|taken (on|with)|\bde\b-|german federal archive/i;
+
+/** Тематические категории файла, от узких к широким. */
+async function fileTopics(pageId: string): Promise<string[]> {
+  const url = new URL(API);
+  url.searchParams.set("action", "query");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("formatversion", "2");
+  url.searchParams.set("pageids", pageId);
+  url.searchParams.set("prop", "categories");
+  url.searchParams.set("cllimit", "50");
+  url.searchParams.set("clshow", "!hidden");
+
+  const res = await fetch(url, {
+    headers: { "user-agent": "story-team-bot/0.1 (contentbot)" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) return [];
+  const body = (await res.json()) as {
+    query?: { pages?: Array<{ categories?: Array<{ title: string }> }> };
+  };
+  return (body.query?.pages?.[0]?.categories ?? [])
+    .map((c) => c.title.replace(/^Category:/, ""))
+    .filter((t) => !SERVICE_CATEGORY.test(t) && !/^\d{4}$/.test(t))
+    // конкретные темы (имена, сражения) обычно короче общих рубрик
+    .sort((a, b) => a.length - b.length)
+    .slice(0, 4);
+}
+
+/** Вступление статьи Википедии по точному названию. */
+async function wikiIntro(lang: string, title: string): Promise<string | undefined> {
+  const url = new URL(`https://${lang}.wikipedia.org/w/api.php`);
+  url.searchParams.set("action", "query");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("formatversion", "2");
+  url.searchParams.set("prop", "extracts");
+  url.searchParams.set("exintro", "1");
+  url.searchParams.set("explaintext", "1");
+  url.searchParams.set("redirects", "1");
+  url.searchParams.set("titles", title);
+
+  const res = await fetch(url, {
+    headers: { "user-agent": "story-team-bot/0.1 (contentbot)" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) return undefined;
+  const body = (await res.json()) as {
+    query?: { pages?: Array<{ missing?: boolean; extract?: string }> };
+  };
+  const page = body.query?.pages?.[0];
+  if (!page || page.missing || !page.extract) return undefined;
+  return page.extract.replace(/\s+/g, " ").trim().slice(0, 1200);
+}

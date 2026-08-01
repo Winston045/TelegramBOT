@@ -71,17 +71,27 @@ async function fetchQuery(query: string, count: number, page: number): Promise<L
   url.searchParams.set("c", String(count));
   url.searchParams.set("sp", String(page)); // пагинация: страница выдачи
   // без User-Agent loc.gov отдаёт 403 с датацентровых IP (GitHub Actions — Azure)
-  const res = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      "user-agent":
-        "Mozilla/5.0 (compatible; story-team-bot/0.1; historical photo curation)",
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) throw new Error(`loc: ${url} → HTTP ${res.status}`);
-  const body = (await res.json()) as { results?: LocResult[] };
-  return body.results ?? [];
+  // loc.gov регулярно отвечает медленно: один таймаут не должен уносить
+  // весь источник, поэтому две попытки с запасом по времени
+  let lastErr: unknown;
+  for (const timeoutMs of [45_000, 60_000]) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          accept: "application/json",
+          "user-agent":
+            "Mozilla/5.0 (compatible; story-team-bot/0.1; historical photo curation)",
+        },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) throw new Error(`loc: ${url} → HTTP ${res.status}`);
+      const body = (await res.json()) as { results?: LocResult[] };
+      return body.results ?? [];
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
 }
 
 export const loc: SourceAdapter = {

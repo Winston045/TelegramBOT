@@ -49,7 +49,7 @@ quote_kind: context`;
 /** Блок метаданных снимка - общий для промптов подписи и анализа. */
 export function metadataBlock(item: RawItem, extraContext?: string): string {
   const extra = extraContext
-    ? `\nПолное описание со страницы архива (тоже источник фактов, за его пределы не выходить):\n${extraContext}\n`
+    ? `\nДополнительный документальный контекст (тоже источник фактов, за его пределы не выходить):\n${extraContext}\n`
     : "";
   return `Исходные метаданные (язык: ${item.lang}):
 - заголовок: ${item.title ?? "(нет)"}
