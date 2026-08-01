@@ -120,7 +120,7 @@ export const commons: SourceAdapter = {
    */
   async details(item: RawItem): Promise<string | undefined> {
     try {
-      const topics = await fileTopics(item.sourceId);
+      const topics = await fileTopics(item.sourceId, item.title);
       if (!topics.length) return undefined;
       for (const topic of topics) {
         const intro = (await wikiIntro("ru", topic)) ?? (await wikiIntro("en", topic));
@@ -139,8 +139,8 @@ export const commons: SourceAdapter = {
 const SERVICE_CATEGORY =
   /images? from|photographs? from|files? from|media (from|needing)|cc-|pd-|licen|scan|uploaded|wikimedia|self-published|extracted|retouched|flickr|taken (on|with)|\bde\b-|german federal archive/i;
 
-/** Тематические категории файла, от узких к широким. */
-async function fileTopics(pageId: string): Promise<string[]> {
+/** Тематические категории файла: сперва те, что перекликаются с заголовком. */
+async function fileTopics(pageId: string, title?: string): Promise<string[]> {
   const url = new URL(API);
   url.searchParams.set("action", "query");
   url.searchParams.set("format", "json");
@@ -158,12 +158,25 @@ async function fileTopics(pageId: string): Promise<string[]> {
   const body = (await res.json()) as {
     query?: { pages?: Array<{ categories?: Array<{ title: string }> }> };
   };
+  // слова заголовка задают тему кадра: категория, которая с ними
+  // пересекается, почти всегда и есть предмет съёмки
+  const titleWords = new Set(
+    (title ?? "")
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((w) => w.length > 3),
+  );
+  const relevance = (cat: string) =>
+    cat
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((w) => titleWords.has(w)).length;
+
   return (body.query?.pages?.[0]?.categories ?? [])
     .map((c) => c.title.replace(/^Category:/, ""))
     .filter((t) => !SERVICE_CATEGORY.test(t) && !/^\d{4}$/.test(t))
-    // конкретные темы (имена, сражения) обычно короче общих рубрик
-    .sort((a, b) => a.length - b.length)
-    .slice(0, 4);
+    .sort((a, b) => relevance(b) - relevance(a) || a.length - b.length)
+    .slice(0, 8);
 }
 
 /** Вступление статьи Википедии по точному названию. */
