@@ -55,9 +55,11 @@ jobs:
         id: need
         if: steps.guard.outputs.ok == 'true'
         run: npx tsx scripts/topup-guard.ts
+      # после подъёма порога до 55 половина партии отсеивается как проходная,
+      # поэтому на добор берём вдвое больше - иначе резерв не наполняется
       - name: Сбор свежей партии
         if: steps.need.outputs.need == 'true'
-        run: npm run collect -- --keep 8
+        run: npm run collect -- --keep 16
       - name: Карточки редакторам
         if: steps.need.outputs.need == 'true'
         run: npm run send-candidates -- --limit 3
