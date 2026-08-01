@@ -7,7 +7,7 @@ import { getDb } from "../src/db.js";
 import { env } from "../src/env.js";
 import { sendMessageHtml } from "../src/telegram.js";
 import { countPublishedToday, slotsPassed } from "../src/schedule.js";
-import { loadPublishTimes } from "../src/settings.js";
+import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 
 function moscow(iso: string | null): string {
   if (!iso) return "давно";
@@ -58,7 +58,16 @@ async function main() {
   const times = await loadPublishTimes(cfg.publish.times);
   const passed = slotsPassed(now, times, tz);
   const slotsLeft = times.slice(passed);
-  const willGo = Math.min(queued, slotsLeft.length);
+  // при включённом автопостинге слоты закрывает и резерв, а не только
+  // одобренное - иначе сводка пугает «нечего публиковать» на полном резерве
+  const autoPublish = await loadBoolSetting("auto_publish", cfg.publish.auto_publish);
+  const { count: reserve } = await db
+    .from("candidates")
+    .select("id", { count: "exact", head: true })
+    .in("status", ["new", "shown"])
+    .not("caption_html", "is", null);
+  const available = queued + (autoPublish ? (reserve ?? 0) : 0);
+  const willGo = Math.min(available, slotsLeft.length);
 
   const lines = [
     "Сводка на утро",
@@ -66,9 +75,10 @@ async function main() {
     `Новых карточек на разбор: ${shown}`,
     `В очереди публикации: ${queued}`,
     willGo > 0
-      ? `Сегодня выйдут: ${slotsLeft.slice(0, willGo).join(", ")} (МСК)`
-      : queued === 0
-        ? "Сегодня публиковать нечего - одобрите карточки"
+      ? `Сегодня выйдут: ${slotsLeft.slice(0, willGo).join(", ")} (МСК)` +
+        (autoPublish && queued === 0 ? " - автопостингом из резерва" : "")
+      : available === 0
+        ? "Сегодня публиковать нечего - одобрите карточки или запустите /more"
         : `Слоты на сегодня уже прошли, очередь пойдёт завтра с ${times[0]}`,
     `Уже вышло сегодня: ${publishedToday}`,
     "",

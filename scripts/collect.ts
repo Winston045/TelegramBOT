@@ -63,16 +63,41 @@ async function loadKnownHashes(): Promise<string[]> {
   return [...seen.data, ...cands.data].map((r) => r.image_hash as string);
 }
 
+/**
+ * Скачивание картинки. Викимедиа режет анонимные запросы с датацентровых
+ * IP (GitHub Actions) кодом 429 - обязателен User-Agent, а на отказ
+ * отвечаем паузой и повтором, иначе от партии выживают единицы.
+ */
+async function fetchImage(url: string): Promise<Response | null> {
+  const RETRY_DELAYS_MS = [1000, 3000, 8000];
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(60_000),
+      headers: {
+        "user-agent": "story-team-bot/0.1 (Telegram history channel; contact via t.me/Story_Teams)",
+        accept: "image/*",
+      },
+    });
+    if (res.ok) return res;
+    const retriable = res.status === 429 || res.status >= 500;
+    const delay = RETRY_DELAYS_MS[attempt];
+    if (!retriable || delay === undefined) {
+      console.warn(`  пропуск (HTTP ${res.status}): ${url}`);
+      return null;
+    }
+    await new Promise((r) => setTimeout(r, delay));
+  }
+}
+
 async function hashAndDedup(items: CollectedItem[], known: string[]): Promise<HashedItem[]> {
   const out: HashedItem[] = [];
   const batchHashes: string[] = [];
   for (const item of items) {
     try {
-      const res = await fetch(item.imageUrl, { signal: AbortSignal.timeout(60_000) });
-      if (!res.ok) {
-        console.warn(`  пропуск (HTTP ${res.status}): ${item.imageUrl}`);
-        continue;
-      }
+      const res = await fetchImage(item.imageUrl);
+      if (!res) continue;
+      // пауза между скачиваниями: вежливо к архивам, дешевле, чем ретраи
+      await new Promise((r) => setTimeout(r, 300));
       const imageBuffer = Buffer.from(await res.arrayBuffer());
       const imageHash = await dhash(imageBuffer);
       if ([...known, ...batchHashes].some((h) => isDuplicate(h, imageHash))) {
