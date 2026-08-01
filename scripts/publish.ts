@@ -115,6 +115,11 @@ async function main() {
         .map((p) => (p.tags as { subject?: string } | null)?.subject)
         .filter((s): s is string => Boolean(s)),
     );
+    // канал про войну: яркий мирный кадр - приправа, а не блюдо. Если
+    // такой был среди последних постов, следующий придержим
+    const civilianRecently = (lastPosts ?? []).some(
+      (p) => (p.tags as { military?: boolean } | null)?.military === false,
+    );
 
     // содержательные посты вперёд: небольшой бонус за развёрнутую цитату,
     // чтобы он решал только спор равных, а не переворачивал отбор
@@ -134,9 +139,14 @@ async function main() {
           dropped.add(cand.id);
           continue;
         }
-        const subject = (cand.tags as { subject?: string } | null)?.subject;
+        const tags = cand.tags as { subject?: string; military?: boolean } | null;
+        const subject = tags?.subject;
         if (pass === "fresh" && subject && recentSubjects.has(subject)) {
           console.log(`автопостинг: #${cand.id} придержан - тема "${subject}" была недавно`);
+          continue;
+        }
+        if (pass === "fresh" && tags?.military === false && civilianRecently) {
+          console.log(`автопостинг: #${cand.id} придержан - мирный кадр был недавно`);
           continue;
         }
         queue = [cand];
