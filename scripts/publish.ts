@@ -16,6 +16,15 @@ import { isDuplicate } from "../src/dhash.js";
 import { sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 
+/** Сколько последних постов помним, чтобы не гнать одну тему подряд. */
+const RECENT_SUBJECTS_WINDOW = 4;
+
+/** Длина видимого текста цитаты - признак развёрнутой справки. */
+function quoteLength(captionHtml: string | null): number {
+  const m = captionHtml?.match(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/);
+  return m?.[1]?.replace(/<[^>]+>/g, "").trim().length ?? 0;
+}
+
 async function main() {
   const cfg = loadConfig();
   const db = getDb();
@@ -81,26 +90,57 @@ async function main() {
   if (!queue?.length && autoPublish) {
     const res = await db
       .from("candidates")
-      .select("id, image_url, image_hash, caption_html")
+      .select("id, image_url, image_hash, caption_html, score, tags")
       .in("status", ["new", "shown"])
       .not("caption_html", "is", null)
       .order("score", { ascending: false })
-      .limit(10);
+      .limit(20);
     if (res.error) throw new Error(`чтение кандидатов автопостинга: ${res.error.message}`);
     // без глаз редактора хэш сверяем ещё раз прямо перед публикацией:
     // в резерве могут лежать кадры, собранные до пополнения базы дедупа
     const { data: seen, error: seenErr } = await db.from("seen_hashes").select("image_hash");
     if (seenErr) throw new Error(`чтение seen_hashes: ${seenErr.message}`);
     const seenHashes = (seen ?? []).map((r) => r.image_hash as string);
-    for (const cand of res.data ?? []) {
-      if (seenHashes.some((h) => isDuplicate(h, cand.image_hash))) {
-        await db.from("candidates").update({ status: "rejected" }).eq("id", cand.id);
-        console.log(`автопостинг: #${cand.id} - дубликат уже вышедшего, отклонён`);
-        continue;
+
+    // темы последних постов: три парома «Зибель» подряд формально разные
+    // кадры, а в ленте выглядят одним и тем же - такие темы придерживаем
+    const { data: lastPosts } = await db
+      .from("candidates")
+      .select("tags")
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .limit(RECENT_SUBJECTS_WINDOW);
+    const recentSubjects = new Set(
+      (lastPosts ?? [])
+        .map((p) => (p.tags as { subject?: string } | null)?.subject)
+        .filter((s): s is string => Boolean(s)),
+    );
+
+    // содержательные посты вперёд: небольшой бонус за развёрнутую цитату,
+    // чтобы он решал только спор равных, а не переворачивал отбор
+    const ranked = (res.data ?? [])
+      .map((c) => ({ cand: c, rank: (c.score ?? 0) + (quoteLength(c.caption_html) >= 180 ? 5 : 0) }))
+      .sort((a, b) => b.rank - a.rank)
+      .map((r) => r.cand);
+
+    // первый проход - в обход недавних тем, второй - если других нет
+    for (const pass of ["fresh", "any"] as const) {
+      for (const cand of ranked) {
+        if (seenHashes.some((h) => isDuplicate(h, cand.image_hash))) {
+          await db.from("candidates").update({ status: "rejected" }).eq("id", cand.id);
+          console.log(`автопостинг: #${cand.id} - дубликат уже вышедшего, отклонён`);
+          continue;
+        }
+        const subject = (cand.tags as { subject?: string } | null)?.subject;
+        if (pass === "fresh" && subject && recentSubjects.has(subject)) {
+          console.log(`автопостинг: #${cand.id} придержан - тема "${subject}" была недавно`);
+          continue;
+        }
+        queue = [cand];
+        autoPicked = true;
+        break;
       }
-      queue = [cand];
-      autoPicked = true;
-      break;
+      if (autoPicked) break;
     }
   }
 

@@ -16,6 +16,7 @@ import { dhash, isDuplicate } from "../src/dhash.js";
 import { getDb } from "../src/db.js";
 import { GeminiQuotaError, quotaTripped } from "../src/gemini.js";
 import { analyzeImage } from "../src/analyze.js";
+import { reviewQuote } from "../src/critic.js";
 import { assembleCaptionHtml } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
@@ -168,6 +169,7 @@ async function main() {
   let written = 0;
   let failed = 0;
   let skippedDull = 0;
+  let rewritten = 0;
 
   for (const item of hashed) {
     // умные цитаты: полное описание со страницы архива как доп. контекст
@@ -205,11 +207,24 @@ async function main() {
         attribution: item.attribution ?? null,
       };
 
-      const captionHtml = assembleCaptionHtml(a, item, cfg.channel);
+      // второй заход: редактор выбраковывает пустые цитаты. Стоит один
+      // запрос на кандидата, но только на тех, кто прошёл порог оценки
+      const reviewed = await reviewQuote(item, cfg, a, extraContext);
+      if (reviewed.rewritten) {
+        console.log(`  цитата переписана редактором: [${item.source}] ${item.sourceId}`);
+        rewritten++;
+      }
+
+      const captionHtml = assembleCaptionHtml(reviewed.caption, item, cfg.channel);
       const check = validateCaption(captionHtml, item);
       const { error } = await db.from("candidates").upsert(
         check.ok
-          ? { ...row, caption_html: captionHtml, quote_kind: a.quote_kind, status: "new" }
+          ? {
+              ...row,
+              caption_html: captionHtml,
+              quote_kind: reviewed.caption.quote_kind,
+              status: "new",
+            }
           : { ...row, status: "failed" },
         { onConflict: "source,source_id", ignoreDuplicates: true },
       );
@@ -233,7 +248,7 @@ async function main() {
   }
 
   console.log(
-    `готово: в резерв записано ${written}, брака ${failed}, скучных отсеяно ${skippedDull}`,
+    `готово: в резерв записано ${written}, брака ${failed}, скучных отсеяно ${skippedDull}, цитат переписано ${rewritten}`,
   );
   await heartbeatOk("collector");
 }
