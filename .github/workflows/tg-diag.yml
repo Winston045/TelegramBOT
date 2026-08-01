@@ -79,7 +79,9 @@ jobs:
               print(('НЕТ ' if missing or not ci else f\"файлов {ci['files']:>7} \") + p['title'])
           "
           echo "--- поиск по названиям файлов ---"
-          for q in 'intitle:\"RIAN archive\" 1943' 'incategory:\"Images from the Australian War Memorial\" 1943' 'incategory:\"Images from RIA Novosti\" war'; do
+          # кавычки внутри запроса - обычные: экранированные уходили в API
+          # как есть и давали ложные нули хитов
+          for q in 'intitle:"RIAN archive" 1943' 'incategory:"Images from the Australian War Memorial" 1943' 'incategory:"Images from RIA Novosti" war'; do
             n=$(curl -sSG "https://commons.wikimedia.org/w/api.php" \
               --data-urlencode "action=query" --data-urlencode "format=json" \
               --data-urlencode "list=search" --data-urlencode "srnamespace=6" \
