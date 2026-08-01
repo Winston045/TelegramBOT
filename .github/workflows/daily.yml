@@ -48,9 +48,15 @@ jobs:
           cache: npm
       - run: npm ci || npm install
         if: steps.guard.outputs.ok == 'true'
-      - name: Сбор кандидатов (источники → скоринг → подписи)
+      # размер партии подбирается под резерв: публикуем 5 в день, а собирали
+      # десяток - без тормоза резерв растёт бесконечно и жжёт квоту
+      - name: Сколько собирать
+        id: plan
         if: steps.guard.outputs.ok == 'true'
-        run: npm run collect
+        run: npx tsx scripts/plan-collect.ts
+      - name: Сбор кандидатов (источники → скоринг → подписи)
+        if: steps.plan.outputs.need == 'true'
+        run: npm run collect -- --keep ${{ steps.plan.outputs.keep }}
       - name: Отправка карточек редакторам
         if: steps.guard.outputs.ok == 'true'
         run: npm run send-candidates

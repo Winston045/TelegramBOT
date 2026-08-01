@@ -13,16 +13,17 @@ import { loadConfig } from "../src/config.js";
 import { getDb } from "../src/db.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { slotsPassed } from "../src/schedule.js";
+import { countAvailable, planFromCounts } from "../src/reserve.js";
 
 /** Ниже этого числа готовых кандидатов считаем резерв опасно тонким. */
 const MIN_RESERVE = 6;
 /** Сколько внеплановых сборов позволяем за сутки (квота Gemini). */
 const MAX_PER_DAY = 2;
 
-function say(need: boolean, reason: string) {
-  console.log(`${need ? "добираем" : "не добираем"}: ${reason}`);
+function say(need: boolean, reason: string, keep = 0) {
+  console.log(`${need ? `добираем ${keep}` : "не добираем"}: ${reason}`);
   if (process.env.GITHUB_OUTPUT) {
-    appendFileSync(process.env.GITHUB_OUTPUT, `need=${need}\n`);
+    appendFileSync(process.env.GITHUB_OUTPUT, `need=${need}\nkeep=${keep}\n`);
   }
 }
 
@@ -36,18 +37,7 @@ async function main() {
   const autoPublish = await loadBoolSetting("auto_publish", cfg.publish.auto_publish);
   if (!autoPublish) return say(false, "автопостинг выключен");
 
-  const [{ count: ready }, { count: approved }] = await Promise.all([
-    db
-      .from("candidates")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["new", "shown"])
-      .not("caption_html", "is", null),
-    db
-      .from("candidates")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "approved"),
-  ]);
-  const available = (ready ?? 0) + (approved ?? 0);
+  const available = await countAvailable();
 
   // сколько слотов сегодня ещё впереди - столько постов и нужно как минимум
   const times = await loadPublishTimes(cfg.publish.times);
@@ -56,6 +46,9 @@ async function main() {
   if (available >= needed) {
     return say(false, `готовых ${available}, хватает (нужно ${needed})`);
   }
+
+  // размер партии считаем той же формулой, что и дневной сбор
+  const { keep } = planFromCounts(available, times.length, cfg.collect.prefilter_keep);
 
   const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(now);
   const { data: mark } = await db
@@ -74,7 +67,11 @@ async function main() {
     value: { ymd, count: doneToday + 1 },
     updated_at: new Date().toISOString(),
   });
-  say(true, `готовых ${available} при нужных ${needed}, заход ${doneToday + 1} из ${MAX_PER_DAY}`);
+  say(
+    true,
+    `готовых ${available} при нужных ${needed}, заход ${doneToday + 1} из ${MAX_PER_DAY}`,
+    keep,
+  );
 }
 
 main().catch((err) => {
