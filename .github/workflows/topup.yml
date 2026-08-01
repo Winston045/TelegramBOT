@@ -9,6 +9,9 @@ on:
     # каждые три часа; реальную нужду решает сторож, а не расписание
     - cron: "5 */3 * * *"
   workflow_dispatch: {}
+  push:
+    paths:
+      - ".github/topup.trigger"
 
 concurrency:
   group: topup
