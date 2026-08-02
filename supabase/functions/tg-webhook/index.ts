@@ -5,8 +5,9 @@
  * У опубликованных: Удалить из канала.
  *
  * Команды (только вайтлист EDITOR_USER_IDS, остальных молча игнорируем):
- *   /status           - сводка: черновики, очередь, вышло, сбор, дедуп
- *   /queue            - очередь с кнопками
+ *   /status           - сводка: черновики, ближайший пост, вышло, сбор, дедуп
+ *   /queue            - план публикаций: что и когда выйдет, с кнопками
+ *                       (одобренное и то, что выберет автопостинг)
  *   /schedule         - панель расписания: слоты и число постов (МСК)
  *   /auto             - тумблер полной автоматизации (посты без одобрения)
  *   /published        - последние вышедшие с кнопками удаления
@@ -26,6 +27,13 @@ import { entitiesToHtml } from "../_shared/entities.ts";
 import { parseCandidateId } from "../_shared/service_line.ts";
 import { replaceBody, replaceQuote } from "../_shared/edit_caption.ts";
 import { CAPTION_LIMIT, validateHtml, visibleLength } from "../_shared/validate.ts";
+import {
+  RECENT_WINDOW,
+  buildPlan,
+  headline,
+  type PlanEntry,
+  type PlanTags,
+} from "../_shared/plan.ts";
 import {
   MAX_SLOTS,
   hourKeyboard,
@@ -193,13 +201,6 @@ type Ctx = Parameters<Parameters<typeof bot.command>[1]>[0];
 function repliedCandidateId(ctx: Ctx): number | undefined {
   const replied = ctx.message?.reply_to_message;
   return parseCandidateId(replied?.caption ?? replied?.text ?? undefined);
-}
-
-/** Заголовок кандидата для списков: жирная часть подписи без тегов. */
-function headline(captionHtml: string | null): string {
-  if (!captionHtml) return "(без подписи)";
-  const text = captionHtml.replace(/<[^>]+>/g, "").split("\n")[0] ?? "";
-  return text.length > 70 ? `${text.slice(0, 67)}...` : text;
 }
 
 function moscowTime(iso: string | null): string {
@@ -382,6 +383,25 @@ bot.on("callback_query:data", async (ctx) => {
         await ctx.answerCallbackQuery({ text: "Отменено" });
         return;
       }
+      // предпросмотр из плана: фото с готовой подписью, как выйдет в канал
+      case "show": {
+        const { data, error } = await db
+          .from("candidates")
+          .select("image_url, caption_html")
+          .eq("id", id)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!data?.caption_html) {
+          await ctx.answerCallbackQuery({ text: "Подписи нет" });
+          return;
+        }
+        await ctx.answerCallbackQuery();
+        await ctx.replyWithPhoto(data.image_url, {
+          caption: data.caption_html,
+          parse_mode: "HTML",
+        });
+        return;
+      }
       case "now": {
         const { data, error } = await db
           .from("candidates")
@@ -402,11 +422,12 @@ bot.on("callback_query:data", async (ctx) => {
         return;
       }
       case "rm": {
+        // из плана убирается и одобренное, и то, что выбрал автопостинг
         const { data } = await db
           .from("candidates")
           .update({ status: "rejected" })
           .eq("id", id)
-          .eq("status", "approved")
+          .in("status", ["approved", "new", "shown"])
           .select("id");
         if (!data?.length) {
           await ctx.answerCallbackQuery({ text: "Уже обработано" });
@@ -604,12 +625,18 @@ bot.command("status", async (ctx) => {
 
   const times = await getPublishTimes();
   const autoOn = await getAutoPublish();
+  // сводка показывает не «сколько одобрено», а что реально выйдет следующим
+  const [next] = await currentPlan(1);
+  const nextPost = next
+    ? `${next.when}, #${next.candidate.id} (${planMark(next.kind)})`
+    : "нечего публиковать";
   const lines = [
     "Сводка",
     "",
     `Черновиков на разборе в чате: ${shown}`,
     `Собрано, ещё не отправлено: ${fresh}`,
-    `В очереди публикации: ${queued}`,
+    `Одобрено вручную: ${queued}`,
+    `Ближайший пост: ${nextPost} (весь план: /queue)`,
     `Вышло за сутки: ${today ?? 0} (всего: ${published})`,
     `Расписание: ${times.length} в день - ${times.join(", ")} МСК (менять: /schedule)`,
     "",
@@ -626,34 +653,122 @@ bot.command("status", async (ctx) => {
   await ctx.reply(lines.join("\n"));
 });
 
+/** План публикаций: то же, что решит публикатор - и вручную, и автоматом. */
+async function currentPlan(count: number): Promise<PlanEntry[]> {
+  const autoPublish = await getAutoPublish();
+  const times = await getPublishTimes();
+
+  const [scheduledRes, approvedRes, reserveRes, recentRes, todayRes] = await Promise.all([
+    db
+      .from("candidates")
+      .select("id, caption_html, scheduled_at")
+      .eq("status", "approved")
+      .not("scheduled_at", "is", null)
+      .order("scheduled_at", { ascending: true }),
+    db
+      .from("candidates")
+      .select("id, caption_html")
+      .eq("status", "approved")
+      .is("scheduled_at", null)
+      .order("id", { ascending: true }),
+    autoPublish
+      ? db
+          .from("candidates")
+          .select("id, caption_html, score, tags")
+          .in("status", ["new", "shown"])
+          .not("caption_html", "is", null)
+          .order("score", { ascending: false })
+          .limit(40)
+      : Promise.resolve({ data: [], error: null }),
+    db
+      .from("candidates")
+      .select("tags")
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .limit(RECENT_WINDOW),
+    db
+      .from("candidates")
+      .select("published_at")
+      .eq("status", "published")
+      .gte("published_at", new Date(Date.now() - 48 * 3600 * 1000).toISOString()),
+  ]);
+
+  const todayMsk = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(
+    new Date(),
+  );
+  const publishedToday = (todayRes.data ?? []).filter(
+    (r: { published_at: string | null }) =>
+      r.published_at &&
+      new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(
+        new Date(r.published_at),
+      ) === todayMsk,
+  ).length;
+
+  const recentRows = (recentRes.data ?? []) as Array<{ tags: PlanTags }>;
+  return buildPlan(
+    {
+      now: new Date(),
+      tzOffset: TZ_OFFSET,
+      times,
+      publishedToday,
+      scheduled: scheduledRes.data ?? [],
+      approved: approvedRes.data ?? [],
+      reserve: reserveRes.data ?? [],
+      recent: {
+        subjects: recentRows
+          .map((p) => p.tags?.subject)
+          .filter((s): s is string => Boolean(s)),
+        civilian: recentRows.some((p) => p.tags?.military === false),
+      },
+      autoPublish,
+      formatScheduled: moscowTime,
+    },
+    count,
+  );
+}
+
+/** Пометка, откуда пост в плане - объявлена функцией, её зовёт и /status. */
+function planMark(kind: string): string {
+  if (kind === "scheduled") return "на время";
+  if (kind === "approved") return "одобрен";
+  return "автовыбор";
+}
+
 bot.command("queue", async (ctx) => {
-  const { data, error } = await db
-    .from("candidates")
-    .select("id, caption_html, scheduled_at")
-    .eq("status", "approved")
-    .order("id", { ascending: true })
-    .limit(10);
-  if (error) throw new Error(error.message);
-  if (!data.length) {
-    await ctx.reply("Очередь пуста.");
+  const plan = await currentPlan(10);
+  const autoOn = await getAutoPublish();
+  if (!plan.length) {
+    await ctx.reply(
+      autoOn
+        ? "Публиковать нечего: резерв пуст. Автодобор наполнит его сам, ускорить - /more."
+        : "Очередь пуста: одобрите карточки или включите автопостинг (/auto).",
+    );
     return;
   }
-  await ctx.reply(`В очереди: ${data.length}. Порядок публикации сверху вниз.`);
-  for (const c of data) {
-    const when = c.scheduled_at
-      ? `\nЗапланирован на ${moscowTime(c.scheduled_at)}`
-      : "";
-    await ctx.reply(`#${c.id}. ${headline(c.caption_html)}${when}`, {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "Опубликовать сейчас", callback_data: `now:${c.id}` },
-            { text: "Перенести", callback_data: `re:${c.id}` },
-            { text: "Убрать", callback_data: `rm:${c.id}` },
+
+  await ctx.reply(
+    `План публикаций: ${plan.length}.` +
+      (autoOn
+        ? "\nАвтопостинг включён - посты с пометкой «автовыбор» выйдут сами."
+        : "\nАвтопостинг выключен - выйдет только одобренное."),
+  );
+  for (const entry of plan) {
+    const c = entry.candidate;
+    await ctx.reply(
+      `${entry.when} - ${planMark(entry.kind)}\n#${c.id}. ${headline(c.caption_html)}`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "Показать", callback_data: `show:${c.id}` },
+              { text: "Сейчас", callback_data: `now:${c.id}` },
+              { text: "Перенести", callback_data: `re:${c.id}` },
+              { text: "Убрать", callback_data: `rm:${c.id}` },
+            ],
           ],
-        ],
+        },
       },
-    });
+    );
   }
 });
 

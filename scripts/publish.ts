@@ -13,17 +13,9 @@ import { channelSlug } from "../src/tme.js";
 import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/schedule.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { isDuplicate } from "../src/dhash.js";
+import { RECENT_WINDOW, planAuto } from "../src/plan.js";
 import { sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
-
-/** Сколько последних постов помним, чтобы не гнать одну тему подряд. */
-const RECENT_SUBJECTS_WINDOW = 4;
-
-/** Длина видимого текста цитаты - признак развёрнутой справки. */
-function quoteLength(captionHtml: string | null): number {
-  const m = captionHtml?.match(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/);
-  return m?.[1]?.replace(/<[^>]+>/g, "").trim().length ?? 0;
-}
 
 async function main() {
   const cfg = loadConfig();
@@ -109,51 +101,33 @@ async function main() {
       .select("tags")
       .eq("status", "published")
       .order("published_at", { ascending: false })
-      .limit(RECENT_SUBJECTS_WINDOW);
-    const recentSubjects = new Set(
-      (lastPosts ?? [])
+      .limit(RECENT_WINDOW);
+    const recent = {
+      subjects: (lastPosts ?? [])
         .map((p) => (p.tags as { subject?: string } | null)?.subject)
         .filter((s): s is string => Boolean(s)),
-    );
-    // канал про войну: яркий мирный кадр - приправа, а не блюдо. Если
-    // такой был среди последних постов, следующий придержим
-    const civilianRecently = (lastPosts ?? []).some(
-      (p) => (p.tags as { military?: boolean } | null)?.military === false,
-    );
+      civilian: (lastPosts ?? []).some(
+        (p) => (p.tags as { military?: boolean } | null)?.military === false,
+      ),
+    };
 
-    // содержательные посты вперёд: небольшой бонус за развёрнутую цитату,
-    // чтобы он решал только спор равных, а не переворачивал отбор
-    const ranked = (res.data ?? [])
-      .map((c) => ({ cand: c, rank: (c.score ?? 0) + (quoteLength(c.caption_html) >= 180 ? 5 : 0) }))
-      .sort((a, b) => b.rank - a.rank)
-      .map((r) => r.cand);
-
-    // первый проход - в обход недавних тем, второй - если других нет
-    const dropped = new Set<number>();
-    for (const pass of ["fresh", "any"] as const) {
-      for (const cand of ranked) {
-        if (dropped.has(cand.id)) continue; // отбраковали на первом проходе
-        if (seenHashes.some((h) => isDuplicate(h, cand.image_hash))) {
-          await db.from("candidates").update({ status: "rejected" }).eq("id", cand.id);
-          console.log(`автопостинг: #${cand.id} - дубликат уже вышедшего, отклонён`);
-          dropped.add(cand.id);
-          continue;
-        }
-        const tags = cand.tags as { subject?: string; military?: boolean } | null;
-        const subject = tags?.subject;
-        if (pass === "fresh" && subject && recentSubjects.has(subject)) {
-          console.log(`автопостинг: #${cand.id} придержан - тема "${subject}" была недавно`);
-          continue;
-        }
-        if (pass === "fresh" && tags?.military === false && civilianRecently) {
-          console.log(`автопостинг: #${cand.id} придержан - мирный кадр был недавно`);
-          continue;
-        }
-        queue = [cand];
-        autoPicked = true;
-        break;
+    // битые кадры выкидываем до планировщика: он решает только «что интереснее»
+    const alive: typeof res.data = [];
+    for (const cand of res.data ?? []) {
+      if (seenHashes.some((h) => isDuplicate(h, cand.image_hash))) {
+        await db.from("candidates").update({ status: "rejected" }).eq("id", cand.id);
+        console.log(`автопостинг: #${cand.id} - дубликат уже вышедшего, отклонён`);
+        continue;
       }
-      if (autoPicked) break;
+      alive.push(cand);
+    }
+
+    // тот же планировщик, что показывает /queue - предпросмотр не врёт
+    const [pick] = planAuto(alive, recent, 1);
+    if (pick) {
+      queue = alive.filter((c) => c.id === pick.id);
+      autoPicked = true;
+      console.log(`автопостинг: выбран #${pick.id} (тема "${pick.tags?.subject ?? "-"}")`);
     }
   }
 
