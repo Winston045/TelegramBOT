@@ -1,1 +1,1 @@
-deploy 20260803T040912 mix
+deploy 20260803T042523 periods

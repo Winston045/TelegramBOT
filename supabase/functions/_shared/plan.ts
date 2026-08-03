@@ -13,6 +13,7 @@
 export type PlanTags = {
   subject?: string;
   region?: string;
+  period?: string;
   military?: boolean;
   action?: boolean;
 } | null;
@@ -78,11 +79,16 @@ export function rank(c: PlanCandidate): number {
 export type RecentContext = {
   /** Темы последних постов, свежие первыми. */
   subjects: string[];
+  /** Эпохи последних постов, свежие первыми. */
+  periods?: string[];
   /** Был ли мирный кадр среди последних постов. */
   civilian: boolean;
   /** Сколько статичных кадров было среди последних постов. */
   statics?: number;
 };
+
+/** Сколько постов одной эпохи подряд допускаем, прежде чем сменить её. */
+export const MAX_SAME_PERIOD_STREAK = 2;
 
 /**
  * Жадный подбор из резерва: каждый следующий пост учитывает не только
@@ -100,6 +106,7 @@ export function planAuto(
   const pool = [...reserve].sort((a, b) => rank(b) - rank(a) || a.id - b.id);
   const chosen: PlanCandidate[] = [];
   const subjects = [...recent.subjects];
+  const periods = [...(recent.periods ?? [])];
   let civilianLast = recent.civilian;
   // окно скользит: сколько статики в последних RECENT_WINDOW постах
   const staticsWindow: boolean[] = Array.from(
@@ -109,12 +116,20 @@ export function planAuto(
 
   while (chosen.length < count && pool.length) {
     const staticsInWindow = staticsWindow.slice(0, RECENT_WINDOW).filter(Boolean).length;
+    // эпоха «застряла», если ею заняты MAX_SAME_PERIOD_STREAK свежих постов
+    const streak = periods.slice(0, MAX_SAME_PERIOD_STREAK);
+    const stuckPeriod =
+      streak.length === MAX_SAME_PERIOD_STREAK && streak.every((p) => p === streak[0])
+        ? streak[0]
+        : undefined;
     const fits = (c: PlanCandidate) => {
       const subject = c.tags?.subject;
       if (subject && subjects.slice(0, RECENT_WINDOW).includes(subject)) return false;
       if (c.tags?.military === false && civilianLast) return false;
       // статика допустима, но редко: лента должна дышать движением
       if (c.tags?.action === false && staticsInWindow >= MAX_STATIC_IN_WINDOW) return false;
+      // лента не должна неделями сидеть в одном году - эпохи чередуются
+      if (stuckPeriod && c.tags?.period === stuckPeriod) return false;
       return true;
     };
     const idx = pool.findIndex(fits);
@@ -122,6 +137,7 @@ export function planAuto(
     if (!pick) break;
     chosen.push(pick);
     if (pick.tags?.subject) subjects.unshift(pick.tags.subject);
+    periods.unshift(pick.tags?.period ?? "");
     civilianLast = pick.tags?.military === false;
     staticsWindow.unshift(pick.tags?.action === false);
   }

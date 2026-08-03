@@ -13,7 +13,7 @@ export type VisionScore = {
 };
 
 /** Схема полей оценки в JSON-ответе — общая для скоринга и анализа. */
-export const SCORE_FIELDS_SCHEMA = `"score": <0-100>, "tags": {"period": "<эпоха, напр. "WW2" | "interwar" | "WW1" | "cold_war">", "region": "<регион, напр. "europe" | "ussr" | "usa" | "asia">", "subject": "<тема одним словом, напр. "armor" | "aviation" | "street" | "portrait" | "navy" | "homefront">", "military": <true|false - война и армия или мирный сюжет>, "action": <true|false - в кадре что-то происходит или это статика/постановка>}, "unsafe": <true|false>`;
+export const SCORE_FIELDS_SCHEMA = `"score": <0-100>, "tags": {"period": "<конкретный конфликт или эпоха: "pre_ww1" | "WW1" | "russian_civil_war" | "interwar" | "spanish_civil_war" | "winter_war" | "WW2" | "korea" | "vietnam" | "cold_war" | "afghanistan" - выбирай самый точный, cold_war только если точнее не определить>", "region": "<регион, напр. "europe" | "ussr" | "usa" | "asia" | "africa" | "pacific">", "subject": "<тема одним словом, напр. "armor" | "aviation" | "street" | "portrait" | "navy" | "homefront" | "infantry" | "artillery" | "pow" | "medicine">", "military": <true|false - война и армия или мирный сюжет>, "action": <true|false - в кадре что-то происходит или это статика/постановка>}, "unsafe": <true|false>`;
 
 /** Критерии оценки — общий блок для скоринга и анализа. */
 export const SCORING_CRITERIA = `score отвечает ТОЛЬКО на один вопрос: насколько

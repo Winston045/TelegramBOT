@@ -116,6 +116,34 @@ describe("planAuto", () => {
     expect(picked[0]?.id).toBe(2);
   });
 
+  it("после двух постов одной эпохи третий - из другой", () => {
+    const ww1a = { ...cand(1, 90, "armor"), tags: { subject: "armor", period: "WW1", action: true } };
+    const ww1b = { ...cand(2, 85, "navy"), tags: { subject: "navy", period: "WW1", action: true } };
+    const ww2 = { ...cand(3, 60, "aviation"), tags: { subject: "aviation", period: "WW2", action: true } };
+    const picked = planAuto([ww1a, ww1b, ww2], noRecent, 3);
+    // первые два - ПМВ по оценке, третьим обязан войти ВМВ
+    expect(picked.map((c) => c.id)).toEqual([1, 2, 3]);
+    expect(picked[2]?.tags?.period).toBe("WW2");
+  });
+
+  it("эпохи вышедших постов тоже учитываются", () => {
+    const ww1 = { ...cand(1, 90, "armor"), tags: { subject: "armor", period: "WW1", action: true } };
+    const ww2 = { ...cand(2, 60, "navy"), tags: { subject: "navy", period: "WW2", action: true } };
+    const picked = planAuto(
+      [ww1, ww2],
+      { subjects: [], periods: ["WW1", "WW1"], civilian: false },
+      1,
+    );
+    expect(picked[0]?.id).toBe(2);
+  });
+
+  it("одна эпоха в резерве - лента не останавливается", () => {
+    const a = { ...cand(1, 90, "armor"), tags: { subject: "armor", period: "WW1", action: true } };
+    const b = { ...cand(2, 80, "navy"), tags: { subject: "navy", period: "WW1", action: true } };
+    const c = { ...cand(3, 70, "aviation"), tags: { subject: "aviation", period: "WW1", action: true } };
+    expect(planAuto([a, b, c], noRecent, 3)).toHaveLength(3);
+  });
+
   it("если в резерве только статика - слот всё равно закрывается", () => {
     const s1 = { ...cand(1, 90, "armor"), tags: { subject: "armor", action: false } };
     const s2 = { ...cand(2, 80, "navy"), tags: { subject: "navy", action: false } };

@@ -106,6 +106,9 @@ async function main() {
       subjects: (lastPosts ?? [])
         .map((p) => (p.tags as { subject?: string } | null)?.subject)
         .filter((s): s is string => Boolean(s)),
+      periods: (lastPosts ?? []).map(
+        (p) => (p.tags as { period?: string } | null)?.period ?? "",
+      ),
       civilian: (lastPosts ?? []).some(
         (p) => (p.tags as { military?: boolean } | null)?.military === false,
       ),

@@ -718,6 +718,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
         subjects: recentRows
           .map((p) => p.tags?.subject)
           .filter((s): s is string => Boolean(s)),
+        periods: recentRows.map((p) => p.tags?.period ?? ""),
         civilian: recentRows.some((p) => p.tags?.military === false),
         statics: recentRows.filter((p) => p.tags?.action === false).length,
       },
