@@ -51,6 +51,16 @@ sources:
       - category: "Images from the Australian War Memorial"
         attribution: "AWM"
         lang: "en"
+      # проверено пробой 03.08: 2058 файлов, поиск по годам работает.
+      # Финский военный архив - Зимняя война и Продолжение, много движения
+      - category: "SA-kuva"
+        attribution: "SA-kuva"
+        lang: "fi"
+        terms: ["1940", "1941", "1942", "1943", "1944"]
+      # 630 тысяч файлов: американская хроника обеих войн, много репортажа
+      - category: "Images from the Library of Congress"
+        attribution: "Library of Congress"
+        lang: "en"
   # прежний узкий источник: остался ради истории, включать не нужно -
   # Бундесархив теперь один из архивов commons
   bundesarchiv:
