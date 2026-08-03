@@ -14,12 +14,21 @@ sources:
       - "navy pacific 1942"
       - "tank battle"
       - "military aviation 1940"
-      - "korean war"
+      # холодная война: от Кореи до восьмидесятых
+      - "korean war combat"
+      - "vietnam war patrol"
+      - "vietnam helicopter 1968"
+      - "berlin wall 1961"
+      - "cuban missile crisis"
+      - "cold war missile test"
   # архивы разных стран на Wikimedia Commons - главный источник разнообразия
   commons:
     enabled: true
     weight: 45
-    categories: ["1915", "1916", "1918", "1940", "1941", "1942", "1943", "1944", "1945"]
+    # годы-фильтры поиска: обе мировые плюс ключевые точки холодной войны
+    categories:
+      ["1915", "1916", "1918", "1940", "1941", "1942", "1943", "1944", "1945",
+       "1951", "1956", "1962", "1968", "1975", "1983"]
     # имена категорий проверены пробой tg-diag 29.07: у IWM единственное
     # число, у РИА Новости и Австралии Images from ...
     archives:
@@ -36,7 +45,9 @@ sources:
       - category: "Images from the National Archives and Records Administration"
         attribution: "NARA"
         lang: "en"
-        terms: ["photograph 1918", "photograph 1942", "photograph 1944", "photograph 1945", "photograph 1951"]
+        terms:
+          ["photograph 1918", "photograph 1942", "photograph 1944", "photograph 1945",
+           "photograph 1951", "photograph 1966", "photograph 1968", "photograph 1972"]
       - category: "Images from the Australian War Memorial"
         attribution: "AWM"
         lang: "en"
@@ -49,7 +60,7 @@ sources:
   pastvu:
     enabled: true        # контракт API проверен вживую (tg-diag)
     weight: 30
-    years: [1914, 1960]
+    years: [1914, 1990]
   nara:
     enabled: false       # нужен бесплатный ключ: секрет NARA_API_KEY
     weight: 20
@@ -67,9 +78,9 @@ collect:
   # 55 вместо прежних 45: по факту всё живое идёт от 68, а 50-55 - проходняк.
   # Резерв копится с запасом, так что за качество платим количеством
   min_score: 55          # слабее этой оценки в резерв не пишем
-  # канал про военную историю: ПМВ, ВМВ, холодная война; современность — мимо
+  # канал про военную историю: ПМВ, ВМВ, холодная война до конца века
   min_year: 1850
-  max_year: 1990
+  max_year: 1999
 
 publish:
   times: ["09:00", "12:30", "15:00", "18:00", "21:00"]
