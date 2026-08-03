@@ -23,6 +23,9 @@ export type CollectedItem = RawItem & { source: string };
  * Тянет rawLimit записей из включённых источников пропорционально weight.
  * Упавший источник не роняет сбор целиком — пишем ошибку и едем дальше.
  */
+/** Сколько записей дал каждый источник: {loc: 27, commons: 54, pastvu: 0}. */
+export const lastSourceCounts: Record<string, number> = {};
+
 export async function collectRaw(
   cfg: AppConfig,
   rawLimit: number,
@@ -46,8 +49,10 @@ export async function collectRaw(
     try {
       const items = await adapter.fetch(share, sourceCfg, cursors);
       out.push(...items.map((item) => ({ ...item, source: name })));
+      lastSourceCounts[name] = items.length;
       console.log(`${name}: получено ${items.length} (запрошено ${share})`);
     } catch (err) {
+      lastSourceCounts[name] = -1; // источник упал, а не отдал пусто
       console.error(`${name}: сбор упал — ${(err as Error).message}`);
     }
   }

@@ -103,7 +103,7 @@ jobs:
           echo "--- поиск по названиям файлов ---"
           # кавычки внутри запроса - обычные: экранированные уходили в API
           # как есть и давали ложные нули хитов
-          for q in 'intitle:"RIAN archive" 1943' 'incategory:"Images from the Australian War Memorial" 1943' 'incategory:"Images from RIA Novosti" war'; do
+          for q in 'intitle:"RIAN archive" 1943' 'incategory:"Images from the Australian War Memorial" 1943' 'incategory:"Images from RIA Novosti" war' 'incategory:"SA-kuva" 1941' 'incategory:"SA-kuva"' 'incategory:"Images from the Library of Congress" 1943' 'incategory:"Images from the Library of Congress" 1918'; do
             n=$(curl -sSG "https://commons.wikimedia.org/w/api.php" \
               --data-urlencode "action=query" --data-urlencode "format=json" \
               --data-urlencode "list=search" --data-urlencode "srnamespace=6" \

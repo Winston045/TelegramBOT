@@ -10,7 +10,13 @@
  */
 import { loadConfig } from "../src/config.js";
 import { dbCursorStore, memoryCursorStore } from "../src/cursors.js";
-import { ADAPTERS, collectRaw, type CollectedItem } from "../src/sources/index.js";
+import {
+  ADAPTERS,
+  collectRaw,
+  lastSourceCounts,
+  type CollectedItem,
+} from "../src/sources/index.js";
+import { reportHealth } from "../src/health.js";
 import { prefilter } from "../src/prefilter.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { getDb } from "../src/db.js";
@@ -262,6 +268,20 @@ async function main() {
   console.log(
     `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), брака подписи ${failed}, цитат переписано ${rewritten}`,
   );
+
+  // та же воронка в базу: по ней бот сам замечает, что что-то сломалось
+  const { error: runErr } = await db.from("collect_runs").insert({
+    raw: raw.length,
+    prefiltered: kept.length,
+    analyzed: hashed.length,
+    written,
+    junk: skippedDull,
+    broken: failed,
+    sources: lastSourceCounts,
+  });
+  if (runErr) console.warn(`запись прогона в историю: ${runErr.message}`);
+
+  await reportHealth(db, cfg);
   await heartbeatOk("collector");
 }
 

@@ -99,10 +99,38 @@ filters:
   stop_words: []
   block_nazi_symbols: false
 
+# устоявшиеся русские названия: без них модель переводит калькой,
+# а знающий читатель это замечает сразу
 glossary:
   "Königsberg": "Кёнигсберг"
+  "Breslau": "Бреслау"
+  "Danzig": "Данциг"
+  "Stalingrad": "Сталинград"
   "Guards Rifle Division": "гвардейская стрелковая дивизия"
+  "Rifle Division": "стрелковая дивизия"
+  "Tank Corps": "танковый корпус"
   "Sherman": "Шерман"
+  "Churchill tank": "Черчилль"
+  "Tiger": "Тигр"
+  "Panther": "Пантера"
+  "Panzer": "танк"
+  "Wehrmacht": "вермахт"
+  "Luftwaffe": "люфтваффе"
+  "Kriegsmarine": "кригсмарине"
+  "Red Army": "Красная армия"
+  "Royal Air Force": "Королевские ВВС"
+  "Royal Navy": "Королевский флот"
+  "US Army": "армия США"
+  "Marine Corps": "корпус морской пехоты"
+  "howitzer": "гаубица"
+  "anti-aircraft gun": "зенитное орудие"
+  "machine gun": "пулемёт"
+  "landing craft": "десантный катер"
+  "Eastern Front": "Восточный фронт"
+  "Western Front": "Западный фронт"
+  "Battle of the Bulge": "Арденнская операция"
+  "D-Day": "высадка в Нормандии"
+  "Blitz": "Блиц"
 
 channel:
   id: "@Story_Teams"
