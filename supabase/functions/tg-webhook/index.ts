@@ -451,11 +451,23 @@ bot.on("callback_query:data", async (ctx) => {
           await ctx.answerCallbackQuery({ text: "Подписи нет" });
           return;
         }
-        await ctx.answerCallbackQuery();
-        await ctx.replyWithPhoto(data.image_url, {
-          caption: data.caption_html,
-          parse_mode: "HTML",
-        });
+        try {
+          await ctx.replyWithPhoto(data.image_url, {
+            caption: data.caption_html,
+            parse_mode: "HTML",
+          });
+          await ctx.answerCallbackQuery();
+        } catch {
+          // архив не отдал фото телеграму - показываем хотя бы текст;
+          // молчание в ответ на кнопку хуже любого запасного варианта
+          await ctx.reply(
+            `${data.caption_html}\n\nФото по кнопке не отдалось, вот ссылка:\n${data.image_url}`,
+            { parse_mode: "HTML" },
+          );
+          await ctx.answerCallbackQuery({
+            text: "Архив не отдаёт фото - прислал текст и ссылку",
+          });
+        }
         return;
       }
       case "now": {
