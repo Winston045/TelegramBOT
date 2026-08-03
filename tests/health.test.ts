@@ -49,7 +49,8 @@ describe("findProblems", () => {
     expect(problems.some((p) => p.text.includes("квота Gemini"))).toBe(true);
   });
 
-  it("без истории о падении не сообщаем - не с чем сравнивать", () => {
-    expect(findProblems(run({ written: 1 }), [])).toEqual([]);
+  it("без истории сравнение с нормой не срабатывает - не с чем сравнивать", () => {
+    const problems = findProblems(run({ written: 6 }), []);
+    expect(problems.some((p) => p.text.includes("вдвое меньше"))).toBe(false);
   });
 });
