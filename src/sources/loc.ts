@@ -68,7 +68,10 @@ async function fetchQuery(query: string, count: number, page: number): Promise<L
   const url = new URL("https://www.loc.gov/photos/");
   url.searchParams.set("q", query);
   url.searchParams.set("fo", "json");
-  url.searchParams.set("c", String(count));
+  // только результаты: без at= loc.gov шлёт мегабайты фасетов и служебных
+  // блоков - именно эти ответы и не влезали в таймаут (три отвала подряд)
+  url.searchParams.set("at", "results");
+  url.searchParams.set("c", String(Math.min(count, 40)));
   url.searchParams.set("sp", String(page)); // пагинация: страница выдачи
   // без User-Agent loc.gov отдаёт 403 с датацентровых IP (GitHub Actions — Azure)
   // loc.gov регулярно отвечает медленно: один таймаут не должен уносить
