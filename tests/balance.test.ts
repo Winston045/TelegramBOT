@@ -21,10 +21,26 @@ describe("pickBalanced", () => {
     expect(picked.map((i) => i.id)).toEqual([1, 2, 3, 5, 6]);
   });
 
-  it("учитывает показы прошлой недели", () => {
+  it("учитывает показы прошлой недели: подходящие идут первыми", () => {
     const items = [item(1, "armor"), item(2, "aviation")];
     const picked = pickBalanced(items, new Map([["armor", 3]]), 5, 3);
-    expect(picked.map((i) => i.id)).toEqual([2]);
+    expect(picked.map((i) => i.id)).toEqual([2, 1]);
+  });
+
+  it("лимиты не могут обнулить партию: добираем повторами тем", () => {
+    const items = [item(1, "armor"), item(2, "armor"), item(3, "navy")];
+    const exhausted = new Map([
+      ["armor", 3],
+      ["navy", 3],
+    ]);
+    // все темы выбраны за неделю - но чат не должен остаться пустым
+    expect(pickBalanced(items, exhausted, 2, 3).map((i) => i.id)).toEqual([1, 2]);
+  });
+
+  it("добор не превышает limit и не дублирует карточки", () => {
+    const items = [item(1, "armor"), item(2, "armor")];
+    const picked = pickBalanced(items, new Map([["armor", 5]]), 5, 3);
+    expect(picked.map((i) => i.id)).toEqual([1, 2]);
   });
 
   it("кандидаты без темы не ограничиваются", () => {
