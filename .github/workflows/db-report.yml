@@ -16,6 +16,7 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,7 +28,9 @@ jobs:
       # отчёта; "before:5000" - нырнуть в архив старше поста #5000
       - name: Отчёт
         run: |
-          if grep -q stereopurge .github/report.trigger 2>/dev/null; then
+          if grep -q migrate .github/report.trigger 2>/dev/null; then
+            npm run migrate
+          elif grep -q stereopurge .github/report.trigger 2>/dev/null; then
             npx tsx scripts/purge-stereo.ts
           elif grep -q ctxprobe .github/report.trigger 2>/dev/null; then
             npx tsx scripts/probe-context.ts 6

@@ -72,12 +72,19 @@ async function loadKnownHashes(): Promise<string[]> {
 }
 
 /**
- * Скачивание картинки. Викимедиа режет анонимные запросы с датацентровых
- * IP (GitHub Actions) кодом 429 - обязателен User-Agent, а на отказ
- * отвечаем паузой и повтором, иначе от партии выживают единицы.
+ * Скачивание картинки. Викимедиа лимитирует запросы с датацентровых IP
+ * (GitHub Actions) кодом 429, и бан держится минутами - короткие ретраи
+ * его не пересиживают (живой прогон 03.08: 17 из 24 файлов подряд).
+ * Поэтому: вежливый темп, длинное ожидание на первый 429 и быстрый отказ,
+ * когда хост забанил нас всерьёз - лучше меньше партия, чем мёртвый прогон.
  */
+const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
+let politeDelayMs = 800; // после первого 429 темп снижается
+let consecutive429 = 0;
+
 async function fetchImage(url: string): Promise<Response | null> {
-  const RETRY_DELAYS_MS = [1000, 3000, 8000];
+  // после серии банов не тратим время на ретраи - одна попытка и дальше
+  const delays = consecutive429 >= 3 ? [] : [2_000, 20_000, 45_000];
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(60_000),
@@ -86,14 +93,21 @@ async function fetchImage(url: string): Promise<Response | null> {
         accept: "image/*",
       },
     });
-    if (res.ok) return res;
+    if (res.ok) {
+      consecutive429 = 0;
+      return res;
+    }
+    if (res.status === 429) {
+      politeDelayMs = 3_000;
+      consecutive429++;
+    }
     const retriable = res.status === 429 || res.status >= 500;
-    const delay = RETRY_DELAYS_MS[attempt];
+    const delay = delays[attempt];
     if (!retriable || delay === undefined) {
       console.warn(`  пропуск (HTTP ${res.status}): ${url}`);
       return null;
     }
-    await new Promise((r) => setTimeout(r, delay));
+    await sleepMs(delay);
   }
 }
 
@@ -105,7 +119,7 @@ async function hashAndDedup(items: CollectedItem[], known: string[]): Promise<Ha
       const res = await fetchImage(item.imageUrl);
       if (!res) continue;
       // пауза между скачиваниями: вежливо к архивам, дешевле, чем ретраи
-      await new Promise((r) => setTimeout(r, 300));
+      await sleepMs(politeDelayMs);
       const imageBuffer = Buffer.from(await res.arrayBuffer());
       // метаданные молчат, а кадр всё равно стереопара - ловим по картинке
       if (await isStereoPair(imageBuffer)) {
