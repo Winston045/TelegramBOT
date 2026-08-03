@@ -27,7 +27,9 @@ jobs:
       # отчёта; "before:5000" - нырнуть в архив старше поста #5000
       - name: Отчёт
         run: |
-          if grep -q ctxprobe .github/report.trigger 2>/dev/null; then
+          if grep -q stereopurge .github/report.trigger 2>/dev/null; then
+            npx tsx scripts/purge-stereo.ts
+          elif grep -q ctxprobe .github/report.trigger 2>/dev/null; then
             npx tsx scripts/probe-context.ts 6
           elif grep -q expquotes .github/report.trigger 2>/dev/null; then
             npx tsx scripts/expandable-quotes.ts

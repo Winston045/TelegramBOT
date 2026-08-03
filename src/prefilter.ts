@@ -6,6 +6,7 @@ export type RejectReason =
   | "no_place"
   | "year_out_of_range"
   | "too_small"
+  | "stereograph"
   | "stop_word";
 
 /** Дешёвый префильтр до vision-скоринга. Возвращает причину брака или null. */
@@ -24,6 +25,10 @@ export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null
   }
 
   const haystack = `${item.title ?? ""} ${item.description ?? ""}`.toLowerCase();
+  // стереокарточки: два одинаковых кадра на картонке - в канал не годятся
+  if (/stereograph|stereoscop|stereo card|stereo view/.test(haystack)) {
+    return "stereograph";
+  }
   for (const word of cfg.filters.stop_words) {
     if (haystack.includes(word.toLowerCase())) return "stop_word";
   }

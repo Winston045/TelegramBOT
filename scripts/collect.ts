@@ -19,6 +19,7 @@ import {
 import { reportHealth } from "../src/health.js";
 import { prefilter } from "../src/prefilter.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
+import { isStereoPair } from "../src/stereo.js";
 import { getDb } from "../src/db.js";
 import { GeminiQuotaError, quotaTripped } from "../src/gemini.js";
 import { analyzeImage } from "../src/analyze.js";
@@ -106,6 +107,11 @@ async function hashAndDedup(items: CollectedItem[], known: string[]): Promise<Ha
       // пауза между скачиваниями: вежливо к архивам, дешевле, чем ретраи
       await new Promise((r) => setTimeout(r, 300));
       const imageBuffer = Buffer.from(await res.arrayBuffer());
+      // метаданные молчат, а кадр всё равно стереопара - ловим по картинке
+      if (await isStereoPair(imageBuffer)) {
+        console.log(`  стереопара: [${item.source}] ${item.sourceId}`);
+        continue;
+      }
       const imageHash = await dhash(imageBuffer);
       if ([...known, ...batchHashes].some((h) => isDuplicate(h, imageHash))) {
         console.log(`  дубликат: [${item.source}] ${item.sourceId}`);
