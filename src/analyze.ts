@@ -32,7 +32,7 @@ ${captionRules(item, glossary)}
 ${FEW_SHOT}
 
 Верни строго JSON без обёрток и без markdown:
-{${SCORE_FIELDS_SCHEMA}, "caption": "...", "quote": "...", "quote_kind": "observation" | "context"}`;
+{${SCORE_FIELDS_SCHEMA}, "caption": "...", "quote": "...", "quote_place": "<место и дата отдельной строкой - или пустая строка>", "quote_kind": "observation" | "context"}`;
 }
 
 export async function analyzeImage(
@@ -52,6 +52,7 @@ export async function analyzeImage(
     unsafe: Boolean(result.unsafe),
     caption: result.caption ?? "",
     quote: result.quote ?? "",
+    quote_place: result.quote_place?.trim() || undefined,
     quote_kind: result.quote_kind === "observation" ? "observation" : "context",
   };
 }

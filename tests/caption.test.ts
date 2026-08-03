@@ -46,6 +46,23 @@ describe("assembleCaptionHtml", () => {
     expect(html).toContain('<a href="https://t.me/Story_Teams">STORY | TEAM</a>');
   });
 
+  it("место и дата отдельной второй цитатой - эталонный формат 12.2024", () => {
+    const html = assembleCaptionHtml(
+      {
+        caption: "Крейсер «Яхаги» под ударами американских самолетов.",
+        quote: "В 12:46 торпеда попала в машинное отделение.",
+        quote_place: "Тихий океан, 1945 год.",
+        quote_kind: "context",
+      },
+      { license: "PD" },
+      channel,
+    );
+    expect(html).toContain(
+      "<blockquote expandable>В 12:46 торпеда попала в машинное отделение.</blockquote>\n" +
+        "<blockquote>Тихий океан, 1945 год.</blockquote>",
+    );
+  });
+
   it("без цитаты blockquote не появляется", () => {
     const html = assembleCaptionHtml(
       { ...generated, quote: "" },
