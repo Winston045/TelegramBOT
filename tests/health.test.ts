@@ -44,6 +44,11 @@ describe("findProblems", () => {
     expect(problems.some((p) => p.text.includes("вдвое меньше"))).toBe(true);
   });
 
+  it("анализ почти весь пропал - называем квоту, а не источники", () => {
+    const problems = findProblems(run({ analyzed: 8, written: 1 }), week);
+    expect(problems.some((p) => p.text.includes("квота Gemini"))).toBe(true);
+  });
+
   it("без истории о падении не сообщаем - не с чем сравнивать", () => {
     expect(findProblems(run({ written: 1 }), [])).toEqual([]);
   });

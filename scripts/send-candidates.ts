@@ -8,6 +8,7 @@ import { loadConfig } from "../src/config.js";
 import { getDb } from "../src/db.js";
 import { env } from "../src/env.js";
 import { pickBalanced } from "../src/balance.js";
+import { rank, type PlanCandidate } from "../src/plan.js";
 import { buildServiceLine } from "../src/service_line.js";
 import { sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { visibleLength, CAPTION_LIMIT } from "../src/validate.js";
@@ -53,8 +54,13 @@ async function main() {
     .order("score", { ascending: false });
   if (error) throw new Error(`чтение кандидатов: ${error.message}`);
 
+  // карточки сортируем тем же рангом, что и очередь публикации: скидка
+  // старым эпохам и статике, фора цвету - иначе чат видит другой отбор
+  const ordered = [...fresh].sort(
+    (a, b) => rank(b as PlanCandidate) - rank(a as PlanCandidate),
+  );
   const picked = pickBalanced(
-    fresh,
+    ordered,
     await recentSubjectCounts(),
     limitArg() ?? cfg.collect.daily_candidates,
     cfg.balance.max_same_tag_per_week,
