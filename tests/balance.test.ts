@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { pickBalanced } from "../src/balance.js";
 import { buildServiceLine, parseCandidateId } from "../src/service_line.js";
 
-const item = (id: number, subject?: string) => ({
+const item = (id: number, subject?: string, period?: string) => ({
   id,
-  tags: subject ? { subject } : null,
+  tags: subject || period ? { subject, period } : null,
 });
 
 describe("pickBalanced", () => {
@@ -51,6 +51,23 @@ describe("pickBalanced", () => {
   it("соблюдает limit", () => {
     const items = [item(1, "a"), item(2, "b"), item(3, "c")];
     expect(pickBalanced(items, new Map(), 2, 3)).toHaveLength(2);
+  });
+
+  it("одна эпоха не занимает больше половины партии", () => {
+    const items = [
+      item(1, "armor", "WW1"),
+      item(2, "navy", "WW1"),
+      item(3, "aviation", "WW1"),
+      item(4, "infantry", "WW2"),
+    ];
+    // партия из 3: максимум 2 ПМВ, третьим войдёт ВМВ
+    const picked = pickBalanced(items, new Map(), 3, 5);
+    expect(picked.map((i) => i.id)).toEqual([1, 2, 4]);
+  });
+
+  it("если других эпох нет - партия всё равно набирается", () => {
+    const items = [item(1, "armor", "WW1"), item(2, "navy", "WW1"), item(3, "aviation", "WW1")];
+    expect(pickBalanced(items, new Map(), 3, 5)).toHaveLength(3);
   });
 });
 

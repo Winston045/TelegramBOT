@@ -100,13 +100,13 @@ export const commons: SourceAdapter = {
         items.push(item);
       }
 
-      // выдача по слову кончилась — со следующего запуска новое слово
-      if (pages.length < perArchive) {
-        await cursors.set("commons", offKey, 0);
-        await cursors.set("commons", `term:${archive.category}`, termIdx + 1);
-      } else {
-        await cursors.set("commons", offKey, offset + pages.length);
-      }
+      // смещение внутри слова: когда очередь снова дойдёт до этого года,
+      // продолжим с того же места (или с начала, если выдача кончилась)
+      await cursors.set("commons", offKey, pages.length < perArchive ? 0 : offset + pages.length);
+      // год меняется КАЖДЫЙ запуск. Раньше - только по исчерпанию выдачи,
+      // и на гигантских категориях бот неделями сидел в первом годе списка:
+      // живая лента превратилась в сплошную ПМВ
+      await cursors.set("commons", `term:${archive.category}`, termIdx + 1);
     }
     return items.slice(0, limit);
   },

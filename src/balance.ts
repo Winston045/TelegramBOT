@@ -10,7 +10,7 @@
  */
 
 export type Taggable = {
-  tags: { subject?: string; region?: string } | null;
+  tags: { subject?: string; region?: string; period?: string } | null;
 };
 
 export function pickBalanced<T extends Taggable>(
@@ -23,7 +23,10 @@ export function pickBalanced<T extends Taggable>(
   const chosen = new Set<T>();
   const counts = new Map(recentSubjectCounts);
   const regionCounts = new Map<string, number>();
+  const periodCounts = new Map<string, number>();
   const maxPerRegion = Math.max(2, Math.ceil(limit / 3));
+  // эпохи тоже мешаем: партия из одной ПМВ - скука, даже если темы разные
+  const maxPerPeriod = Math.max(1, Math.ceil(limit / 2));
 
   for (const item of ordered) {
     if (picked.length >= limit) break;
@@ -33,11 +36,12 @@ export function pickBalanced<T extends Taggable>(
       if (used >= maxPerTag) continue;
     }
     const region = item.tags?.region;
-    if (region) {
-      const used = regionCounts.get(region) ?? 0;
-      if (used >= maxPerRegion) continue;
-      regionCounts.set(region, used + 1);
-    }
+    if (region && (regionCounts.get(region) ?? 0) >= maxPerRegion) continue;
+    const period = item.tags?.period;
+    if (period && (periodCounts.get(period) ?? 0) >= maxPerPeriod) continue;
+
+    if (region) regionCounts.set(region, (regionCounts.get(region) ?? 0) + 1);
+    if (period) periodCounts.set(period, (periodCounts.get(period) ?? 0) + 1);
     if (subject) counts.set(subject, (counts.get(subject) ?? 0) + 1);
     picked.push(item);
     chosen.add(item);
