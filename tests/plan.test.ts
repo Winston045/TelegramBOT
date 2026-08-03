@@ -89,6 +89,38 @@ describe("planAuto", () => {
   it("пустой резерв - пустой план", () => {
     expect(planAuto([], noRecent, 3)).toEqual([]);
   });
+
+  it("живой кадр обгоняет статику при близком качестве", () => {
+    const staticShot = { ...cand(1, 80, "armor"), tags: { subject: "armor", action: false } };
+    const alive = { ...cand(2, 72, "navy"), tags: { subject: "navy", action: true } };
+    expect(planAuto([staticShot, alive], noRecent, 1)[0]?.id).toBe(2);
+  });
+
+  it("но сильная статика всё же выходит вперёд слабого движения", () => {
+    const staticShot = { ...cand(1, 95, "armor"), tags: { subject: "armor", action: false } };
+    const alive = { ...cand(2, 60, "navy"), tags: { subject: "navy", action: true } };
+    expect(planAuto([staticShot, alive], noRecent, 1)[0]?.id).toBe(1);
+  });
+
+  it("две статики подряд в план не идут", () => {
+    const s1 = { ...cand(1, 90, "armor"), tags: { subject: "armor", action: false } };
+    const s2 = { ...cand(2, 88, "navy"), tags: { subject: "navy", action: false } };
+    const alive = { ...cand(3, 50, "aviation"), tags: { subject: "aviation", action: true } };
+    expect(planAuto([s1, s2, alive], noRecent, 2).map((c) => c.id)).toEqual([1, 3]);
+  });
+
+  it("статика в недавних постах придерживает следующую", () => {
+    const s1 = { ...cand(1, 90, "armor"), tags: { subject: "armor", action: false } };
+    const alive = { ...cand(2, 50, "navy"), tags: { subject: "navy", action: true } };
+    const picked = planAuto([s1, alive], { subjects: [], civilian: false, statics: 1 }, 1);
+    expect(picked[0]?.id).toBe(2);
+  });
+
+  it("если в резерве только статика - слот всё равно закрывается", () => {
+    const s1 = { ...cand(1, 90, "armor"), tags: { subject: "armor", action: false } };
+    const s2 = { ...cand(2, 80, "navy"), tags: { subject: "navy", action: false } };
+    expect(planAuto([s1, s2], noRecent, 2).map((c) => c.id)).toEqual([1, 2]);
+  });
 });
 
 describe("upcomingSlots", () => {

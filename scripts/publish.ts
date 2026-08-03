@@ -109,6 +109,9 @@ async function main() {
       civilian: (lastPosts ?? []).some(
         (p) => (p.tags as { military?: boolean } | null)?.military === false,
       ),
+      statics: (lastPosts ?? []).filter(
+        (p) => (p.tags as { action?: boolean } | null)?.action === false,
+      ).length,
     };
 
     // битые кадры выкидываем до планировщика: он решает только «что интереснее»

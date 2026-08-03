@@ -14,6 +14,7 @@ export type PlanTags = {
   subject?: string;
   region?: string;
   military?: boolean;
+  action?: boolean;
 } | null;
 
 export type PlanCandidate = {
@@ -40,8 +41,16 @@ export type PlanEntry = {
 export const QUOTE_BONUS = 5;
 /** Длина цитаты, с которой она считается познавательной справкой. */
 export const LONG_QUOTE = 180;
-/** Сколько последних постов помним, чтобы не гнать одну тему подряд. */
+/** Сколько последних постов помним для правил разнообразия. */
 export const RECENT_WINDOW = 4;
+/**
+ * Насколько статика уступает живому кадру при равном качестве. Оценка за
+ * постановочность больше не штрафуется (это делала модель и выбрасывала
+ * целые архивы), но в ленте движение идёт вперёд.
+ */
+export const STATIC_PENALTY = 12;
+/** Сколько статичных кадров допускаем на окно из RECENT_WINDOW постов. */
+export const MAX_STATIC_IN_WINDOW = 1;
 
 /** Видимая длина цитаты внутри blockquote. */
 export function quoteLength(captionHtml: string | null): number {
@@ -56,10 +65,14 @@ export function headline(captionHtml: string | null, limit = 70): string {
   return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
 }
 
-/** Оценка с бонусом за содержательность - по ней сортируется резерв. */
+/**
+ * Место в очереди: качество кадра плюс редакционные предпочтения.
+ * Оценка отвечает за качество, здесь - за характер ленты.
+ */
 export function rank(c: PlanCandidate): number {
-  const bonus = quoteLength(c.caption_html ?? null) >= LONG_QUOTE ? QUOTE_BONUS : 0;
-  return (c.score ?? 0) + bonus;
+  const quote = quoteLength(c.caption_html ?? null) >= LONG_QUOTE ? QUOTE_BONUS : 0;
+  const staticShot = c.tags?.action === false ? STATIC_PENALTY : 0;
+  return (c.score ?? 0) + quote - staticShot;
 }
 
 export type RecentContext = {
@@ -67,6 +80,8 @@ export type RecentContext = {
   subjects: string[];
   /** Был ли мирный кадр среди последних постов. */
   civilian: boolean;
+  /** Сколько статичных кадров было среди последних постов. */
+  statics?: number;
 };
 
 /**
@@ -86,12 +101,20 @@ export function planAuto(
   const chosen: PlanCandidate[] = [];
   const subjects = [...recent.subjects];
   let civilianLast = recent.civilian;
+  // окно скользит: сколько статики в последних RECENT_WINDOW постах
+  const staticsWindow: boolean[] = Array.from(
+    { length: Math.min(recent.statics ?? 0, RECENT_WINDOW) },
+    () => true,
+  );
 
   while (chosen.length < count && pool.length) {
+    const staticsInWindow = staticsWindow.slice(0, RECENT_WINDOW).filter(Boolean).length;
     const fits = (c: PlanCandidate) => {
       const subject = c.tags?.subject;
       if (subject && subjects.slice(0, RECENT_WINDOW).includes(subject)) return false;
       if (c.tags?.military === false && civilianLast) return false;
+      // статика допустима, но редко: лента должна дышать движением
+      if (c.tags?.action === false && staticsInWindow >= MAX_STATIC_IN_WINDOW) return false;
       return true;
     };
     const idx = pool.findIndex(fits);
@@ -100,6 +123,7 @@ export function planAuto(
     chosen.push(pick);
     if (pick.tags?.subject) subjects.unshift(pick.tags.subject);
     civilianLast = pick.tags?.military === false;
+    staticsWindow.unshift(pick.tags?.action === false);
   }
   return chosen;
 }

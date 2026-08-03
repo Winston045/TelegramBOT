@@ -247,8 +247,20 @@ async function main() {
     }
   }
 
+  // сквозная воронка: сразу видно, на каком сите теряется контент
   console.log(
-    `готово: в резерв записано ${written}, брака ${failed}, скучных отсеяно ${skippedDull}, цитат переписано ${rewritten}`,
+    "воронка: " +
+      [
+        `сырых ${raw.length}`,
+        `префильтр ${kept.length}`,
+        `на анализ ${survivors.length}`,
+        `новых ${fresh.length}`,
+        `уникальных ${hashed.length}`,
+        `в резерв ${written}`,
+      ].join(" → "),
+  );
+  console.log(
+    `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), брака подписи ${failed}, цитат переписано ${rewritten}`,
   );
   await heartbeatOk("collector");
 }
