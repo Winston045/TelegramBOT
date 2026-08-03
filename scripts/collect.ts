@@ -13,6 +13,7 @@ import { dbCursorStore, memoryCursorStore } from "../src/cursors.js";
 import {
   ADAPTERS,
   collectRaw,
+  interleaveBySource,
   lastSourceCounts,
   type CollectedItem,
 } from "../src/sources/index.js";
@@ -157,7 +158,9 @@ async function main() {
   }
 
   const keepLimit = numArg("--keep") ?? cfg.collect.prefilter_keep;
-  const survivors = kept.slice(0, keepLimit);
+  // срез только после перемешивания: иначе первые keepLimit - это целиком
+  // первый источник из конфига, а остальные не доходят до анализа
+  const survivors = interleaveBySource(kept).slice(0, keepLimit);
   console.log(`выжило после префильтра: ${survivors.length} (лимит ${keepLimit})`);
 
   if (dry) {

@@ -20,6 +20,31 @@ export const ADAPTERS: Record<string, SourceAdapter> = {
 export type CollectedItem = RawItem & { source: string };
 
 /**
+ * Пропорциональное перемешивание источников с сохранением порядка внутри
+ * каждого. Без него партия «на анализ» резалась по порядку конфига:
+ * первые keepLimit записей - целиком первый источник, а хвост (PastVu)
+ * не доходил до анализа вообще, какой бы вес ему ни стоял.
+ *
+ * Каждой записи считаем «глубину» в своём источнике (доля от размера его
+ * пула) и сортируем по ней: срез любой длины держит пропорции пулов.
+ */
+export function interleaveBySource<T extends { source: string }>(items: T[]): T[] {
+  const poolSizes = new Map<string, number>();
+  for (const it of items) poolSizes.set(it.source, (poolSizes.get(it.source) ?? 0) + 1);
+
+  const poolIndex = new Map<string, number>();
+  return items
+    .map((item) => {
+      const idx = poolIndex.get(item.source) ?? 0;
+      poolIndex.set(item.source, idx + 1);
+      const depth = (idx + 0.5) / (poolSizes.get(item.source) ?? 1);
+      return { item, depth, idx };
+    })
+    .sort((a, b) => a.depth - b.depth || a.idx - b.idx || a.item.source.localeCompare(b.item.source))
+    .map((r) => r.item);
+}
+
+/**
  * Тянет rawLimit записей из включённых источников пропорционально weight.
  * Упавший источник не роняет сбор целиком — пишем ошибку и едем дальше.
  */
