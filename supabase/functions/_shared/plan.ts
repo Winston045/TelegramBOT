@@ -56,6 +56,20 @@ export const STATIC_PENALTY = 12;
  * чтобы цветной кадр выигрывал у равного чёрно-белого, но не у лучшего.
  */
 export const COLOR_BONUS = 8;
+/**
+ * Эпохи до ВМВ уступают при равном качестве: снимки тех лет часто сильно
+ * повреждены, упор канала - ВМВ и вторая половина XX века. Это скидка,
+ * а не запрет: старый кадр с сильной историей (высокая оценка, развёрнутая
+ * цитата) перевешивает её и выходит.
+ */
+export const OLD_ERA_PENALTY = 8;
+export const OLD_PERIODS = new Set([
+  "pre_ww1",
+  "WW1",
+  "russian_civil_war",
+  "interwar",
+  "spanish_civil_war",
+]);
 /** Сколько статичных кадров допускаем на окно из RECENT_WINDOW постов. */
 export const MAX_STATIC_IN_WINDOW = 1;
 
@@ -80,7 +94,8 @@ export function rank(c: PlanCandidate): number {
   const quote = quoteLength(c.caption_html ?? null) >= LONG_QUOTE ? QUOTE_BONUS : 0;
   const staticShot = c.tags?.action === false ? STATIC_PENALTY : 0;
   const color = c.tags?.color === true ? COLOR_BONUS : 0;
-  return (c.score ?? 0) + quote + color - staticShot;
+  const oldEra = c.tags?.period && OLD_PERIODS.has(c.tags.period) ? OLD_ERA_PENALTY : 0;
+  return (c.score ?? 0) + quote + color - staticShot - oldEra;
 }
 
 export type RecentContext = {

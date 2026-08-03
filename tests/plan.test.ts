@@ -47,6 +47,25 @@ describe("rank", () => {
     expect(quoteLength(cap("Текст"))).toBeLessThan(180);
   });
 
+  it("эпохи до ВМВ уступают при равном качестве", () => {
+    const ww1 = { ...cand(1, 72, "infantry"), tags: { subject: "infantry", period: "WW1", action: true } };
+    const ww2 = { ...cand(2, 70, "armor"), tags: { subject: "armor", period: "WW2", action: true } };
+    expect(rank(ww2)).toBeGreaterThan(rank(ww1));
+  });
+
+  it("но сильная история старой эпохи всё равно выходит", () => {
+    // ПМВ с высокой оценкой и развёрнутой цитатой против среднего ВМВ
+    const ww1Story = {
+      id: 1,
+      caption_html: cap("Пост 1", LONG),
+      score: 85,
+      tags: { subject: "infantry", period: "WW1", action: true },
+    };
+    const ww2Plain = { ...cand(2, 68, "armor"), tags: { subject: "armor", period: "WW2", action: true } };
+    expect(rank(ww1Story)).toBeGreaterThan(rank(ww2Plain));
+    expect(planAuto([ww1Story, ww2Plain], noRecent, 1)[0]?.id).toBe(1);
+  });
+
   it("подлинный цвет даёт фору, но не перекрывает большой разрыв", () => {
     const colorShot = { ...cand(1, 70, "armor"), tags: { subject: "armor", color: true } };
     const bw = { ...cand(2, 74, "navy"), tags: { subject: "navy", color: false } };
