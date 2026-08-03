@@ -61,6 +61,28 @@ jobs:
           echo "POST без секрета:"; probe_wh -X POST -H "content-type: application/json" -d '{"update_id":1}'
           echo "POST с секретом:"; probe_wh -X POST -H "content-type: application/json" \
             -H "X-Telegram-Bot-Api-Secret-Token: $TG_WEBHOOK_SECRET" -d '{"update_id":1}'
+      # кандидаты в новые источники: берём в config только то, что реально
+      # существует и достаточно велико (имена категорий проверяем пробой)
+      - name: Проба новых архивов Commons
+        run: |
+          titles="Category:SA-kuva|Category:Photographs by SA-kuva|Category:Images from Deutsche Fotothek|Category:Photographs from Deutsche Fotothek|Category:Media from the Nationaal Archief|Category:Photographs by Anefo|Category:Images from the Nationaal Archief|Category:Photographs of World War II|Category:Photographs by the U.S. Army Signal Corps|Category:Images from the National Archives of Norway|Category:Photographs from the Danish National Archives|Category:Images from the Netherlands Institute for Military History|Category:Photographs from the National Library of Scotland|Category:Images from the Library of Congress|Category:Vietnam War photographs|Category:Korean War photographs|Category:Cold War photographs"
+          curl -sSG "https://commons.wikimedia.org/w/api.php" \
+            --data-urlencode "action=query" \
+            --data-urlencode "format=json" \
+            --data-urlencode "formatversion=2" \
+            --data-urlencode "prop=categoryinfo" \
+            --data-urlencode "titles=$titles" \
+            | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          rows=[]
+          for p in d.get('query',{}).get('pages',[]):
+              ci=p.get('categoryinfo')
+              n=ci['files'] if ci else -1
+              rows.append((n, p['title']))
+          for n,t in sorted(rows, reverse=True):
+              print(('НЕТ    ' if n < 0 else f'файлов {n:>7} ') + t)
+          "
       - name: Проба категорий Commons
         run: |
           titles="Category:Images from the Imperial War Museum|Category:Files from the Imperial War Museum|Category:Photographs from the Imperial War Museum|Category:Imperial War Museum|Category:World War II photographs from the Imperial War Museum"
