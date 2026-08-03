@@ -16,6 +16,13 @@ function beforeArg(): number | undefined {
   return i !== -1 && Number.isFinite(n) && n > 1 ? n : undefined;
 }
 
+/** --month 2024-12 - выгрузить ВСЕ посты конкретного месяца (листает сам). */
+function monthArg(): string | undefined {
+  const i = process.argv.indexOf("--month");
+  const v = process.argv[i + 1];
+  return i !== -1 && v && /^\d{4}-\d{2}$/.test(v) ? v : undefined;
+}
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -52,10 +59,15 @@ async function fetchPage(slug: string, before?: number): Promise<string> {
 
 async function main() {
   const slug = channelSlug(loadConfig().channel.id);
+  const month = monthArg();
   const found: Array<{ id: number; date: string; text: string }> = [];
   let before = beforeArg();
 
-  for (let page = 0; page < 15 && found.length < WANT; page++) {
+  // в месячном режиме листаем, пока не пройдём месяц насквозь: страниц
+  // может быть много (архив в тысячи постов), потолок - защита от зацикла
+  const maxPages = month ? 400 : 15;
+  for (let page = 0; page < maxPages; page++) {
+    if (!month && found.length >= WANT) break;
     const html = await fetchPage(slug, before);
     const markers = [...html.matchAll(MESSAGE_SPLIT)].map((m) => ({
       id: Number(m[1]),
@@ -63,15 +75,22 @@ async function main() {
     }));
     if (!markers.length) break;
 
+    let oldestDate = "9999-99";
     for (let i = 0; i < markers.length; i++) {
       const end = i + 1 < markers.length ? markers[i + 1]!.start : html.length;
       const chunk = html.slice(markers[i]!.start, end);
+      const date = chunk.match(/datetime="(\d{4}-\d{2}-\d{2})/)?.[1] ?? "?";
+      if (date !== "?" && date.slice(0, 7) < oldestDate) oldestDate = date.slice(0, 7);
       const m = chunk.match(TEXT_BLOCK);
       if (!m) continue;
-      const date = chunk.match(/datetime="(\d{4}-\d{2}-\d{2})/)?.[1] ?? "?";
       const text = textFromHtml(m[1]!);
-      if (text.length > 60) found.push({ id: markers[i]!.id, date, text });
+      if (text.length <= 60) continue;
+      if (month && date.slice(0, 7) !== month) continue;
+      found.push({ id: markers[i]!.id, date, text });
     }
+
+    // страница целиком старше искомого месяца - дальше листать незачем
+    if (month && oldestDate !== "9999-99" && oldestDate < month) break;
 
     before = Math.min(...markers.map((m) => m.id));
     if (before <= 1) break;
@@ -83,11 +102,12 @@ async function main() {
   const unique = found.filter((p) => !seen.has(p.id) && seen.add(p.id));
   unique.sort((a, b) => b.id - a.id);
 
-  for (const p of unique.slice(0, WANT)) {
+  const show = month ? unique : unique.slice(0, WANT);
+  for (const p of show) {
     console.log(`\n══════════ пост #${p.id} (${p.date}) ══════════`);
     console.log(p.text);
   }
-  console.log(`\nвсего с текстом: ${unique.length}`);
+  console.log(`\nвсего с текстом: ${unique.length}${month ? ` за ${month}` : ""}`);
 }
 
 main().catch((err) => {

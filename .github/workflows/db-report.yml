@@ -48,7 +48,8 @@ jobs:
             npx tsx scripts/strip-attribution.ts
           elif grep -q style .github/report.trigger 2>/dev/null; then
             before=$(grep -oP 'before:\K\d+' .github/report.trigger || true)
-            npx tsx scripts/channel-posts.ts 30 ${before:+--before $before}
+            month=$(grep -oP 'month:\K\d{4}-\d{2}' .github/report.trigger || true)
+            npx tsx scripts/channel-posts.ts 30 ${before:+--before $before} ${month:+--month $month}
           else
             npm run review-captions -- 15
           fi
