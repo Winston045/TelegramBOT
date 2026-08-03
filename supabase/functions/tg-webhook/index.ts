@@ -10,6 +10,8 @@
  *                       (одобренное и то, что выберет автопостинг)
  *   /schedule         - панель расписания: слоты и число постов (МСК)
  *   /auto             - тумблер полной автоматизации (посты без одобрения)
+ *   /tidy             - автоочистка чата: служебные ответы бота удаляются
+ *                       через выбранное время (выкл / 1 / 6 / 24 ч)
  *   /published        - последние вышедшие с кнопками удаления
  *   /ok, /skip        - то же, что кнопки (реплаем на карточку)
  *   /quote <текст>    - заменить цитату (реплаем)
@@ -194,6 +196,60 @@ const EDITORS = new Set(
 // не редактор - молча игнорируем (и сообщения, и нажатия кнопок)
 bot.use((ctx, next) => {
   if (ctx.from && EDITORS.has(ctx.from.id)) return next();
+});
+
+/** Автоочистка: сколько часов живут служебные ответы бота (0 - вечно). */
+const DEFAULT_TTL_HOURS = 6;
+async function getTidyTtlHours(): Promise<number> {
+  const { data, error } = await db
+    .from("settings")
+    .select("value")
+    .eq("key", "chat_ttl_hours")
+    .maybeSingle();
+  if (error || !data) return DEFAULT_TTL_HOURS;
+  const n = Number(data.value);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_TTL_HOURS;
+}
+
+async function rememberEphemeral(chatId: number, messageId: number): Promise<void> {
+  try {
+    const ttl = await getTidyTtlHours();
+    if (!ttl) return;
+    await db.from("chat_cleanup").upsert({
+      chat_id: chatId,
+      message_id: messageId,
+      delete_after: new Date(Date.now() + ttl * 3600_000).toISOString(),
+    });
+  } catch {
+    // очистка - удобство, а не функция: её сбой не должен ломать ответ
+  }
+}
+
+// служебные ответы бота смертны: всё, что он отвечает на команды и кнопки,
+// помечается на автоудаление. Карточки кандидатов сюда не попадают - они
+// приходят из кронов и живут до решения редактора
+bot.use(async (ctx, next) => {
+  const isCommand = Boolean(ctx.message?.text?.startsWith("/"));
+  if (isCommand || ctx.callbackQuery) {
+    const origReply = ctx.reply.bind(ctx);
+    ctx.reply = (async (text: never, other?: never) => {
+      const m = await origReply(text, other);
+      await rememberEphemeral(m.chat.id, m.message_id);
+      return m;
+    }) as typeof ctx.reply;
+    const origPhoto = ctx.replyWithPhoto.bind(ctx);
+    ctx.replyWithPhoto = (async (photo: never, other?: never) => {
+      const m = await origPhoto(photo, other);
+      await rememberEphemeral(m.chat.id, m.message_id);
+      return m;
+    }) as typeof ctx.replyWithPhoto;
+  }
+  // команду редактора тоже подчищаем - сработает, если у бота есть право
+  // удалять чужие сообщения, иначе просто останется
+  if (isCommand && ctx.chat && ctx.message) {
+    await rememberEphemeral(ctx.chat.id, ctx.message.message_id);
+  }
+  return next();
 });
 
 type Ctx = Parameters<Parameters<typeof bot.command>[1]>[0];
@@ -489,6 +545,32 @@ bot.on("callback_query:data", async (ctx) => {
         return;
       }
       // ---------- автопостинг (/auto) ----------
+      case "tidy": {
+        const hours = Number(ctx.callbackQuery.data.split(":")[1]);
+        if (!Number.isFinite(hours) || hours < 0) {
+          await ctx.answerCallbackQuery({ text: "Не понял настройку" });
+          return;
+        }
+        const { error } = await db.from("settings").upsert({
+          key: "chat_ttl_hours",
+          value: hours,
+          updated_at: new Date().toISOString(),
+        });
+        if (error) throw new Error(`сохранение автоочистки: ${error.message}`);
+        // выключили - снимаем и уже намеченные удаления, чтобы не сработали
+        if (hours === 0) await db.from("chat_cleanup").delete().gte("message_id", 0);
+        try {
+          await ctx.editMessageText(tidyPanelText(hours), {
+            reply_markup: tidyPanelKeyboard(hours),
+          });
+        } catch {
+          // message is not modified - не ошибка
+        }
+        await ctx.answerCallbackQuery({
+          text: hours ? `Служебное живёт ${hours} ч` : "Автоочистка выключена",
+        });
+        return;
+      }
       case "aon":
       case "aoff": {
         const on = action === "aon";
@@ -777,6 +859,32 @@ bot.command("queue", async (ctx) => {
 bot.command("auto", async (ctx) => {
   const on = await getAutoPublish();
   await ctx.reply(autoPanelText(on), { reply_markup: autoPanelKeyboard(on) });
+});
+
+function tidyPanelText(ttl: number): string {
+  return (
+    (ttl
+      ? `Автоочистка чата ВКЛЮЧЕНА: служебные ответы бота удаляются через ${ttl} ч.`
+      : "Автоочистка чата выключена: служебные ответы бота остаются навсегда.") +
+    "\nКарточки кандидатов и посты канала не трогаются никогда."
+  );
+}
+
+function tidyPanelKeyboard(ttl: number) {
+  const opt = (hours: number, label: string) => ({
+    text: (ttl === hours ? "• " : "") + label,
+    callback_data: `tidy:${hours}`,
+  });
+  return {
+    inline_keyboard: [
+      [opt(0, "Выкл"), opt(1, "1 час"), opt(6, "6 часов"), opt(24, "24 часа")],
+    ],
+  };
+}
+
+bot.command("tidy", async (ctx) => {
+  const ttl = await getTidyTtlHours();
+  await ctx.reply(tidyPanelText(ttl), { reply_markup: tidyPanelKeyboard(ttl) });
 });
 
 bot.command("schedule", async (ctx) => {

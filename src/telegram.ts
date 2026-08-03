@@ -41,3 +41,19 @@ export async function sendMessageHtml(
   });
   return msg.message_id;
 }
+
+/**
+ * Удаление сообщения без исключений: старше 48 часов Телеграм не отдаёт,
+ * чужие без прав не удалить - для автоочистки это не ошибка.
+ */
+export async function tryDeleteMessage(
+  chatId: string | number,
+  messageId: number,
+): Promise<boolean> {
+  try {
+    await getTelegram().deleteMessage(chatId, messageId);
+    return true;
+  } catch {
+    return false;
+  }
+}

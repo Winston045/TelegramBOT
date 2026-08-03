@@ -15,12 +15,16 @@ import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { isDuplicate } from "../src/dhash.js";
 import { RECENT_WINDOW, planAuto } from "../src/plan.js";
 import { sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
+import { cleanupChat, rememberEphemeral } from "../src/tidy.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 
 async function main() {
   const cfg = loadConfig();
   const db = getDb();
   const now = new Date();
+  // заодно подчищаем созревшие служебные сообщения (/tidy в боте)
+  const cleaned = await cleanupChat(db);
+  if (cleaned) console.log(`автоочистка чата: удалено ${cleaned}`);
   const tz = cfg.publish.timezone;
   // расписание, выставленное редакторами в боте, перекрывает config.yaml
   const times = await loadPublishTimes(cfg.publish.times);
@@ -236,7 +240,8 @@ async function main() {
   if (left < cfg.publish.min_queue_warning) {
     confirmation += `\nОчередь короче ${cfg.publish.min_queue_warning} - стоит одобрить ещё.`;
   }
-  await sendMessageHtml(env.editorsChatId, confirmation);
+  const confirmId = await sendMessageHtml(env.editorsChatId, confirmation);
+  await rememberEphemeral(db, env.editorsChatId, confirmId);
 
   console.log(`опубликован #${post.id} → ${postUrl}`);
   await heartbeatOk("publisher");
