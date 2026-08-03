@@ -46,6 +46,14 @@ describe("rank", () => {
     expect(quoteLength(cap("Текст", LONG))).toBeGreaterThanOrEqual(180);
     expect(quoteLength(cap("Текст"))).toBeLessThan(180);
   });
+
+  it("подлинный цвет даёт фору, но не перекрывает большой разрыв", () => {
+    const colorShot = { ...cand(1, 70, "armor"), tags: { subject: "armor", color: true } };
+    const bw = { ...cand(2, 74, "navy"), tags: { subject: "navy", color: false } };
+    const strongBw = { ...cand(3, 85, "aviation"), tags: { subject: "aviation" } };
+    expect(rank(colorShot)).toBeGreaterThan(rank(bw));
+    expect(rank(strongBw)).toBeGreaterThan(rank(colorShot));
+  });
 });
 
 describe("planAuto", () => {

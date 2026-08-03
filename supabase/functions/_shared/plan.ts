@@ -16,6 +16,7 @@ export type PlanTags = {
   period?: string;
   military?: boolean;
   action?: boolean;
+  color?: boolean;
 } | null;
 
 export type PlanCandidate = {
@@ -50,6 +51,11 @@ export const RECENT_WINDOW = 4;
  * целые архивы), но в ленте движение идёт вперёд.
  */
 export const STATIC_PENALTY = 12;
+/**
+ * Подлинный цвет эпохи - редкость, читатели такое любят: небольшая фора,
+ * чтобы цветной кадр выигрывал у равного чёрно-белого, но не у лучшего.
+ */
+export const COLOR_BONUS = 8;
 /** Сколько статичных кадров допускаем на окно из RECENT_WINDOW постов. */
 export const MAX_STATIC_IN_WINDOW = 1;
 
@@ -73,7 +79,8 @@ export function headline(captionHtml: string | null, limit = 70): string {
 export function rank(c: PlanCandidate): number {
   const quote = quoteLength(c.caption_html ?? null) >= LONG_QUOTE ? QUOTE_BONUS : 0;
   const staticShot = c.tags?.action === false ? STATIC_PENALTY : 0;
-  return (c.score ?? 0) + quote - staticShot;
+  const color = c.tags?.color === true ? COLOR_BONUS : 0;
+  return (c.score ?? 0) + quote + color - staticShot;
 }
 
 export type RecentContext = {

@@ -8,12 +8,13 @@ export type VisionScore = {
     subject?: string;
     military?: boolean;
     action?: boolean;
+    color?: boolean;
   };
   unsafe: boolean;
 };
 
 /** Схема полей оценки в JSON-ответе — общая для скоринга и анализа. */
-export const SCORE_FIELDS_SCHEMA = `"score": <0-100>, "tags": {"period": "<конкретный конфликт или эпоха: "pre_ww1" | "WW1" | "russian_civil_war" | "interwar" | "spanish_civil_war" | "winter_war" | "WW2" | "korea" | "vietnam" | "cold_war" | "afghanistan" - выбирай самый точный, cold_war только если точнее не определить>", "region": "<регион, напр. "europe" | "ussr" | "usa" | "asia" | "africa" | "pacific">", "subject": "<тема одним словом, напр. "armor" | "aviation" | "street" | "portrait" | "navy" | "homefront" | "infantry" | "artillery" | "pow" | "medicine">", "military": <true|false - война и армия или мирный сюжет>, "action": <true|false - в кадре что-то происходит или это статика/постановка>}, "unsafe": <true|false>`;
+export const SCORE_FIELDS_SCHEMA = `"score": <0-100>, "tags": {"period": "<конкретный конфликт или эпоха: "pre_ww1" | "WW1" | "russian_civil_war" | "interwar" | "spanish_civil_war" | "winter_war" | "WW2" | "korea" | "vietnam" | "cold_war" | "afghanistan" - выбирай самый точный, cold_war только если точнее не определить>", "region": "<регион, напр. "europe" | "ussr" | "usa" | "asia" | "africa" | "pacific">", "subject": "<тема одним словом, напр. "armor" | "aviation" | "street" | "portrait" | "navy" | "homefront" | "infantry" | "artillery" | "pow" | "medicine">", "military": <true|false - война и армия или мирный сюжет>, "action": <true|false - в кадре что-то происходит или это статика/постановка>, "color": <true|false - подлинный цветной снимок эпохи>}, "unsafe": <true|false>`;
 
 /** Критерии оценки — общий блок для скоринга и анализа. */
 export const SCORING_CRITERIA = `score отвечает ТОЛЬКО на один вопрос: насколько
@@ -48,7 +49,11 @@ export const SCORING_CRITERIA = `score отвечает ТОЛЬКО на оди
   погрузка, работа расчёта, взлёт, ремонт, эвакуация, техника в движении,
   пожар, живая сцена. false, если это статика: построение, парад-смотр,
   позирование у машины, портрет, техника выставлена для съёмки, совещание,
-  вручение наград, памятник, фасад здания, групповое фото.
+  вручение наград, памятник, фасад здания, групповое фото;
+- color: true только для ПОДЛИННОГО цвета эпохи (цветная плёнка:
+  Kodachrome, Agfacolor, поздняя цветная хроника). Современная раскраска
+  чёрно-белого снимка (неестественные ровные тона, «пластиковая» кожа) -
+  это НЕ цвет: ставь color: false, а оценку снижай как за обработку.
 
 unsafe = true, если на снимке: тела погибших, казни, графическое насилие,
 нацистская символика крупным планом. Это только пометка для редакторов,
