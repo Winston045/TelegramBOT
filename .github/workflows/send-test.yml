@@ -54,13 +54,5 @@ jobs:
           else
             echo "seed не запрошен"
           fi
-      # слово "fixcap" — разовое восстановление испорченных подписей
-      - name: Восстановление подписей (если запрошено)
-        run: |
-          if grep -q fixcap .github/send.trigger 2>/dev/null; then
-            npx tsx scripts/fix-captions.ts
-          else
-            echo "fixcap не запрошен"
-          fi
       - name: Отправить карточки в чат редакторов
         run: npm run send-candidates

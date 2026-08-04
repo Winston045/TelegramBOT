@@ -1,6 +1,5 @@
 import type { AppConfig } from "./config.js";
 import type { RawItem } from "./sources/types.js";
-import { geminiJson, imagePart } from "./gemini.js";
 
 export type GeneratedCaption = {
   caption: string; // "<b>Подлежащее</b> описание. <i>1945 год.</i>"
@@ -57,7 +56,7 @@ quote: В 12:46 торпеда попала в машинное отделени
 quote_place: Тихий океан, 1945 год.
 quote_kind: context`;
 
-/** Блок метаданных снимка - общий для промптов подписи и анализа. */
+/** Блок метаданных снимка - для промптов анализа (analyze.ts) и критика (critic.ts). */
 export function metadataBlock(item: RawItem, extraContext?: string): string {
   const extra = extraContext
     ? `\nДополнительный документальный контекст (тоже источник фактов, за его пределы не выходить):\n${extraContext}\n`
@@ -70,8 +69,8 @@ export function metadataBlock(item: RawItem, extraContext?: string): string {
 ${extra}`;
 }
 
-/** Жёсткие правила подписи - общий блок для промптов подписи и анализа. */
-export function captionRules(item: RawItem, glossary: Record<string, string>): string {
+/** Жёсткие правила подписи - вставляется в промпт анализа. */
+export function captionRules(glossary: Record<string, string>): string {
   const glossaryLines = Object.entries(glossary)
     .map(([from, to]) => `  "${from}" → "${to}"`)
     .join("\n");
@@ -86,7 +85,7 @@ ${glossaryLines || "  (пусто)"}
 5. Формат caption: одно-два ёмких предложения ПРОСТЫМ ТЕКСТОМ.
    Без HTML-тегов, без жирного, без курсива, без markdown.
    Длинное тире не использовать: вместо «—» и «–» всегда обычный дефис «-».
-5а. ЯЗЫК ЖИВОЙ, а не музейная табличка. Пиши как человек, который сам
+6. ЯЗЫК ЖИВОЙ, а не музейная табличка. Пиши как человек, который сам
    разглядывает снимок и показывает его другу.
    - действие называй глаголом: «расчёт выкатывает орудие на прямую
      наводку», а не «производится перемещение орудия»;
@@ -101,7 +100,7 @@ ${glossaryLines || "  (пусто)"}
      грязь на сапогах, снег на броне, смех, усталые лица;
    - никакого пафоса и оценок: «героические защитники», «легендарный танк»,
      «страшные годы» - убрать. Факт сильнее эпитета.
-6. quote обязателен, три варианта - как в канале:
+7. quote обязателен, три варианта - как в канале:
    а) ОСНОВНОЙ: есть честный факт (судьба людей или техники, цифры,
       контекст события, редкость момента) - тогда место и дата идут
       в конце caption, лучше ОТДЕЛЬНОЙ СТРОКОЙ после описания
@@ -128,35 +127,6 @@ ${glossaryLines || "  (пусто)"}
    - пересказ caption другими словами;
    - технические сведения о негативе, съёмке, архиве.
    Сомневаешься, интересен ли факт, - выбирай вариант (б).`;
-}
-
-export function buildCaptionPrompt(
-  item: RawItem,
-  glossary: Record<string, string>,
-  extraContext?: string,
-): string {
-  return `Ты готовишь подпись к исторической фотографии для русскоязычного телеграм-канала.
-
-${metadataBlock(item, extraContext)}
-${captionRules(item, glossary)}
-
-${FEW_SHOT}
-
-Верни строго JSON без обёрток и без markdown:
-{"caption": "...", "quote": "...", "quote_place": "<место и дата отдельной строкой - или пустая строка>", "quote_kind": "observation" | "context"}`;
-}
-
-export async function generateCaption(
-  item: RawItem,
-  cfg: AppConfig,
-  image?: Buffer,
-  extraContext?: string,
-): Promise<GeneratedCaption> {
-  const img = await imagePart(image ?? item.imageUrl);
-  return geminiJson<GeneratedCaption>([
-    { text: buildCaptionPrompt(item, cfg.glossary, extraContext) },
-    img,
-  ]);
 }
 
 /** Требует ли лицензия строку атрибуции. PD - нет, CC-BY-* - да. */

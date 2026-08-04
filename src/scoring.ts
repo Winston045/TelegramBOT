@@ -1,5 +1,3 @@
-import { geminiJson, imagePart } from "./gemini.js";
-
 export type VisionScore = {
   score: number; // 0-100
   tags: {
@@ -13,10 +11,10 @@ export type VisionScore = {
   unsafe: boolean;
 };
 
-/** Схема полей оценки в JSON-ответе — общая для скоринга и анализа. */
+/** Схема полей оценки в JSON-ответе анализа (analyze.ts). */
 export const SCORE_FIELDS_SCHEMA = `"score": <0-100>, "tags": {"period": "<конкретный конфликт или эпоха: "pre_ww1" | "WW1" | "russian_civil_war" | "interwar" | "spanish_civil_war" | "winter_war" | "WW2" | "korea" | "vietnam" | "cold_war" | "afghanistan" - выбирай самый точный, cold_war только если точнее не определить>", "region": "<регион, напр. "europe" | "ussr" | "usa" | "asia" | "africa" | "pacific">", "subject": "<тема одним словом, напр. "armor" | "aviation" | "street" | "portrait" | "navy" | "homefront" | "infantry" | "artillery" | "pow" | "medicine">", "military": <true|false - война и армия или мирный сюжет>, "action": <true|false - в кадре что-то происходит или это статика/постановка>, "color": <true|false - подлинный цветной снимок эпохи>}, "unsafe": <true|false>`;
 
-/** Критерии оценки — общий блок для скоринга и анализа. */
+/** Критерии оценки снимка - вставляется в промпт анализа. */
 export const SCORING_CRITERIA = `score отвечает ТОЛЬКО на один вопрос: насколько
 хорош и интересен сам снимок. Тип сюжета (движение или постановка, война или
 мирная жизнь) на оценку НЕ влияет - для этого есть теги, а порядок публикации
@@ -62,22 +60,3 @@ export const SCORING_CRITERIA = `score отвечает ТОЛЬКО на оди
 unsafe = true, если на снимке: тела погибших, казни, графическое насилие,
 нацистская символика крупным планом. Это только пометка для редакторов,
 score ставь по общим критериям.`;
-
-const SCORING_PROMPT = `Ты отбираешь исторические фотографии для публичного телеграм-канала
-о ВОЕННОЙ ИСТОРИИ: Первая мировая, Вторая мировая, холодная война -
-Корея, Вьетнам, Берлинская стена, Афганистан, гонка вооружений.
-Оцени снимок и верни строго JSON без пояснений:
-
-{${SCORE_FIELDS_SCHEMA}}
-
-${SCORING_CRITERIA}`;
-
-export async function scoreImage(image: string | Buffer): Promise<VisionScore> {
-  const img = await imagePart(image);
-  const result = await geminiJson<VisionScore>([{ text: SCORING_PROMPT }, img]);
-  return {
-    score: Math.max(0, Math.min(100, Math.round(result.score ?? 0))),
-    tags: result.tags ?? {},
-    unsafe: Boolean(result.unsafe),
-  };
-}

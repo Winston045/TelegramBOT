@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  assembleCaptionHtml,
-  buildCaptionPrompt,
-  needsAttribution,
-} from "../src/caption.js";
+import { assembleCaptionHtml, needsAttribution } from "../src/caption.js";
+import { buildAnalysisPrompt } from "../src/analyze.js";
 import { validateCaption } from "../src/validate.js";
 
 const channel = {
@@ -80,9 +77,9 @@ describe("assembleCaptionHtml", () => {
   });
 });
 
-describe("buildCaptionPrompt", () => {
-  it("включает метаданные, глоссарий и правила", () => {
-    const prompt = buildCaptionPrompt(
+describe("buildAnalysisPrompt", () => {
+  it("включает метаданные, глоссарий, правила подписи и критерии оценки", () => {
+    const prompt = buildAnalysisPrompt(
       {
         sourceId: "1",
         sourceUrl: "https://x",
@@ -99,5 +96,7 @@ describe("buildCaptionPrompt", () => {
     expect(prompt).toContain('"Königsberg" → "Кёнигсберг"');
     expect(prompt).toContain("НЕ ДОБАВЛЯЙ фактов");
     expect(prompt).toContain("1940");
+    expect(prompt).toContain("score");
+    expect(prompt).toContain("quote_place");
   });
 });

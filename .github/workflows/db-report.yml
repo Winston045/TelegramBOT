@@ -28,27 +28,14 @@ jobs:
       # отчёта; "before:5000" - нырнуть в архив старше поста #5000
       - name: Отчёт
         run: |
-          if grep -q oldera .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/purge-old-era.ts
-            npx tsx scripts/reset-topup.ts
-          elif grep -q resettopup .github/report.trigger 2>/dev/null; then
+          if grep -q resettopup .github/report.trigger 2>/dev/null; then
             npx tsx scripts/reset-topup.ts
           elif grep -q migrate .github/report.trigger 2>/dev/null; then
             npm run migrate
-          elif grep -q stereopurge .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/purge-stereo.ts
           elif grep -q ctxprobe .github/report.trigger 2>/dev/null; then
             npx tsx scripts/probe-context.ts 6
-          elif grep -q expquotes .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/expandable-quotes.ts
           elif grep -q reserve .github/report.trigger 2>/dev/null; then
             npx tsx scripts/reserve-report.ts
-          elif grep -q purgestale .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/purge-stale.ts
-          elif grep -q dashes .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/strip-dashes.ts
-          elif grep -q stripattr .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/strip-attribution.ts
           elif grep -q style .github/report.trigger 2>/dev/null; then
             before=$(grep -oP 'before:\K\d+' .github/report.trigger || true)
             month=$(grep -oP 'month:\K\d{4}-\d{2}' .github/report.trigger || true)

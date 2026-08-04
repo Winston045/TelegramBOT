@@ -27,7 +27,7 @@ export function buildAnalysisPrompt(
 ${metadataBlock(item, extraContext)}
 ${SCORING_CRITERIA}
 
-${captionRules(item, glossary)}
+${captionRules(glossary)}
 
 ${FEW_SHOT}
 

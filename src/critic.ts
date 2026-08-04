@@ -20,12 +20,15 @@ type Verdict = {
 };
 
 function buildPrompt(item: RawItem, generated: GeneratedCaption, extraContext?: string): string {
+  const placeLine = generated.quote_place
+    ? `\nОтдельной строкой после цитаты уже стоит место и дата: ${generated.quote_place}`
+    : "";
   return `Ты редактор телеграм-канала о военной истории. Проверь ТОЛЬКО цитату
 под фотографией - блок, который идёт отдельной строкой после основного текста.
 
 ${metadataBlock(item, extraContext)}
 Текст поста: ${generated.caption}
-Цитата: ${generated.quote}
+Цитата: ${generated.quote}${placeLine}
 
 Цитата считается хорошей, если это:
 - по-настоящему интересный факт: судьба людей или техники, цифры, контекст
@@ -42,12 +45,26 @@ ${metadataBlock(item, extraContext)}
 Если цитата хорошая - верни {"verdict": "ok"}.
 Если плохая - перепиши. Материал бери СТРОГО из метаданных и контекста выше,
 ничего не выдумывай. Когда фактов на справку не хватает - сделай цитатой
-место и дату (и тогда убедись, что дата не дублируется в тексте поста).
+место и дату (и тогда убедись, что дата не дублируется в тексте поста
+и в отдельной строке места и даты, если она уже стоит).
 Правила текста: простой текст без HTML и markdown, длинное тире не
 использовать - только обычный дефис.
 
 Верни строго JSON без обёрток:
 {"verdict": "ok" | "weak", "quote": "...", "quote_kind": "observation" | "context"}`;
+}
+
+/**
+ * Дублирует ли новая цитата отдельную строку места и даты. Сравнение по
+ * буквам и цифрам без пунктуации: «Тихий океан, 1945 год.» == «Тихий океан 1945 год».
+ */
+export function duplicatesPlace(quote: string, place: string | undefined): boolean {
+  if (!place) return false;
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const q = norm(quote);
+  const p = norm(place);
+  if (!q || !p) return false;
+  return q.includes(p) || p.includes(q);
 }
 
 /**
@@ -68,10 +85,16 @@ export async function reviewQuote(
     if (res.verdict !== "weak" || !res.quote?.trim()) {
       return { caption: generated, rewritten: false };
     }
+    const quote = res.quote.trim();
     return {
       caption: {
         ...generated,
-        quote: res.quote.trim(),
+        quote,
+        // если модель всё же переписала цитату в место и дату, которые уже
+        // стоят отдельной строкой, - вторую строку убираем, дубль хуже
+        quote_place: duplicatesPlace(quote, generated.quote_place)
+          ? undefined
+          : generated.quote_place,
         quote_kind: res.quote_kind === "observation" ? "observation" : "context",
       },
       rewritten: true,
