@@ -28,7 +28,10 @@ jobs:
       # отчёта; "before:5000" - нырнуть в архив старше поста #5000
       - name: Отчёт
         run: |
-          if grep -q resettopup .github/report.trigger 2>/dev/null; then
+          if grep -q oldera .github/report.trigger 2>/dev/null; then
+            npx tsx scripts/purge-old-era.ts
+            npx tsx scripts/reset-topup.ts
+          elif grep -q resettopup .github/report.trigger 2>/dev/null; then
             npx tsx scripts/reset-topup.ts
           elif grep -q migrate .github/report.trigger 2>/dev/null; then
             npm run migrate
