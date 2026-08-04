@@ -8,6 +8,17 @@ import { env } from "../src/env.js";
 import { sendMessageHtml } from "../src/telegram.js";
 import { countPublishedToday, slotsPassed } from "../src/schedule.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
+import { readFileSync } from "node:fs";
+
+/** Версия из package.json - чтобы подпись в сводке не рассинхронилась. */
+function botVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    return typeof pkg.version === "string" ? pkg.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
 
 function moscow(iso: string | null): string {
   if (!iso) return "давно";
@@ -83,6 +94,8 @@ async function main() {
     `Уже вышло сегодня: ${publishedToday}`,
     "",
     `Последний сбор: ${moscow(hb?.last_ok ?? null)}${hb?.last_error ? " - была ошибка, смотрите /status" : ""}`,
+    "",
+    `<i>v${botVersion()} (beta)</i>`,
   ];
 
   await sendMessageHtml(env.editorsChatId, lines.join("\n"));
