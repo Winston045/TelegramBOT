@@ -38,6 +38,18 @@ export function planFromCounts(
   return { available, target, keep };
 }
 
+/**
+ * Ключ квотного окна Gemini. Бесплатная квота сбрасывается в 10:00 МСК,
+ * поэтому «сутки» для счётчика доборов начинаются не в полночь, а в момент
+ * сброса: заходы, сгоревшие на выжатой квоте до 10:00, не должны съедать
+ * лимит свежего окна (живой случай: два ночных добора впустую - и
+ * предохранитель заблокировал первый сбор на свежей квоте).
+ */
+export function quotaDay(now: Date): string {
+  const shifted = new Date(now.getTime() - 10 * 3600 * 1000);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(shifted);
+}
+
 /** Сколько готовых постов лежит в базе: резерв плюс одобренная очередь. */
 export async function countAvailable(): Promise<number> {
   const db = getDb();

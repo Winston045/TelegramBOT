@@ -13,7 +13,7 @@ import { loadConfig } from "../src/config.js";
 import { getDb } from "../src/db.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { slotsPassed } from "../src/schedule.js";
-import { countAvailable, planFromCounts } from "../src/reserve.js";
+import { countAvailable, planFromCounts, quotaDay } from "../src/reserve.js";
 
 /** Ниже этого числа готовых кандидатов считаем резерв опасно тонким. */
 const MIN_RESERVE = 6;
@@ -50,7 +50,10 @@ async function main() {
   // размер партии считаем той же формулой, что и дневной сбор
   const { keep } = planFromCounts(available, times.length, cfg.collect.prefilter_keep);
 
-  const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(now);
+  // заходы считаем по квотному окну Gemini (сутки от 10:00 МСК), а не по
+  // календарю: ночная попытка на выжатой квоте не должна блокировать
+  // сбор сразу после сброса
+  const ymd = quotaDay(now);
   const { data: mark } = await db
     .from("settings")
     .select("value")

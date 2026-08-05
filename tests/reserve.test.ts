@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DAYS_OF_BUFFER, MIN_BATCH, planFromCounts } from "../src/reserve.js";
+import { DAYS_OF_BUFFER, MIN_BATCH, planFromCounts, quotaDay } from "../src/reserve.js";
 
 const PREFILTER_KEEP = 30;
 const plan = (available: number, slots = 5) =>
@@ -32,5 +32,21 @@ describe("planFromCounts", () => {
 
   it("редкое расписание не опускает запас ниже минимального", () => {
     expect(plan(0, 1).target).toBe(MIN_BATCH);
+  });
+});
+
+describe("quotaDay", () => {
+  it("до 10:00 МСК - ещё вчерашнее квотное окно", () => {
+    // 05.08 03:46 МСК = 05.08 00:46 UTC
+    expect(quotaDay(new Date("2026-08-05T00:46:00Z"))).toBe("2026-08-04");
+    // 05.08 09:59 МСК
+    expect(quotaDay(new Date("2026-08-05T06:59:00Z"))).toBe("2026-08-04");
+  });
+
+  it("с 10:00 МСК начинается свежее окно", () => {
+    // 05.08 10:00 МСК ровно
+    expect(quotaDay(new Date("2026-08-05T07:00:00Z"))).toBe("2026-08-05");
+    // 05.08 23:30 МСК - всё ещё то же окно
+    expect(quotaDay(new Date("2026-08-05T20:30:00Z"))).toBe("2026-08-05");
   });
 });
