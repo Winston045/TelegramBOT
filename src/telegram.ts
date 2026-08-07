@@ -43,6 +43,16 @@ export async function sendMessageHtml(
 }
 
 /**
+ * Ошибка отправки фото, означающая мёртвую ссылку у архива, а не временный
+ * сбой Телеграма. Такого кандидата надо помечать браком, а не ретраить.
+ */
+export function isDeadImageError(message: string): boolean {
+  return /failed to get http url content|wrong type of the web page content|wrong file identifier|photo_invalid/i.test(
+    message,
+  );
+}
+
+/**
  * Удаление сообщения без исключений: старше 48 часов Телеграм не отдаёт,
  * чужие без прав не удалить - для автоочистки это не ошибка.
  */

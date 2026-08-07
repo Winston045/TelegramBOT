@@ -10,7 +10,7 @@ import { env } from "../src/env.js";
 import { pickBalanced } from "../src/balance.js";
 import { rank, type PlanCandidate } from "../src/plan.js";
 import { buildServiceLine } from "../src/service_line.js";
-import { sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
+import { isDeadImageError, sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { visibleLength, CAPTION_LIMIT } from "../src/validate.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 
@@ -90,7 +90,15 @@ async function main() {
         await sendMessageHtml(env.editorsChatId, serviceLine);
       }
     } catch (err) {
-      console.warn(`  карточка #${c.id} не отправилась: ${(err as Error).message}`);
+      const msg = (err as Error).message;
+      // мёртвая ссылка у архива - бракуем сразу, иначе карточка будет
+      // занимать место в каждой партии и никогда не отправится
+      if (isDeadImageError(msg)) {
+        await db.from("candidates").update({ status: "failed" }).eq("id", c.id);
+        console.warn(`  карточка #${c.id}: архив не отдаёт фото, помечена браком`);
+      } else {
+        console.warn(`  карточка #${c.id} не отправилась: ${msg}`);
+      }
       continue;
     }
 

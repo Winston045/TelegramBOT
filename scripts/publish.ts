@@ -14,7 +14,7 @@ import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/sched
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { isDuplicate } from "../src/dhash.js";
 import { RECENT_WINDOW, planAuto } from "../src/plan.js";
-import { sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
+import { isDeadImageError, sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { cleanupChat, rememberEphemeral } from "../src/tidy.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 
@@ -191,11 +191,7 @@ async function main() {
     msgId = await sendPhotoHtml(env.channelId, post.image_url, post.caption_html);
   } catch (err) {
     const msg = (err as Error).message;
-    const deadImage =
-      /failed to get http url content|wrong type of the web page content|wrong file identifier|photo_invalid/i.test(
-        msg,
-      );
-    if (!deadImage) throw err; // временная ошибка телеграма - пробуем в следующий заход
+    if (!isDeadImageError(msg)) throw err; // временная ошибка телеграма - пробуем в следующий заход
     await db.from("candidates").update({ status: "failed" }).eq("id", post.id);
     await sendMessageHtml(
       env.editorsChatId,
