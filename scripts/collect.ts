@@ -251,7 +251,8 @@ async function main() {
           ? {
               ...row,
               caption_html: captionHtml,
-              quote_kind: reviewed.caption.quote_kind,
+              // у короткого поста цитаты нет - маркер вида цитаты не нужен
+              quote_kind: reviewed.caption.quote ? reviewed.caption.quote_kind : null,
               status: "new",
             }
           : { ...row, status: "failed" },
