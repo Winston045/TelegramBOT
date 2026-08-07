@@ -72,6 +72,11 @@ export const OLD_PERIODS = new Set([
 ]);
 /** Сколько статичных кадров допускаем на окно из RECENT_WINDOW постов. */
 export const MAX_STATIC_IN_WINDOW = 1;
+/**
+ * Развёрнутая цитата - изюминка ленты, а не норма: основная масса постов
+ * короткие, и длинные справки не должны идти подряд. Одна на окно.
+ */
+export const MAX_LONG_IN_WINDOW = 1;
 
 /** Видимая длина цитаты внутри blockquote. */
 export function quoteLength(captionHtml: string | null): number {
@@ -107,6 +112,8 @@ export type RecentContext = {
   civilian: boolean;
   /** Сколько статичных кадров было среди последних постов. */
   statics?: number;
+  /** Сколько постов с развёрнутой цитатой было среди последних. */
+  longs?: number;
 };
 
 /** Сколько постов одной эпохи подряд допускаем, прежде чем сменить её. */
@@ -135,9 +142,15 @@ export function planAuto(
     { length: Math.min(recent.statics ?? 0, RECENT_WINDOW) },
     () => true,
   );
+  // то же для изюминок - постов с развёрнутой цитатой
+  const longsWindow: boolean[] = Array.from(
+    { length: Math.min(recent.longs ?? 0, RECENT_WINDOW) },
+    () => true,
+  );
 
   while (chosen.length < count && pool.length) {
     const staticsInWindow = staticsWindow.slice(0, RECENT_WINDOW).filter(Boolean).length;
+    const longsInWindow = longsWindow.slice(0, RECENT_WINDOW).filter(Boolean).length;
     // эпоха «застряла», если ею заняты MAX_SAME_PERIOD_STREAK свежих постов
     const streak = periods.slice(0, MAX_SAME_PERIOD_STREAK);
     const stuckPeriod =
@@ -150,6 +163,9 @@ export function planAuto(
       if (c.tags?.military === false && civilianLast) return false;
       // статика допустима, но редко: лента должна дышать движением
       if (c.tags?.action === false && staticsInWindow >= MAX_STATIC_IN_WINDOW) return false;
+      // развёрнутая цитата - изюминка: длинные посты не идут подряд
+      if (quoteLength(c.caption_html ?? null) >= LONG_QUOTE && longsInWindow >= MAX_LONG_IN_WINDOW)
+        return false;
       // лента не должна неделями сидеть в одном году - эпохи чередуются
       if (stuckPeriod && c.tags?.period === stuckPeriod) return false;
       return true;
@@ -162,6 +178,7 @@ export function planAuto(
     periods.unshift(pick.tags?.period ?? "");
     civilianLast = pick.tags?.military === false;
     staticsWindow.unshift(pick.tags?.action === false);
+    longsWindow.unshift(quoteLength(pick.caption_html ?? null) >= LONG_QUOTE);
   }
   return chosen;
 }

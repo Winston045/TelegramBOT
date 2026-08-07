@@ -176,6 +176,27 @@ describe("planAuto", () => {
     const s2 = { ...cand(2, 80, "navy"), tags: { subject: "navy", action: false } };
     expect(planAuto([s1, s2], noRecent, 2).map((c) => c.id)).toEqual([1, 2]);
   });
+
+  it("изюминки не идут подряд: после длинной цитаты - короткий пост", () => {
+    const long1 = cand(1, 90, "armor", { long: true });
+    const long2 = cand(2, 88, "navy", { long: true });
+    const short = cand(3, 70, "aviation");
+    // long2 обгоняет short по рангу, но окно изюминок его отодвигает
+    expect(planAuto([long1, long2, short], noRecent, 3).map((c) => c.id)).toEqual([1, 3, 2]);
+  });
+
+  it("вышедшая только что изюминка отодвигает следующую", () => {
+    const long1 = cand(1, 90, "armor", { long: true });
+    const short = cand(2, 60, "navy");
+    const picked = planAuto([long1, short], { subjects: [], civilian: false, longs: 1 }, 1);
+    expect(picked[0]?.id).toBe(2);
+  });
+
+  it("если в резерве одни изюминки - слоты всё равно закрываются", () => {
+    const long1 = cand(1, 90, "armor", { long: true });
+    const long2 = cand(2, 80, "navy", { long: true });
+    expect(planAuto([long1, long2], noRecent, 2).map((c) => c.id)).toEqual([1, 2]);
+  });
 });
 
 describe("upcomingSlots", () => {

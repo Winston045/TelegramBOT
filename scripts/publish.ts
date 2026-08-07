@@ -13,7 +13,7 @@ import { channelSlug } from "../src/tme.js";
 import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/schedule.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { isDuplicate } from "../src/dhash.js";
-import { RECENT_WINDOW, planAuto } from "../src/plan.js";
+import { LONG_QUOTE, RECENT_WINDOW, planAuto, quoteLength } from "../src/plan.js";
 import { isDeadImageError, sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { cleanupChat, rememberEphemeral } from "../src/tidy.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
@@ -102,7 +102,7 @@ async function main() {
     // кадры, а в ленте выглядят одним и тем же - такие темы придерживаем
     const { data: lastPosts } = await db
       .from("candidates")
-      .select("tags")
+      .select("tags, caption_html")
       .eq("status", "published")
       .order("published_at", { ascending: false })
       .limit(RECENT_WINDOW);
@@ -118,6 +118,9 @@ async function main() {
       ),
       statics: (lastPosts ?? []).filter(
         (p) => (p.tags as { action?: boolean } | null)?.action === false,
+      ).length,
+      longs: (lastPosts ?? []).filter(
+        (p) => quoteLength((p as { caption_html?: string | null }).caption_html ?? null) >= LONG_QUOTE,
       ).length,
     };
 

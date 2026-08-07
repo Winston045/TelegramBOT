@@ -30,9 +30,11 @@ import { parseCandidateId } from "../_shared/service_line.ts";
 import { replaceBody, replaceQuote } from "../_shared/edit_caption.ts";
 import { CAPTION_LIMIT, validateHtml, visibleLength } from "../_shared/validate.ts";
 import {
+  LONG_QUOTE,
   RECENT_WINDOW,
   buildPlan,
   headline,
+  quoteLength,
   type PlanEntry,
   type PlanTags,
 } from "../_shared/plan.ts";
@@ -776,7 +778,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       : Promise.resolve({ data: [], error: null }),
     db
       .from("candidates")
-      .select("tags")
+      .select("tags, caption_html")
       .eq("status", "published")
       .order("published_at", { ascending: false })
       .limit(RECENT_WINDOW),
@@ -798,7 +800,10 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       ) === todayMsk,
   ).length;
 
-  const recentRows = (recentRes.data ?? []) as Array<{ tags: PlanTags }>;
+  const recentRows = (recentRes.data ?? []) as Array<{
+    tags: PlanTags;
+    caption_html?: string | null;
+  }>;
   return buildPlan(
     {
       now: new Date(),
@@ -815,6 +820,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
         periods: recentRows.map((p) => p.tags?.period ?? ""),
         civilian: recentRows.some((p) => p.tags?.military === false),
         statics: recentRows.filter((p) => p.tags?.action === false).length,
+        longs: recentRows.filter((p) => quoteLength(p.caption_html ?? null) >= LONG_QUOTE).length,
       },
       autoPublish,
       formatScheduled: moscowTime,
