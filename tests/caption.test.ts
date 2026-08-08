@@ -60,6 +60,23 @@ describe("assembleCaptionHtml", () => {
     );
   });
 
+  it("короткий пост: quote_place уходит в тело, а не в блок цитаты", () => {
+    const html = assembleCaptionHtml(
+      {
+        caption: "Немецкие солдаты перед расстрелом группы советских партизан.",
+        quote: "",
+        quote_place: "Север СССР, 1941 год.",
+        quote_kind: "context",
+      },
+      { license: "PD" },
+      channel,
+    );
+    expect(html).not.toContain("blockquote");
+    expect(html).toContain(
+      "Немецкие солдаты перед расстрелом группы советских партизан.\nСевер СССР, 1941 год.",
+    );
+  });
+
   it("без цитаты blockquote не появляется", () => {
     const html = assembleCaptionHtml(
       { ...generated, quote: "" },
@@ -98,5 +115,33 @@ describe("buildAnalysisPrompt", () => {
     expect(prompt).toContain("1940");
     expect(prompt).toContain("score");
     expect(prompt).toContain("quote_place");
+  });
+});
+
+describe("unquotePlace (лекарь партии 08.08)", async () => {
+  const { unquotePlace } = await import("../scripts/fix-place.js");
+
+  it("одиночный не-expandable blockquote переносится в тело", () => {
+    const broken =
+      "Немецкие солдаты перед расстрелом группы советских партизан.\n" +
+      "<blockquote>Север СССР, 1941 год.</blockquote>\n\n" +
+      '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
+    expect(unquotePlace(broken)).toBe(
+      "Немецкие солдаты перед расстрелом группы советских партизан.\n" +
+        "Север СССР, 1941 год.\n\n" +
+        '<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
+    );
+  });
+
+  it("изюминку с expandable-цитатой не трогает", () => {
+    const ok =
+      "Крейсер «Яхаги».\n<blockquote expandable>Факт.</blockquote>\n" +
+      "<blockquote>Тихий океан, 1945 год.</blockquote>\n\n" +
+      '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
+    expect(unquotePlace(ok)).toBeNull();
+  });
+
+  it("подпись без блоков не трогает", () => {
+    expect(unquotePlace("Текст.\n\n<a href=\"x\">X</a>")).toBeNull();
   });
 });

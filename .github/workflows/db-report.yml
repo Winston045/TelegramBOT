@@ -17,6 +17,9 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+      EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,6 +35,8 @@ jobs:
             npx tsx scripts/reset-topup.ts
           elif grep -q migrate .github/report.trigger 2>/dev/null; then
             npm run migrate
+          elif grep -q fixplace .github/report.trigger 2>/dev/null; then
+            npx tsx scripts/fix-place.ts
           elif grep -q ctxprobe .github/report.trigger 2>/dev/null; then
             npx tsx scripts/probe-context.ts 6
           elif grep -q reserve .github/report.trigger 2>/dev/null; then
