@@ -119,7 +119,38 @@ describe("buildAnalysisPrompt", () => {
 });
 
 describe("unquotePlace (лекарь партии 08.08)", async () => {
-  const { unquotePlace } = await import("../scripts/fix-place.js");
+  const { unquotePlace, isBarePlaceDate } = await import("../scripts/fix-place.js");
+
+  it("отличает голые место и дату от справки", () => {
+    expect(isBarePlaceDate("Италия, 1943 год.")).toBe(true);
+    expect(isBarePlaceDate("Район Арраса, Франция. 19 июля 1918 года.")).toBe(true);
+    expect(isBarePlaceDate("Трал ПТ-3 выдерживал от пяти до десяти детонаций.")).toBe(false);
+    expect(
+      isBarePlaceDate(
+        "В 1943 году она участвовала в строительстве бензопровода, проложенного по дну Ладожского озера и ставшего для осажденного Ленинграда артерией жизни.",
+      ),
+    ).toBe(false);
+  });
+
+  it("старый вариант-б: дата в expandable-цитате переносится в тело", () => {
+    const old =
+      "Немецкие парашютисты люфтваффе во время перекура.\n" +
+      "<blockquote expandable>Италия, 1943 год.</blockquote>\n\n" +
+      '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
+    expect(unquotePlace(old)).toBe(
+      "Немецкие парашютисты люфтваффе во время перекура.\n" +
+        "Италия, 1943 год.\n\n" +
+        '<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
+    );
+  });
+
+  it("настоящую изюминку в expandable не трогает", () => {
+    const gem =
+      "Нина Соколова, водолаз и инженер-полковник.\n" +
+      "<blockquote expandable>В 1943 году она участвовала в строительстве бензопровода, проложенного по дну Ладожского озера и ставшего для осажденного Ленинграда артерией жизни.</blockquote>\n\n" +
+      '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
+    expect(unquotePlace(gem)).toBeNull();
+  });
 
   it("одиночный не-expandable blockquote переносится в тело", () => {
     const broken =
