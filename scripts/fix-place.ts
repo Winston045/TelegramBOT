@@ -52,12 +52,15 @@ async function main() {
   let fixedChannel = 0;
   for (const c of data ?? []) {
     const fixed = unquotePlace(c.caption_html ?? "");
-    if (!fixed) continue;
+    // свежий пост канала синхронизируем безусловно: даже без правки в базе
+    // подпись в канале могла разъехаться (живой случай 08.08)
+    const target = fixed ?? c.caption_html;
+    if (!target) continue;
 
     if (c.status === "published" && c.channel_msg_id) {
       try {
         await getTelegram().editMessageCaption(env.channelId, c.channel_msg_id, {
-          caption: fixed,
+          caption: target,
           parse_mode: "HTML",
         });
         fixedChannel++;
@@ -65,23 +68,25 @@ async function main() {
       } catch (err) {
         const msg = (err as Error).message;
         if (/message is not modified/i.test(msg)) {
-          console.log(`  #${c.id}: канал уже в порядке`);
+          if (fixed) console.log(`  #${c.id}: канал уже в порядке`);
         } else {
           console.warn(`  канал #${c.id} не поправился: ${msg}`);
           continue; // базу не трогаем, чтобы не разъехаться с каналом
         }
       }
       await new Promise((r) => setTimeout(r, 1200));
-    } else {
+    } else if (fixed) {
       fixedReserve++;
       console.log(`  резерв поправлен: #${c.id}`);
     }
 
-    const { error: updErr } = await db
-      .from("candidates")
-      .update({ caption_html: fixed })
-      .eq("id", c.id);
-    if (updErr) throw new Error(`#${c.id}: ${updErr.message}`);
+    if (fixed) {
+      const { error: updErr } = await db
+        .from("candidates")
+        .update({ caption_html: fixed })
+        .eq("id", c.id);
+      if (updErr) throw new Error(`#${c.id}: ${updErr.message}`);
+    }
   }
   console.log(`итого: резерв ${fixedReserve}, посты канала ${fixedChannel}`);
 }
