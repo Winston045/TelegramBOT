@@ -91,7 +91,12 @@ async function main() {
   console.log(`итого: резерв ${fixedReserve}, посты канала ${fixedChannel}`);
 }
 
-main().catch((err) => {
-  console.error("fix-place упал:", err);
-  process.exit(1);
-});
+// main только при прямом запуске: тесты импортируют unquotePlace,
+// и побочный запуск валил CI (нет секретов базы - process.exit(1))
+import { pathToFileURL } from "node:url";
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error("fix-place упал:", err);
+    process.exit(1);
+  });
+}
