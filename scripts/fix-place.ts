@@ -37,13 +37,20 @@ export function placeToQuote(captionHtml: string): string | null {
 
 async function main() {
   const db = getDb();
-  const { data, error } = await db
+  // два простых запроса надёжнее одного or-фильтра: комбинированный
+  // синтаксис PostgREST однажды молча не вернул резерв
+  const reserveRes = await db
     .from("candidates")
     .select("id, status, caption_html, channel_msg_id, published_at")
-    .or(
-      "status.in.(new,shown,approved),and(status.eq.published,published_at.gte.2026-08-01)",
-    );
-  if (error) throw new Error(error.message);
+    .in("status", ["new", "shown", "approved"]);
+  if (reserveRes.error) throw new Error(reserveRes.error.message);
+  const publishedRes = await db
+    .from("candidates")
+    .select("id, status, caption_html, channel_msg_id, published_at")
+    .eq("status", "published")
+    .gte("published_at", "2026-08-01");
+  if (publishedRes.error) throw new Error(publishedRes.error.message);
+  const data = [...(reserveRes.data ?? []), ...(publishedRes.data ?? [])];
 
   let fixedReserve = 0;
   let fixedChannel = 0;
