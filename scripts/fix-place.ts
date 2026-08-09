@@ -1,41 +1,38 @@
 /**
- * Лекарь оформления коротких постов (08.08): место и дата должны жить
- * в теле поста, а не в блоке цитаты.
+ * Лекарь оформления: канонический вид обычного поста - описание,
+ * а место и год КОРОТКОЙ ЦИТАТОЙ («Австрия, 1946 год»).
  *
- * Чинит два вида поломки:
- *  - одиночный не-expandable blockquote (quote_place без цитаты);
- *  - одиночная expandable-цитата, целиком состоящая из места и даты
- *    (старый «вариант б» - теперь такие посты выходят короткими).
- * Обрабатывает резерв и свежие посты канала; канал синхронизируется
- * с базой через editMessageCaption, «message is not modified» - норма.
+ * Чинит посты, где дата оказалась в теле (последняя строка описания -
+ * голые место и год, а цитаты нет): строка переезжает в blockquote.
+ * Изюминки (пост с настоящей цитатой-справкой) не трогаются - у них
+ * дата в теле и есть, это их формат. Обрабатывает резерв и посты
+ * канала с 01.08; канал правится через editMessageCaption,
+ * «message is not modified» - штатный ответ здорового поста.
  */
 import { getDb } from "../src/db.js";
 import { getTelegram } from "../src/telegram.js";
 import { env } from "../src/env.js";
 
-/** Похоже ли содержимое цитаты на голые место и дату («Италия, 1943 год.»). */
+/** Похоже ли содержимое на голые место и дату («Италия, 1943 год.»). */
 export function isBarePlaceDate(text: string): boolean {
   const t = text.trim();
   if (t.length === 0 || t.length > 60) return false;
   if (!/(18|19|20)\d{2}/.test(t)) return false;
-  // у справки есть глагол или длинное повествование; место-дата - обрывок
-  // без точки в середине («Район Арраса, Франция. 19 июля 1918 года.» - ок)
   const sentences = t.split(/\.\s+/).filter(Boolean);
   return sentences.length <= 2;
 }
 
-/** Переносит одинокую цитату места и даты в тело. null - чинить нечего. */
-export function unquotePlace(captionHtml: string): string | null {
-  const blocks = [...captionHtml.matchAll(/<blockquote( expandable)?>([\s\S]*?)<\/blockquote>/g)];
-  if (blocks.length !== 1) return null; // изюминка с quote_place или чистый пост
-  const m = blocks[0];
-  if (!m || m[2] === undefined) return null;
-  const inner = m[2].trim();
-  // не-expandable - это quote_place, переносим всегда;
-  // expandable переносим только если это голые место и дата
-  if (m[1] && !isBarePlaceDate(inner)) return null;
-  // перенос строки перед блоком уже стоит в подписи - блок заменяем голым текстом
-  return captionHtml.replace(m[0], inner);
+/**
+ * Переносит голые место и дату из последней строки тела в цитату.
+ * null - чинить нечего (есть цитата или дата не в теле).
+ */
+export function placeToQuote(captionHtml: string): string | null {
+  if (/<blockquote/.test(captionHtml)) return null; // цитата уже есть
+  const m = captionHtml.match(/^([\s\S]*?)\n([^\n<>]+)\n\n(<a href[\s\S]*)$/);
+  if (!m || !m[1] || !m[2] || !m[3]) return null;
+  const line = m[2].trim();
+  if (!isBarePlaceDate(line)) return null;
+  return `${m[1]}\n<blockquote expandable>${line}</blockquote>\n\n${m[3]}`;
 }
 
 async function main() {
@@ -51,9 +48,9 @@ async function main() {
   let fixedReserve = 0;
   let fixedChannel = 0;
   for (const c of data ?? []) {
-    const fixed = unquotePlace(c.caption_html ?? "");
-    // свежий пост канала синхронизируем безусловно: даже без правки в базе
-    // подпись в канале могла разъехаться (живой случай 08.08)
+    const fixed = placeToQuote(c.caption_html ?? "");
+    // свежий пост канала синхронизируем безусловно - подпись могла
+    // разъехаться с базой
     const target = fixed ?? c.caption_html;
     if (!target) continue;
 
@@ -91,7 +88,7 @@ async function main() {
   console.log(`итого: резерв ${fixedReserve}, посты канала ${fixedChannel}`);
 }
 
-// main только при прямом запуске: тесты импортируют unquotePlace,
+// main только при прямом запуске: тесты импортируют placeToQuote,
 // и побочный запуск валил CI (нет секретов базы - process.exit(1))
 import { pathToFileURL } from "node:url";
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -60,7 +60,7 @@ describe("assembleCaptionHtml", () => {
     );
   });
 
-  it("короткий пост: quote_place уходит в тело, а не в блок цитаты", () => {
+  it("quote_place без цитаты рендерится обычной цитатой места и года", () => {
     const html = assembleCaptionHtml(
       {
         caption: "Немецкие солдаты перед расстрелом группы советских партизан.",
@@ -71,9 +71,9 @@ describe("assembleCaptionHtml", () => {
       { license: "PD" },
       channel,
     );
-    expect(html).not.toContain("blockquote");
     expect(html).toContain(
-      "Немецкие солдаты перед расстрелом группы советских партизан.\nСевер СССР, 1941 год.",
+      "Немецкие солдаты перед расстрелом группы советских партизан.\n" +
+        "<blockquote expandable>Север СССР, 1941 год.</blockquote>",
     );
   });
 
@@ -118,8 +118,8 @@ describe("buildAnalysisPrompt", () => {
   });
 });
 
-describe("unquotePlace (лекарь партии 08.08)", async () => {
-  const { unquotePlace, isBarePlaceDate } = await import("../scripts/fix-place.js");
+describe("placeToQuote (лекарь: дата из тела в цитату)", async () => {
+  const { placeToQuote, isBarePlaceDate } = await import("../scripts/fix-place.js");
 
   it("отличает голые место и дату от справки", () => {
     expect(isBarePlaceDate("Италия, 1943 год.")).toBe(true);
@@ -132,47 +132,36 @@ describe("unquotePlace (лекарь партии 08.08)", async () => {
     ).toBe(false);
   });
 
-  it("старый вариант-б: дата в expandable-цитате переносится в тело", () => {
-    const old =
-      "Немецкие парашютисты люфтваффе во время перекура.\n" +
-      "<blockquote expandable>Италия, 1943 год.</blockquote>\n\n" +
-      '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
-    expect(unquotePlace(old)).toBe(
-      "Немецкие парашютисты люфтваффе во время перекура.\n" +
-        "Италия, 1943 год.\n\n" +
-        '<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
-    );
-  });
-
-  it("настоящую изюминку в expandable не трогает", () => {
-    const gem =
-      "Нина Соколова, водолаз и инженер-полковник.\n" +
-      "<blockquote expandable>В 1943 году она участвовала в строительстве бензопровода, проложенного по дну Ладожского озера и ставшего для осажденного Ленинграда артерией жизни.</blockquote>\n\n" +
-      '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
-    expect(unquotePlace(gem)).toBeNull();
-  });
-
-  it("одиночный не-expandable blockquote переносится в тело", () => {
+  it("дата из последней строки тела переезжает в цитату", () => {
     const broken =
       "Немецкие солдаты перед расстрелом группы советских партизан.\n" +
-      "<blockquote>Север СССР, 1941 год.</blockquote>\n\n" +
+      "Север СССР, 1941 год.\n\n" +
       '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
-    expect(unquotePlace(broken)).toBe(
+    expect(placeToQuote(broken)).toBe(
       "Немецкие солдаты перед расстрелом группы советских партизан.\n" +
-        "Север СССР, 1941 год.\n\n" +
+        "<blockquote expandable>Север СССР, 1941 год.</blockquote>\n\n" +
         '<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
     );
   });
 
-  it("изюминку с expandable-цитатой не трогает", () => {
-    const ok =
-      "Крейсер «Яхаги».\n<blockquote expandable>Факт.</blockquote>\n" +
-      "<blockquote>Тихий океан, 1945 год.</blockquote>\n\n" +
+  it("изюминку с цитатой и датой в теле не трогает", () => {
+    const gem =
+      "Британский танк Sherman III в районе Бенгази.\n" +
+      "Ливия, декабрь 1942 года.\n" +
+      "<blockquote expandable>В 1942 году Бенгази стал ареной ожесточенных боев.</blockquote>\n\n" +
       '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
-    expect(unquotePlace(ok)).toBeNull();
+    expect(placeToQuote(gem)).toBeNull();
   });
 
-  it("подпись без блоков не трогает", () => {
-    expect(unquotePlace("Текст.\n\n<a href=\"x\">X</a>")).toBeNull();
+  it("описание без даты в конце не трогает", () => {
+    const plain =
+      "Немецкие парашютисты люфтваффе во время перекура.\n" +
+      "Они находятся в Италии уже второй месяц.\n\n" +
+      '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
+    expect(placeToQuote(plain)).toBeNull();
+  });
+
+  it("подпись без переносов не трогает", () => {
+    expect(placeToQuote('Текст.\n\n<a href="x">X</a>')).toBeNull();
   });
 });
