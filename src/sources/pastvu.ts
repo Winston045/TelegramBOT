@@ -118,13 +118,18 @@ export const pastvu: SourceAdapter = {
   async fetch(limit, cfg: SourceConfig, cursors: CursorStore): Promise<RawItem[]> {
     const yearFrom = cfg.years?.[0] ?? 1900;
     const yearTo = cfg.years?.[1] ?? 1965;
-    const perCity = Math.max(3, Math.ceil(limit / CITIES_PER_FETCH));
+    // жёсткий потолок на точку: соседние кадры одной площади не должны
+    // заполнять партию, даже если лимит источника большой
+    const perCity = Math.max(3, Math.min(5, Math.ceil(limit / CITIES_PER_FETCH)));
 
     const cityStart = await cursors.get("pastvu", "city");
     const items: RawItem[] = [];
     // Геопоиск липнет к одной точке: полдюжины «Соборных площадей» подряд.
-    // Внутри партии держим не больше одного фото с одинаковым названием.
+    // Внутри партии держим не больше одного фото с одинаковым названием
+    // и не больше двух с одного адреса (живой случай: две карточки одной
+    // площади Смоленска в одной партии).
     const seenTitles = new Set<string>();
+    const placeCounts = new Map<string, number>();
 
     for (let i = 0; i < CITIES_PER_FETCH && items.length < limit; i++) {
       const idx = (cityStart + i) % GEO_POOL.length;
@@ -160,8 +165,12 @@ export const pastvu: SourceAdapter = {
           if (photo.type === 2) continue; // живопись, не фотография
           const year = photo.year ?? p.year;
           if (year && (year < yearFrom || year > yearTo)) continue;
+          const item = buildItem(p, name, photo);
+          const placeKey = (item.place ?? "").toLowerCase().slice(0, 60);
+          if (placeKey && (placeCounts.get(placeKey) ?? 0) >= 2) continue;
           if (titleKey) seenTitles.add(titleKey);
-          items.push(buildItem(p, name, photo));
+          if (placeKey) placeCounts.set(placeKey, (placeCounts.get(placeKey) ?? 0) + 1);
+          items.push(item);
         } catch (err) {
           console.warn(`  pastvu: детали ${p.cid} не получены — ${(err as Error).message}`);
         }

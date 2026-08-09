@@ -284,3 +284,24 @@ describe("buildPlan", () => {
     expect(plan).toHaveLength(4);
   });
 });
+
+describe("военный уклон", () => {
+  it("мирный кадр уступает боевому при равном качестве", () => {
+    const civ = { ...cand(1, 70, "street", { military: false }) };
+    const mil = { ...cand(2, 70, "armor") };
+    expect(rank(mil)).toBeGreaterThan(rank(civ));
+  });
+
+  it("мирных не больше одного на окно - второй ждёт", () => {
+    const civ1 = cand(1, 90, "street", { military: false });
+    const civ2 = cand(2, 88, "portrait", { military: false });
+    const mil = cand(3, 60, "armor");
+    expect(planAuto([civ1, civ2, mil], noRecent, 3).map((c) => c.id)).toEqual([1, 3, 2]);
+  });
+
+  it("если в резерве одни мирные - слоты всё равно закрываются", () => {
+    const civ1 = cand(1, 90, "street", { military: false });
+    const civ2 = cand(2, 80, "portrait", { military: false });
+    expect(planAuto([civ1, civ2], noRecent, 2).map((c) => c.id)).toEqual([1, 2]);
+  });
+});

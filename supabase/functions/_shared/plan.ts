@@ -77,6 +77,13 @@ export const MAX_STATIC_IN_WINDOW = 1;
  * короткие, и длинные справки не должны идти подряд. Одна на окно.
  */
 export const MAX_LONG_IN_WINDOW = 1;
+/**
+ * Канал про войну: мирный сюжет уступает боевому при равном качестве,
+ * но яркий мирный кадр (высокая оценка) штраф перевешивает и выходит.
+ */
+export const CIVILIAN_PENALTY = 6;
+/** Сколько мирных кадров допускаем на окно из RECENT_WINDOW постов. */
+export const MAX_CIVILIAN_IN_WINDOW = 1;
 
 /** Видимая длина цитаты внутри blockquote. */
 export function quoteLength(captionHtml: string | null): number {
@@ -100,7 +107,8 @@ export function rank(c: PlanCandidate): number {
   const staticShot = c.tags?.action === false ? STATIC_PENALTY : 0;
   const color = c.tags?.color === true ? COLOR_BONUS : 0;
   const oldEra = c.tags?.period && OLD_PERIODS.has(c.tags.period) ? OLD_ERA_PENALTY : 0;
-  return (c.score ?? 0) + quote + color - staticShot - oldEra;
+  const civilian = c.tags?.military === false ? CIVILIAN_PENALTY : 0;
+  return (c.score ?? 0) + quote + color - staticShot - oldEra - civilian;
 }
 
 export type RecentContext = {
@@ -136,7 +144,8 @@ export function planAuto(
   const chosen: PlanCandidate[] = [];
   const subjects = [...recent.subjects];
   const periods = [...(recent.periods ?? [])];
-  let civilianLast = recent.civilian;
+  // канал про войну: мирный кадр - редкая передышка, не череда
+  const civiliansWindow: boolean[] = recent.civilian ? [true] : [];
   // окно скользит: сколько статики в последних RECENT_WINDOW постах
   const staticsWindow: boolean[] = Array.from(
     { length: Math.min(recent.statics ?? 0, RECENT_WINDOW) },
@@ -157,10 +166,11 @@ export function planAuto(
       streak.length === MAX_SAME_PERIOD_STREAK && streak.every((p) => p === streak[0])
         ? streak[0]
         : undefined;
+    const civiliansInWindow = civiliansWindow.slice(0, RECENT_WINDOW).filter(Boolean).length;
     const fits = (c: PlanCandidate) => {
       const subject = c.tags?.subject;
       if (subject && subjects.slice(0, RECENT_WINDOW).includes(subject)) return false;
-      if (c.tags?.military === false && civilianLast) return false;
+      if (c.tags?.military === false && civiliansInWindow >= MAX_CIVILIAN_IN_WINDOW) return false;
       // статика допустима, но редко: лента должна дышать движением
       if (c.tags?.action === false && staticsInWindow >= MAX_STATIC_IN_WINDOW) return false;
       // развёрнутая цитата - изюминка: длинные посты не идут подряд
@@ -176,7 +186,7 @@ export function planAuto(
     chosen.push(pick);
     if (pick.tags?.subject) subjects.unshift(pick.tags.subject);
     periods.unshift(pick.tags?.period ?? "");
-    civilianLast = pick.tags?.military === false;
+    civiliansWindow.unshift(pick.tags?.military === false);
     staticsWindow.unshift(pick.tags?.action === false);
     longsWindow.unshift(quoteLength(pick.caption_html ?? null) >= LONG_QUOTE);
   }

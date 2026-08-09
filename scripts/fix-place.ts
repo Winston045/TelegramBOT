@@ -44,7 +44,7 @@ async function main() {
     .from("candidates")
     .select("id, status, caption_html, channel_msg_id, published_at")
     .or(
-      "status.in.(new,shown,approved),and(status.eq.published,published_at.gte.2026-08-05)",
+      "status.in.(new,shown,approved),and(status.eq.published,published_at.gte.2026-08-01)",
     );
   if (error) throw new Error(error.message);
 
