@@ -47,7 +47,9 @@ sources:
       - category: "Images from RIA Novosti"
         attribution: "РИА Новости"
         lang: "ru"
-        terms: [""]        # в названиях файлов нет годов - листаем всё подряд
+        # названия файлов RIAN - английские описания: ищем военные прицельно,
+        # а не листаем вслепую (советская доля в ленте растёт)
+        terms: ["war", "front", "battle", "tank", "soldiers", "aviation"]
       - category: "Images from the National Archives and Records Administration"
         attribution: "NARA"
         lang: "en"
@@ -74,6 +76,12 @@ sources:
         lang: "nl"
         terms:
           ["1946", "1948", "1953", "1956", "1961", "1968", "1975", "1983"]
+      # 5 тысяч кадров армейской съёмки США 1941-1954 (ВМВ и Корея):
+      # противоядие от преобладания немецкой съёмки
+      - category: "United States Army Signal Corps photographs"
+        attribution: "US Army Signal Corps"
+        lang: "en"
+        terms: [""]        # категория небольшая - листаем всю подряд
   # прежний узкий источник: остался ради истории, включать не нужно -
   # Бундесархив теперь один из архивов commons
   bundesarchiv:
