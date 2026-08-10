@@ -12,15 +12,10 @@
 import { getDb } from "../src/db.js";
 import { getTelegram } from "../src/telegram.js";
 import { env } from "../src/env.js";
+import { isBarePlaceDate } from "../src/critic.js";
 
-/** Похоже ли содержимое на голые место и дату («Италия, 1943 год.»). */
-export function isBarePlaceDate(text: string): boolean {
-  const t = text.trim();
-  if (t.length === 0 || t.length > 60) return false;
-  if (!/(18|19|20)\d{2}/.test(t)) return false;
-  const sentences = t.split(/\.\s+/).filter(Boolean);
-  return sentences.length <= 2;
-}
+export { isBarePlaceDate };
+
 
 /**
  * Переносит голые место и дату из последней строки тела в цитату.

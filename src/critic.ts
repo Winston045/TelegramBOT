@@ -71,6 +71,18 @@ ${metadataBlock(item, extraContext)}
 }
 
 /**
+ * Голые место и дата («Италия, 1943 год.») - штатная цитата обычного
+ * поста: проверять её редактором незачем, запрос квоты не тратим.
+ */
+export function isBarePlaceDate(text: string): boolean {
+  const t = text.trim();
+  if (t.length === 0 || t.length > 60) return false;
+  if (!/(18|19|20)\d{2}/.test(t)) return false;
+  const sentences = t.split(/\.\s+/).filter(Boolean);
+  return sentences.length <= 2;
+}
+
+/**
  * Дублирует ли новая цитата отдельную строку места и даты. Сравнение по
  * буквам и цифрам без пунктуации: «Тихий океан, 1945 год.» == «Тихий океан 1945 год».
  */
@@ -93,7 +105,11 @@ export async function reviewQuote(
   generated: GeneratedCaption,
   extraContext?: string,
 ): Promise<{ caption: GeneratedCaption; rewritten: boolean }> {
-  if (!generated.quote) return { caption: generated, rewritten: false };
+  // пустую цитату и штатное «место, год» не проверяем - экономим квоту:
+  // редактору есть смысл смотреть только на цитаты с претензией на факт
+  if (!generated.quote || isBarePlaceDate(generated.quote)) {
+    return { caption: generated, rewritten: false };
+  }
   try {
     const res = await geminiJson<Verdict>([
       { text: buildPrompt(item, generated, extraContext) },
@@ -105,6 +121,14 @@ export async function reviewQuote(
     if (!quote) {
       // сильной замены не нашлось - цитата убирается, пост выходит коротким
       return { caption: { ...generated, quote: "" }, rewritten: true };
+    }
+    // замена «место, год» при дате, уже стоящей в теле поста (изюминка
+    // с датой в caption), дала бы дубль - тогда цитату лучше убрать
+    if (isBarePlaceDate(quote)) {
+      const years = quote.match(/(18|19|20)\d{2}/g) ?? [];
+      if (years.some((y) => generated.caption.includes(y))) {
+        return { caption: { ...generated, quote: "" }, rewritten: true };
+      }
     }
     return {
       caption: {
