@@ -935,7 +935,7 @@ bot.command("more", async (ctx) => {
     },
   );
   if (res.status === 204) {
-    await ctx.reply("Запустил сбор свежей партии. Карточки придут через несколько минут.");
+    await ctx.reply("Запустила сбор свежей партии. Карточки придут через несколько минут.");
   } else {
     await ctx.reply(`Не получилось запустить сбор: GitHub ответил ${res.status}.`);
   }
@@ -1068,11 +1068,11 @@ bot.on("message:text", async (ctx) => {
 
   const htmlCheck = validateHtml(updated);
   if (!htmlCheck.ok) {
-    await ctx.reply(`Не принял: ${htmlCheck.reason}.`);
+    await ctx.reply(`Не приняла: ${htmlCheck.reason}.`);
     return;
   }
   if (visibleLength(updated) > CAPTION_LIMIT) {
-    await ctx.reply(`Не принял: длиннее ${CAPTION_LIMIT} символов.`);
+    await ctx.reply(`Не приняла: длиннее ${CAPTION_LIMIT} символов.`);
     return;
   }
 
