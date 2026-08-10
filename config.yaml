@@ -67,6 +67,13 @@ sources:
       - category: "Images from the Library of Congress"
         attribution: "Library of Congress"
         lang: "en"
+      # 314 тысяч пресс-фото 1945-1989 (CC BY-SA/CC0): холодная война,
+      # Европа, техника - закрывает дефицитную вторую половину века
+      - category: "Images from Anefo"
+        attribution: "Anefo / Nationaal Archief"
+        lang: "nl"
+        terms:
+          ["1946", "1948", "1953", "1956", "1961", "1968", "1975", "1983"]
   # прежний узкий источник: остался ради истории, включать не нужно -
   # Бундесархив теперь один из архивов commons
   bundesarchiv:
