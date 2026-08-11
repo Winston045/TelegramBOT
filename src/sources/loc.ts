@@ -134,7 +134,17 @@ export const loc: SourceAdapter = {
     for (const q of queries) {
       // курсор — номер страницы прошлого запуска; 0 значит «ещё не ходили»
       const page = Math.max(1, (await cursors.get("loc", q)) + 1);
-      const results = await fetchQuery(q, perQuery, page);
+      let results: LocResult[];
+      try {
+        results = await fetchQuery(q, perQuery, page);
+      } catch (err) {
+        // один запрос не должен уносить весь источник: за концом выдачи
+        // loc.gov отвечает 404, и без сброса курсора источник умирал
+        // насовсем (живой случай: «loc: сбор упал» каждый день)
+        console.warn(`  loc: «${q}» стр. ${page} — ${(err as Error).message}`);
+        await cursors.set("loc", q, 0);
+        continue;
+      }
       for (const r of results) {
         const item = mapLocResult(r);
         if (item) items.push(item);
