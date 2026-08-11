@@ -48,7 +48,7 @@ async function main() {
 
   const { data: fresh, error } = await db
     .from("candidates")
-    .select("id, source, image_url, caption_html, quote_kind, tags, score")
+    .select("id, source, image_url, caption_html, quote_kind, tags, score, attribution")
     .eq("status", "new")
     .not("caption_html", "is", null)
     .order("score", { ascending: false });

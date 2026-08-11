@@ -25,6 +25,8 @@ export type PlanCandidate = {
   score?: number | null;
   tags?: PlanTags;
   scheduled_at?: string | null;
+  /** Архив-поставщик («Bundesarchiv», «IWM», «РИА Новости»...). */
+  attribution?: string | null;
 };
 
 /** Откуда пост попал в план - это видно редактору в /queue. */
@@ -84,6 +86,13 @@ export const MAX_LONG_IN_WINDOW = 1;
 export const CIVILIAN_PENALTY = 6;
 /** Сколько мирных кадров допускаем на окно из RECENT_WINDOW постов. */
 export const MAX_CIVILIAN_IN_WINDOW = 1;
+/**
+ * Сколько кадров одного архива допускаем на окно. Состав партии зависит
+ * от того, какой архив в этот день отдал больше, и лента качалась от
+ * «одних немцев» к «одним британцам». Балансировать веса источников
+ * бессмысленно - перекос просто меняет флаг; ограничиваем на отборе.
+ */
+export const MAX_SAME_ARCHIVE_IN_WINDOW = 2;
 
 /** Видимая длина цитаты внутри blockquote. */
 export function quoteLength(captionHtml: string | null): number {
@@ -122,6 +131,8 @@ export type RecentContext = {
   statics?: number;
   /** Сколько постов с развёрнутой цитатой было среди последних. */
   longs?: number;
+  /** Архивы последних постов, свежие первыми. */
+  archives?: string[];
 };
 
 /** Сколько постов одной эпохи подряд допускаем, прежде чем сменить её. */
@@ -146,6 +157,8 @@ export function planAuto(
   const periods = [...(recent.periods ?? [])];
   // канал про войну: мирный кадр - редкая передышка, не череда
   const civiliansWindow: boolean[] = recent.civilian ? [true] : [];
+  // архивы последних постов: лента не должна быть витриной одного архива
+  const archives = [...(recent.archives ?? [])];
   // окно скользит: сколько статики в последних RECENT_WINDOW постах
   const staticsWindow: boolean[] = Array.from(
     { length: Math.min(recent.statics ?? 0, RECENT_WINDOW) },
@@ -178,6 +191,15 @@ export function planAuto(
         return false;
       // лента не должна неделями сидеть в одном году - эпохи чередуются
       if (stuckPeriod && c.tags?.period === stuckPeriod) return false;
+      // и не должна быть витриной одного архива: «одни немцы», «одни британцы»
+      const archive = c.attribution;
+      if (
+        archive &&
+        archives.slice(0, RECENT_WINDOW).filter((a) => a === archive).length >=
+          MAX_SAME_ARCHIVE_IN_WINDOW
+      ) {
+        return false;
+      }
       return true;
     };
     const idx = pool.findIndex(fits);
@@ -187,6 +209,7 @@ export function planAuto(
     if (pick.tags?.subject) subjects.unshift(pick.tags.subject);
     periods.unshift(pick.tags?.period ?? "");
     civiliansWindow.unshift(pick.tags?.military === false);
+    archives.unshift(pick.attribution ?? "");
     staticsWindow.unshift(pick.tags?.action === false);
     longsWindow.unshift(quoteLength(pick.caption_html ?? null) >= LONG_QUOTE);
   }

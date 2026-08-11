@@ -86,7 +86,7 @@ async function main() {
   if (!queue?.length && autoPublish) {
     const res = await db
       .from("candidates")
-      .select("id, image_url, image_hash, caption_html, score, tags")
+      .select("id, image_url, image_hash, caption_html, score, tags, attribution")
       .in("status", ["new", "shown"])
       .not("caption_html", "is", null)
       .order("score", { ascending: false })
@@ -102,7 +102,7 @@ async function main() {
     // кадры, а в ленте выглядят одним и тем же - такие темы придерживаем
     const { data: lastPosts } = await db
       .from("candidates")
-      .select("tags, caption_html")
+      .select("tags, caption_html, attribution")
       .eq("status", "published")
       .order("published_at", { ascending: false })
       .limit(RECENT_WINDOW);
@@ -122,6 +122,9 @@ async function main() {
       longs: (lastPosts ?? []).filter(
         (p) => quoteLength((p as { caption_html?: string | null }).caption_html ?? null) >= LONG_QUOTE,
       ).length,
+      archives: (lastPosts ?? []).map(
+        (p) => (p as { attribution?: string | null }).attribution ?? "",
+      ),
     };
 
     // битые кадры выкидываем до планировщика: он решает только «что интереснее»

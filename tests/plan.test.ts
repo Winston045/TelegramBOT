@@ -305,3 +305,36 @@ describe("военный уклон", () => {
     expect(planAuto([civ1, civ2], noRecent, 2).map((c) => c.id)).toEqual([1, 2]);
   });
 });
+
+describe("баланс архивов", () => {
+  const fromArchive = (id: number, score: number, subject: string, attribution: string) => ({
+    ...cand(id, score, subject),
+    attribution,
+  });
+
+  it("три подряд из одного архива не идут: третьим входит другой", () => {
+    const a1 = fromArchive(1, 90, "armor", "Bundesarchiv");
+    const a2 = fromArchive(2, 88, "navy", "Bundesarchiv");
+    const a3 = fromArchive(3, 86, "aviation", "Bundesarchiv");
+    const other = fromArchive(4, 60, "infantry", "IWM");
+    expect(planAuto([a1, a2, a3, other], noRecent, 3).map((c) => c.id)).toEqual([1, 2, 4]);
+  });
+
+  it("архивы вышедших постов учитываются", () => {
+    const brit1 = fromArchive(1, 90, "armor", "IWM");
+    const soviet = fromArchive(2, 60, "infantry", "РИА Новости");
+    const picked = planAuto(
+      [brit1, soviet],
+      { subjects: [], civilian: false, archives: ["IWM", "IWM"] },
+      1,
+    );
+    expect(picked[0]?.id).toBe(2);
+  });
+
+  it("если резерв только из одного архива - слоты всё равно закрываются", () => {
+    const a1 = fromArchive(1, 90, "armor", "Bundesarchiv");
+    const a2 = fromArchive(2, 80, "navy", "Bundesarchiv");
+    const a3 = fromArchive(3, 70, "aviation", "Bundesarchiv");
+    expect(planAuto([a1, a2, a3], noRecent, 3)).toHaveLength(3);
+  });
+});
