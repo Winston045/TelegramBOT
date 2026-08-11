@@ -165,3 +165,49 @@ describe("placeToQuote (лекарь: дата из тела в цитату)", 
     expect(placeToQuote('Текст.\n\n<a href="x">X</a>')).toBeNull();
   });
 });
+
+describe("страховка формата обычного поста", () => {
+  it("дата последней строкой тела без цитаты уходит в цитату", () => {
+    const html = assembleCaptionHtml(
+      {
+        caption:
+          "Прибытие эшелона с венгерскими евреями в концентрационный лагерь Аушвиц.\nОсвенцим, 1944 год.",
+        quote: "",
+        quote_kind: "context",
+      },
+      { license: "PD" },
+      channel,
+    );
+    expect(html).toBe(
+      "Прибытие эшелона с венгерскими евреями в концентрационный лагерь Аушвиц.\n" +
+        "<blockquote expandable>Освенцим, 1944 год.</blockquote>\n\n" +
+        '<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
+    );
+  });
+
+  it("изюминку с датой в теле не трогает", () => {
+    const html = assembleCaptionHtml(
+      {
+        caption: "Британский танк Sherman III в районе Бенгази.\nЛивия, декабрь 1942 года.",
+        quote: "В 1942 году Бенгази стал ареной ожесточённых боёв.",
+        quote_kind: "context",
+      },
+      { license: "PD" },
+      channel,
+    );
+    expect(html).toContain("Ливия, декабрь 1942 года.\n<blockquote expandable>В 1942 году");
+  });
+
+  it("описание из двух предложений без даты не трогает", () => {
+    const html = assembleCaptionHtml(
+      {
+        caption: "Немецкие парашютисты во время перекура.\nОни ждут погрузки в транспортник.",
+        quote: "",
+        quote_kind: "context",
+      },
+      { license: "PD" },
+      channel,
+    );
+    expect(html).not.toContain("blockquote");
+  });
+});

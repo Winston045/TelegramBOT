@@ -134,6 +134,18 @@ ${glossaryLines || "  (пусто)"}
    год в короткой цитате, без псевдофактов.`;
 }
 
+/**
+ * Похоже ли на голые место и год («Италия, 1943 год.») - штатную цитату
+ * обычного поста. Используется и сборкой подписи, и редактором цитат.
+ */
+export function isBarePlaceDate(text: string): boolean {
+  const t = text.trim();
+  if (t.length === 0 || t.length > 60) return false;
+  if (!/(18|19|20)\d{2}/.test(t)) return false;
+  const sentences = t.split(/\.\s+/).filter(Boolean);
+  return sentences.length <= 2;
+}
+
 /** Требует ли лицензия строку атрибуции. PD - нет, CC-BY-* - да. */
 export function needsAttribution(license: string): boolean {
   return /cc[- ]by/i.test(license);
@@ -153,6 +165,17 @@ export function assembleCaptionHtml(
   // expandable: длинная цитата в канале свёрнута и раскрывается по клику,
   // короткая помещается целиком и выглядит как обычная
   let body = dash(generated.caption);
+  // страховка формата: у обычного поста место и год живут в цитате. Если
+  // модель оставила quote пустым, а дату влепила последней строкой тела -
+  // переносим её в цитату сами, не надеясь на послушность модели
+  if (!generated.quote && !generated.quote_place) {
+    const lines = body.split("\n");
+    const last = lines.length > 1 ? (lines[lines.length - 1] ?? "").trim() : "";
+    if (last && isBarePlaceDate(last)) {
+      body = lines.slice(0, -1).join("\n");
+      return `${body}\n<blockquote expandable>${last}</blockquote>\n\n<a href="${channel.signature_url}">${channel.signature}</a>`;
+    }
+  }
   if (generated.quote) {
     body += `\n<blockquote expandable>${dash(generated.quote)}</blockquote>`;
     // эталонный формат изюминки: место и дата могут идти отдельной второй

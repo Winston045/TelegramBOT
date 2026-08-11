@@ -10,7 +10,9 @@
  */
 import type { AppConfig } from "./config.js";
 import type { GeneratedCaption } from "./caption.js";
-import { metadataBlock } from "./caption.js";
+import { isBarePlaceDate, metadataBlock } from "./caption.js";
+
+export { isBarePlaceDate };
 import type { RawItem } from "./sources/types.js";
 import { geminiJson } from "./gemini.js";
 
@@ -68,18 +70,6 @@ ${metadataBlock(item, extraContext)}
 
 Верни строго JSON без обёрток:
 {"verdict": "ok" | "weak", "quote": "...", "quote_kind": "observation" | "context"}`;
-}
-
-/**
- * Голые место и дата («Италия, 1943 год.») - штатная цитата обычного
- * поста: проверять её редактором незачем, запрос квоты не тратим.
- */
-export function isBarePlaceDate(text: string): boolean {
-  const t = text.trim();
-  if (t.length === 0 || t.length > 60) return false;
-  if (!/(18|19|20)\d{2}/.test(t)) return false;
-  const sentences = t.split(/\.\s+/).filter(Boolean);
-  return sentences.length <= 2;
 }
 
 /**
