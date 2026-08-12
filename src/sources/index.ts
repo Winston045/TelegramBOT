@@ -1,6 +1,7 @@
 import type { AppConfig } from "../config.js";
 import type { CursorStore } from "../cursors.js";
 import type { RawItem, SourceAdapter } from "./types.js";
+import { archiveKey } from "../plan.js";
 import { loc } from "./loc.js";
 import { bundesarchiv } from "./bundesarchiv.js";
 import { commons } from "./commons.js";
@@ -34,7 +35,7 @@ export function interleaveBySource<T extends { source: string; attribution?: str
   // мешаем по АРХИВУ, а не по источнику: commons - это девять архивов в
   // одной куче, и срез «на анализ» состоял из первого архива списка
   // (Бундесархив), отчего лента шла сплошными немцами
-  const bucketOf = (it: T) => it.attribution ?? it.source;
+  const bucketOf = (it: T) => archiveKey(it.attribution) || it.source;
 
   const poolSizes = new Map<string, number>();
   for (const it of items) {

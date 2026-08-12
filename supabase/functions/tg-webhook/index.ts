@@ -32,6 +32,7 @@ import { CAPTION_LIMIT, validateHtml, visibleLength } from "../_shared/validate.
 import {
   LONG_QUOTE,
   RECENT_WINDOW,
+  archiveKey,
   buildPlan,
   headline,
   quoteLength,
@@ -822,7 +823,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
         civilian: recentRows.some((p) => p.tags?.military === false),
         statics: recentRows.filter((p) => p.tags?.action === false).length,
         longs: recentRows.filter((p) => quoteLength(p.caption_html ?? null) >= LONG_QUOTE).length,
-        archives: recentRows.map((p) => p.attribution ?? ""),
+        archives: recentRows.map((p) => archiveKey(p.attribution)),
       },
       autoPublish,
       formatScheduled: moscowTime,

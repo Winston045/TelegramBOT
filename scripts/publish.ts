@@ -13,7 +13,7 @@ import { channelSlug } from "../src/tme.js";
 import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/schedule.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { isDuplicate } from "../src/dhash.js";
-import { LONG_QUOTE, RECENT_WINDOW, planAuto, quoteLength } from "../src/plan.js";
+import { LONG_QUOTE, RECENT_WINDOW, archiveKey, planAuto, quoteLength } from "../src/plan.js";
 import { isDeadImageError, sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { cleanupChat, rememberEphemeral } from "../src/tidy.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
@@ -122,8 +122,8 @@ async function main() {
       longs: (lastPosts ?? []).filter(
         (p) => quoteLength((p as { caption_html?: string | null }).caption_html ?? null) >= LONG_QUOTE,
       ).length,
-      archives: (lastPosts ?? []).map(
-        (p) => (p as { attribution?: string | null }).attribution ?? "",
+      archives: (lastPosts ?? []).map((p) =>
+        archiveKey((p as { attribution?: string | null }).attribution),
       ),
     };
 

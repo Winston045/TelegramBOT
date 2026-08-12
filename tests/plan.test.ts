@@ -325,7 +325,8 @@ describe("баланс архивов", () => {
     const soviet = fromArchive(2, 60, "infantry", "РИА Новости");
     const picked = planAuto(
       [brit1, soviet],
-      { subjects: [], civilian: false, archives: ["IWM", "IWM"] },
+      // в recent архивы уже нормализованы (как их кладёт публикатор)
+      { subjects: [], civilian: false, archives: ["iwm", "iwm"] },
       1,
     );
     expect(picked[0]?.id).toBe(2);
@@ -361,5 +362,24 @@ describe("вожди - редкая краска", () => {
       1,
     );
     expect(picked[0]?.id).toBe(2);
+  });
+});
+
+describe("archiveKey", () => {
+  it("выделяет архив из строки с фотографом и лицензией", async () => {
+    const { archiveKey } = await import("../src/plan.js");
+    expect(archiveKey("Bundesarchiv, Koch / CC BY-SA 3.0 de")).toBe("bundesarchiv");
+    expect(archiveKey("Bundesarchiv, Schmidt / CC BY-SA 3.0 de")).toBe("bundesarchiv");
+    expect(archiveKey("IWM / PD")).toBe("iwm");
+    expect(archiveKey("PastVu / Иванов")).toBe("pastvu");
+    expect(archiveKey(null)).toBe("");
+  });
+
+  it("кадры одного архива с разными фотографами считаются одним архивом", () => {
+    const a = { ...cand(1, 90, "armor"), attribution: "Bundesarchiv, Koch / CC BY-SA 3.0 de" };
+    const b = { ...cand(2, 88, "navy"), attribution: "Bundesarchiv, Schmidt / CC BY-SA 3.0 de" };
+    const c = { ...cand(3, 86, "aviation"), attribution: "Bundesarchiv, Weber / CC BY-SA 3.0 de" };
+    const other = { ...cand(4, 60, "infantry"), attribution: "IWM / PD" };
+    expect(planAuto([a, b, c, other], noRecent, 3).map((x) => x.id)).toEqual([1, 2, 4]);
   });
 });

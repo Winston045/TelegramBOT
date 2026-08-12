@@ -9,6 +9,8 @@
  * набирается по порядку оценки. Пустой чат хуже повтора темы.
  */
 
+import { archiveKey } from "./plan.js";
+
 export type Taggable = {
   tags: { subject?: string; region?: string; period?: string } | null;
   /** Архив-поставщик: партия не должна быть витриной одного архива. */
@@ -45,7 +47,7 @@ export function pickBalanced<T extends Taggable>(
     if (region && (regionCounts.get(region) ?? 0) >= maxPerRegion) continue;
     const period = item.tags?.period;
     if (period && (periodCounts.get(period) ?? 0) >= maxPerPeriod) continue;
-    const archive = item.attribution;
+    const archive = archiveKey(item.attribution);
     if (archive && (archiveCounts.get(archive) ?? 0) >= maxPerArchive) continue;
 
     if (archive) archiveCounts.set(archive, (archiveCounts.get(archive) ?? 0) + 1);

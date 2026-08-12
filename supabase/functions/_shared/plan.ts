@@ -101,6 +101,17 @@ export const MAX_SAME_ARCHIVE_IN_WINDOW = 2;
 export const LEADER_PENALTY = 10;
 export const MAX_LEADERS_IN_WINDOW = 1;
 
+/**
+ * Имя архива из строки атрибуции. В базе она вида
+ * «Bundesarchiv, Koch / CC BY-SA 3.0 de» - с фотографом и лицензией,
+ * поэтому сравнивать строки целиком нельзя: они уникальны у каждого
+ * кадра, и правила баланса по архиву не срабатывали ни разу.
+ */
+export function archiveKey(attribution?: string | null): string {
+  if (!attribution) return "";
+  return (attribution.split("/")[0] ?? "").split(",")[0]!.trim().toLowerCase();
+}
+
 /** Видимая длина цитаты внутри blockquote. */
 export function quoteLength(captionHtml: string | null): number {
   const m = captionHtml?.match(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/);
@@ -208,7 +219,7 @@ export function planAuto(
         return false;
       }
       // и не должна быть витриной одного архива: «одни немцы», «одни британцы»
-      const archive = c.attribution;
+      const archive = archiveKey(c.attribution);
       if (
         archive &&
         archives.slice(0, RECENT_WINDOW).filter((a) => a === archive).length >=
@@ -225,7 +236,7 @@ export function planAuto(
     if (pick.tags?.subject) subjects.unshift(pick.tags.subject);
     periods.unshift(pick.tags?.period ?? "");
     civiliansWindow.unshift(pick.tags?.military === false);
-    archives.unshift(pick.attribution ?? "");
+    archives.unshift(archiveKey(pick.attribution));
     staticsWindow.unshift(pick.tags?.action === false);
     longsWindow.unshift(quoteLength(pick.caption_html ?? null) >= LONG_QUOTE);
   }
