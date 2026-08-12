@@ -61,6 +61,9 @@ export function mapLocResult(r: LocResult): RawItem | undefined {
     year: parseYear(r.date) ?? parseYear(r.title),
     place: r.location?.[0],
     license: "PD",
+    // архив нужен балансиру: без него кадры LOC выпадали из чередования
+    // архивов и могли идти в ленте подряд
+    attribution: "Library of Congress",
   };
 }
 

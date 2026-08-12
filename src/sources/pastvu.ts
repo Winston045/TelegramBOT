@@ -107,7 +107,9 @@ function buildItem(p: PastvuListPhoto, city: string, photo: PastvuPagePhoto): Ra
     year: photo.year ?? p.year,
     place,
     license: "PastVu",
-    attribution: photo.author ? `PastVu / ${stripHtml(photo.author)}` : undefined,
+    // архив указываем всегда: по нему балансир чередует поставщиков,
+    // и кадры без автора не должны выпадать из чередования
+    attribution: photo.author ? `PastVu, ${stripHtml(photo.author)}` : "PastVu",
     imageWidth: photo.w,
   };
 }
