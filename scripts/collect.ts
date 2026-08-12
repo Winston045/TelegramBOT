@@ -25,6 +25,7 @@ import { isStereoPair } from "../src/stereo.js";
 import { getDb } from "../src/db.js";
 import { GeminiQuotaError, quotaTripped } from "../src/gemini.js";
 import { analyzeImage } from "../src/analyze.js";
+import { passesGate } from "../src/scoring.js";
 import { reviewQuote } from "../src/critic.js";
 import { assembleCaptionHtml } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
@@ -223,25 +224,19 @@ async function main() {
       const a = await analyzeImage(item, cfg, item.imageBuffer, extraContext);
       // цензуры нет: unsafe — только пометка в логе, решают редакторы
       if (a.unsafe) console.log(`  пометка unsafe: [${item.source}] ${item.sourceId}`);
-      if (a.score < minScore) {
-        skippedDull++;
-        console.log(
-          `  скучное (score ${a.score} < ${minScore}): [${item.source}] ${item.sourceId}` +
-            (a.score_why ? ` - ${a.score_why}` : ""),
-        );
-        continue;
-      }
-      // кадр без крючка в резерв не пишем. Крючки выведены из ручной
-      // редактуры канала: трофей, обломки, момент, редкость, странность,
-      // человеческая история, действие. Раньше такие кадры лишь
-      // придерживал планировщик - и лента копила позирующих солдат
       const hook = a.tags.hook ?? "none";
-      if (hook === "none" && a.score < hooklessMinScore) {
-        skippedHookless++;
-        console.log(
-          `  без крючка (score ${a.score} < ${hooklessMinScore}): [${item.source}] ${item.sourceId}` +
-            (a.score_why ? ` - ${a.score_why}` : ""),
-        );
+      const verdict = passesGate(a, { minScore, hooklessMinScore });
+      if (!verdict.pass) {
+        const why = a.score_why ? ` - ${a.score_why}` : "";
+        if (verdict.reason === "dull") {
+          skippedDull++;
+          console.log(`  скучное (score ${a.score} < ${minScore}): [${item.source}] ${item.sourceId}${why}`);
+        } else {
+          skippedHookless++;
+          console.log(
+            `  без крючка (score ${a.score} < ${hooklessMinScore}): [${item.source}] ${item.sourceId}${why}`,
+          );
+        }
         continue;
       }
       // обоснование балла видно в логе сбора: по нему ловим завышения

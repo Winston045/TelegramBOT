@@ -17,6 +17,7 @@ import { dbCursorStore } from "../src/cursors.js";
 import { prefilter } from "../src/prefilter.js";
 import { pickBalanced } from "../src/balance.js";
 import { archiveKey, planAuto, rank, type PlanCandidate } from "../src/plan.js";
+import { passesGate } from "../src/scoring.js";
 
 type Row = PlanCandidate & {
   tags: { subject?: string; period?: string; military?: boolean; action?: boolean } | null;
@@ -142,6 +143,59 @@ async function simulateCards(cfg: ReturnType<typeof loadConfig>, batches = 3) {
   }
 }
 
+/**
+ * Сито отбора на живых данных: у каждого кандидата резерва берём оценку
+ * и крючок и прогоняем через то же правило, что стоит в сборщике.
+ * Gemini не зовём - теги уже проставлены при сборе.
+ */
+async function simulateGate(cfg: ReturnType<typeof loadConfig>) {
+  console.log("\n═══ 4. СИТО: кто прошёл бы в резерв по новому правилу ═══\n");
+  const limits = {
+    minScore: cfg.collect.min_score ?? 45,
+    hooklessMinScore: cfg.collect.hookless_min_score ?? 85,
+  };
+  console.log(`пороги: общий ${limits.minScore}, без крючка ${limits.hooklessMinScore}`);
+  const db = getDb();
+  const { data, error } = await db
+    .from("candidates")
+    .select("id, score, tags, caption_html")
+    .in("status", ["new", "shown", "approved"]);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as Array<{ id: number; score: number; tags: { hook?: string } | null; caption_html: string | null }>;
+  if (!rows.length) {
+    console.log("резерв пуст - проверять нечего");
+    return;
+  }
+
+  let passed = 0;
+  const reasons = new Map<string, number>();
+  const dropped: string[] = [];
+  for (const r of rows) {
+    const verdict = passesGate({ score: r.score, tags: r.tags ?? {} }, limits);
+    if (verdict.pass) {
+      passed++;
+      continue;
+    }
+    reasons.set(verdict.reason, (reasons.get(verdict.reason) ?? 0) + 1);
+    const head = (r.caption_html ?? "").replace(/<[^>]+>/g, "").split("\n")[0]?.slice(0, 52) ?? "";
+    dropped.push(`  #${r.id} score ${r.score} (${verdict.reason}) - ${head}`);
+  }
+  console.log(`прошло бы: ${passed} из ${rows.length}`);
+  console.log("отсев:", [...reasons.entries()].map(([k, n]) => `${k}×${n}`).join(", ") || "нет");
+  console.log("крючки резерва:", spread(rows.map((r) => r.tags?.hook ?? "(тега нет)")));
+  if (dropped.length) {
+    console.log("кого бы не пустили:");
+    dropped.slice(0, 12).forEach((line) => console.log(line));
+  }
+  const untagged = rows.filter((r) => !r.tags?.hook).length;
+  if (untagged) {
+    console.log(
+      `\nВНИМАНИЕ: у ${untagged} кандидатов тега крючка нет вовсе - они собраны ДО правила.` +
+        " Новое сито к ним не применялось, оно работает со следующего сбора.",
+    );
+  }
+}
+
 async function main() {
   const cfg = loadConfig();
   if (!process.argv.includes("--no-fetch")) {
@@ -153,6 +207,7 @@ async function main() {
   }
   await simulateFeed(cfg);
   await simulateCards(cfg);
+  await simulateGate(cfg);
   console.log("\nсимуляция завершена: ничего не опубликовано, Gemini не вызывался");
 }
 
