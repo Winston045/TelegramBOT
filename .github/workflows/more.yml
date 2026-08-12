@@ -37,7 +37,7 @@ jobs:
       - name: Карточки из резерва
         id: reserve
         run: |
-          out=$(npm run send-candidates -- --limit 3 | tee /dev/stderr) || exit 1
+          out=$(npm run send-candidates -- --limit 2 | tee /dev/stderr) || exit 1
           sent=$(echo "$out" | grep -oP 'отправлено карточек: \K\d+' || echo 0)
           echo "sent=$sent" >> "$GITHUB_OUTPUT"
       - name: Сбор новой партии (резерв пуст)
@@ -45,4 +45,4 @@ jobs:
         run: npm run collect -- --keep 8
       - name: Отправка карточек
         if: steps.reserve.outputs.sent == '0'
-        run: npm run send-candidates -- --limit 3
+        run: npm run send-candidates -- --limit 2
