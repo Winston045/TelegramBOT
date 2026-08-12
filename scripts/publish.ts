@@ -18,6 +18,9 @@ import { isDeadImageError, sendMessageHtml, sendPhotoHtml } from "../src/telegra
 import { cleanupChat, rememberEphemeral } from "../src/tidy.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 
+/** Сколько дней кандидат из резерва считается свежим для автопостинга. */
+const RESERVE_TTL_DAYS = 10;
+
 async function main() {
   const cfg = loadConfig();
   const db = getDb();
@@ -89,6 +92,9 @@ async function main() {
       .select("id, image_url, image_hash, caption_html, score, tags, attribution, source")
       .in("status", ["new", "shown"])
       .not("caption_html", "is", null)
+      // срок годности резерва: у старых кадров чаще мертвеет ссылка
+      // архива, а оформление отстаёт от текущих правил
+      .gte("created_at", new Date(now.getTime() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString())
       .order("score", { ascending: false })
       .limit(20);
     if (res.error) throw new Error(`чтение кандидатов автопостинга: ${res.error.message}`);
@@ -140,8 +146,28 @@ async function main() {
       alive.push(cand);
     }
 
+    // доли архивов за неделю: лента не должна быть «в среднем немецкой»,
+    // даже если соседние посты честно чередуются
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
+    const { data: weekPosts } = await db
+      .from("candidates")
+      .select("attribution, source")
+      .eq("status", "published")
+      .gte("published_at", weekAgo);
+    const archiveShare: Record<string, number> = {};
+    const week = weekPosts ?? [];
+    for (const p of week) {
+      const key =
+        archiveKey((p as { attribution?: string | null }).attribution) ||
+        ((p as { source?: string | null }).source ?? "");
+      if (key) archiveShare[key] = (archiveShare[key] ?? 0) + 1;
+    }
+    for (const key of Object.keys(archiveShare)) {
+      archiveShare[key] = (archiveShare[key] ?? 0) / Math.max(1, week.length);
+    }
+
     // тот же планировщик, что показывает /queue - предпросмотр не врёт
-    const [pick] = planAuto(alive, recent, 1);
+    const [pick] = planAuto(alive, { ...recent, archiveShare }, 1);
     if (pick) {
       queue = alive.filter((c) => c.id === pick.id);
       autoPicked = true;

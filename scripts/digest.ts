@@ -8,6 +8,7 @@ import { env } from "../src/env.js";
 import { sendMessageHtml } from "../src/telegram.js";
 import { countPublishedToday, slotsPassed } from "../src/schedule.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
+import { archiveKey } from "../src/plan.js";
 import { readFileSync } from "node:fs";
 
 /** Версия из package.json - чтобы подпись в сводке не рассинхронилась. */
@@ -80,6 +81,34 @@ async function main() {
   const available = queued + (autoPublish ? (reserve ?? 0) : 0);
   const willGo = Math.min(available, slotsLeft.length);
 
+  // разнообразие за неделю: перекос виден цифрами, а не через неделю глазами
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
+  const { data: week } = await db
+    .from("candidates")
+    .select("attribution, source, tags")
+    .eq("status", "published")
+    .gte("published_at", weekAgo);
+  const tally = (values: string[]) => {
+    const counts = new Map<string, number>();
+    for (const v of values) if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([k, n]) => `${k} ${n}`)
+      .join(", ");
+  };
+  const weekRows = week ?? [];
+  const archivesLine = tally(
+    weekRows.map(
+      (r) =>
+        archiveKey((r as { attribution?: string | null }).attribution) ||
+        ((r as { source?: string | null }).source ?? ""),
+    ),
+  );
+  const periodsLine = tally(
+    weekRows.map((r) => (r.tags as { period?: string } | null)?.period ?? ""),
+  );
+
   const lines = [
     "Сводка на утро",
     "",
@@ -94,6 +123,10 @@ async function main() {
     `Уже вышло сегодня: ${publishedToday}`,
     "",
     `Последний сбор: ${moscow(hb?.last_ok ?? null)}${hb?.last_error ? " - была ошибка, смотрите /status" : ""}`,
+    "",
+    weekRows.length
+      ? `За неделю (${weekRows.length} постов):\nархивы - ${archivesLine || "нет данных"}\nэпохи - ${periodsLine || "нет данных"}`
+      : "За неделю постов не было",
     "",
     `<i>v${botVersion()} (beta)</i>`,
   ];

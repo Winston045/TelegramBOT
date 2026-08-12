@@ -122,3 +122,25 @@ describe("шахматный порядок архивов в партии", () 
     expect(pickBalanced(items as never, new Map(), 2, 3)).toHaveLength(2);
   });
 });
+
+describe("looksLikeLeader (разметка старых вождей)", async () => {
+  const { looksLikeLeader } = await import("../scripts/tag-leaders.js");
+
+  it("узнаёт вождя в теле поста", () => {
+    expect(looksLikeLeader("Адольф Гитлер и Ева Браун на террасе Бергхофа.\n<blockquote>1942</blockquote>")).toBe(true);
+    expect(looksLikeLeader("Автоколонна кортежа Адольфа Гитлера въезжает в Вену.")).toBe(true);
+  });
+
+  it("имя только в справке героем кадра не делает", () => {
+    expect(
+      looksLikeLeader(
+        "Немецкие горные егеря на привале.\n<blockquote expandable>Приказ подписал Гитлер.</blockquote>",
+      ),
+    ).toBe(false);
+  });
+
+  it("обычный кадр не помечает", () => {
+    expect(looksLikeLeader("Расчёт 88-мм зенитного орудия на пароме.")).toBe(false);
+    expect(looksLikeLeader(null)).toBe(false);
+  });
+});

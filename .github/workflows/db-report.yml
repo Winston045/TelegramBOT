@@ -35,6 +35,8 @@ jobs:
             npx tsx scripts/reset-topup.ts
           elif grep -q migrate .github/report.trigger 2>/dev/null; then
             npm run migrate
+          elif grep -q tagleaders .github/report.trigger 2>/dev/null; then
+            npx tsx scripts/tag-leaders.ts
           elif grep -q simulate .github/report.trigger 2>/dev/null; then
             npx tsx scripts/simulate.ts
           elif grep -q fixplace .github/report.trigger 2>/dev/null; then

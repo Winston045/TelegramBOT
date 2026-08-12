@@ -135,14 +135,20 @@ export function headline(captionHtml: string | null, limit = 70): string {
  * Место в очереди: качество кадра плюс редакционные предпочтения.
  * Оценка отвечает за качество, здесь - за характер ленты.
  */
-export function rank(c: PlanCandidate): number {
+export function rank(c: PlanCandidate, archiveShare?: Record<string, number>): number {
   const quote = quoteLength(c.caption_html ?? null) >= LONG_QUOTE ? QUOTE_BONUS : 0;
   const staticShot = c.tags?.action === false ? STATIC_PENALTY : 0;
   const color = c.tags?.color === true ? COLOR_BONUS : 0;
   const oldEra = c.tags?.period && OLD_PERIODS.has(c.tags.period) ? OLD_ERA_PENALTY : 0;
   const civilian = c.tags?.military === false ? CIVILIAN_PENALTY : 0;
   const leader = c.tags?.subject === "leader" ? LEADER_PENALTY : 0;
-  return (c.score ?? 0) + quote + color - staticShot - oldEra - civilian - leader;
+  // недельный перекос: архив, занявший больше трети ленты, уступает
+  const share = archiveShare?.[archiveKey(c.attribution) || (c.source ?? "")] ?? 0;
+  const overshare =
+    share > ARCHIVE_SHARE_SOFT ? (share - ARCHIVE_SHARE_SOFT) * ARCHIVE_SHARE_PENALTY : 0;
+  return (
+    (c.score ?? 0) + quote + color - staticShot - oldEra - civilian - leader - overshare
+  );
 }
 
 export type RecentContext = {
@@ -158,7 +164,19 @@ export type RecentContext = {
   longs?: number;
   /** Архивы последних постов, свежие первыми. */
   archives?: string[];
+  /**
+   * Доли архивов за неделю: {"bundesarchiv": 0.6, "iwm": 0.2}. Короткое
+   * окно не даёт лентe стать «в среднем немецкой»: соседние посты
+   * чередуются, а за неделю перекос всё равно виден. Доминирующий архив
+   * получает штраф в ранге - тем больший, чем сильнее он занял неделю.
+   */
+  archiveShare?: Record<string, number>;
 };
+
+/** С какой доли за неделю архив считается доминирующим. */
+export const ARCHIVE_SHARE_SOFT = 0.35;
+/** Штраф за каждый процент сверх мягкой доли (0.6 доли = 15 баллов). */
+export const ARCHIVE_SHARE_PENALTY = 60;
 
 /** Сколько постов одной эпохи подряд допускаем, прежде чем сменить её. */
 export const MAX_SAME_PERIOD_STREAK = 2;
@@ -176,7 +194,9 @@ export function planAuto(
   recent: RecentContext,
   count: number,
 ): PlanCandidate[] {
-  const pool = [...reserve].sort((a, b) => rank(b) - rank(a) || a.id - b.id);
+  const pool = [...reserve].sort(
+    (a, b) => rank(b, recent.archiveShare) - rank(a, recent.archiveShare) || a.id - b.id,
+  );
   const chosen: PlanCandidate[] = [];
   const subjects = [...recent.subjects];
   const periods = [...(recent.periods ?? [])];
