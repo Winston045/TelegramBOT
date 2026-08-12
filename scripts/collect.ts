@@ -19,6 +19,7 @@ import {
 } from "../src/sources/index.js";
 import { reportHealth } from "../src/health.js";
 import { prefilter } from "../src/prefilter.js";
+import { hiResLocUrl } from "../src/sources/loc.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { isStereoPair } from "../src/stereo.js";
 import { getDb } from "../src/db.js";
@@ -117,7 +118,14 @@ async function hashAndDedup(items: CollectedItem[], known: string[]): Promise<Ha
   const batchHashes: string[] = [];
   for (const item of items) {
     try {
-      const res = await fetchImage(item.imageUrl);
+      // у LOC сначала пробуем крупный рендер: поиск отдаёт служебную копию
+      // ~1024, и в ленте она заметно мылит рядом с коммонсовскими 1600
+      const hiRes = item.source === "loc" ? hiResLocUrl(item.imageUrl) : undefined;
+      let imageUrl = item.imageUrl;
+      let res = hiRes ? await fetchImage(hiRes) : null;
+      if (res && hiRes) imageUrl = hiRes;
+      // IIIF может не знать этот файл - тогда работаем по-старому
+      if (!res) res = await fetchImage(item.imageUrl);
       if (!res) continue;
       // пауза между скачиваниями: вежливо к архивам, дешевле, чем ретраи
       await sleepMs(politeDelayMs);
@@ -133,7 +141,7 @@ async function hashAndDedup(items: CollectedItem[], known: string[]): Promise<Ha
         continue;
       }
       batchHashes.push(imageHash);
-      out.push({ ...item, imageHash, imageBuffer });
+      out.push({ ...item, imageUrl, imageHash, imageBuffer });
     } catch (err) {
       console.warn(`  пропуск (${(err as Error).message}): ${item.imageUrl}`);
     }

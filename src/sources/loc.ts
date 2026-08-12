@@ -35,6 +35,29 @@ function pickLargestImage(urls: string[]): { url: string; width?: number } | und
   return best;
 }
 
+/**
+ * Ссылка на крупный рендер того же кадра через IIIF-сервис LOC.
+ *
+ * Поиск LOC отдаёт только служебные копии (обычно 1024 по длинной стороне,
+ * иногда меньше) - в Телеграме такой кадр выглядит мылом, особенно рядом с
+ * коммонсовскими 1600. Тот же файл лежит в image-services, где размер
+ * задаём мы: /full/1600,/0/default.jpg
+ *   storage-services/service/pnp/anrc/00300/00312v.jpg
+ *   → image-services/iiif/service:pnp:anrc:00300:00312v/full/1600,/0/default.jpg
+ *
+ * Возвращает undefined, если ссылка не того вида: тогда качаем как раньше.
+ * Проверять догадку не нужно - сборщик всё равно скачивает файл, и при
+ * неудаче откатывается на исходный адрес.
+ */
+export function hiResLocUrl(imageUrl: string): string | undefined {
+  const clean = imageUrl.split("#")[0] ?? "";
+  const m = clean.match(/^https:\/\/tile\.loc\.gov\/storage-services\/(.+)\.(jpg|jpeg)$/i);
+  if (!m?.[1]) return undefined;
+  const id = m[1].split("/").filter(Boolean).join(":");
+  if (!id) return undefined;
+  return `https://tile.loc.gov/image-services/iiif/${id}/full/1600,/0/default.jpg`;
+}
+
 export function mapLocResult(r: LocResult): RawItem | undefined {
   if (r.access_restricted) return undefined;
   if (!r.image_url?.length || !r.id) return undefined;

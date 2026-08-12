@@ -117,3 +117,24 @@ describe("bundesarchiv", () => {
     ).toBeUndefined();
   });
 });
+
+describe("hiResLocUrl (крупный рендер LOC вместо служебной копии)", async () => {
+  const { hiResLocUrl } = await import("../src/sources/loc.js");
+
+  it("превращает служебную копию в IIIF-рендер на 1600", () => {
+    expect(hiResLocUrl("https://tile.loc.gov/storage-services/service/pnp/anrc/00300/00312v.jpg")).toBe(
+      "https://tile.loc.gov/image-services/iiif/service:pnp:anrc:00300:00312v/full/1600,/0/default.jpg",
+    );
+  });
+
+  it("отбрасывает размерный фрагмент из адреса поиска", () => {
+    expect(
+      hiResLocUrl("https://tile.loc.gov/storage-services/service/pnp/ggbain/32300/32306v.jpg#h=768&w=1024"),
+    ).toBe("https://tile.loc.gov/image-services/iiif/service:pnp:ggbain:32300:32306v/full/1600,/0/default.jpg");
+  });
+
+  it("чужие адреса не трогает - скачаем как раньше", () => {
+    expect(hiResLocUrl("https://upload.wikimedia.org/wikipedia/commons/a/ab/Foo.jpg")).toBeUndefined();
+    expect(hiResLocUrl("https://tile.loc.gov/storage-services/master/pnp/foo.tif")).toBeUndefined();
+  });
+});
