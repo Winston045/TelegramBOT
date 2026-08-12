@@ -45,6 +45,11 @@ jobs:
             npx tsx scripts/probe-context.ts 6
           elif grep -q reserve .github/report.trigger 2>/dev/null; then
             npx tsx scripts/reserve-report.ts
+          elif grep -q handwork .github/report.trigger 2>/dev/null; then
+            # ручная редактура канала: чем жили посты до бота
+            from=$(grep -oP 'from:\K\d{4}-\d{2}' .github/report.trigger || true)
+            to=$(grep -oP 'to:\K\d{4}-\d{2}' .github/report.trigger || true)
+            npx tsx scripts/channel-posts.ts --from "$from" --to "$to" --brief
           elif grep -q style .github/report.trigger 2>/dev/null; then
             before=$(grep -oP 'before:\K\d+' .github/report.trigger || true)
             month=$(grep -oP 'month:\K\d{4}-\d{2}' .github/report.trigger || true)
