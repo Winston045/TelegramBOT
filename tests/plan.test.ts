@@ -338,3 +338,28 @@ describe("баланс архивов", () => {
     expect(planAuto([a1, a2, a3], noRecent, 3)).toHaveLength(3);
   });
 });
+
+describe("вожди - редкая краска", () => {
+  const leader = (id: number, score: number) => ({
+    ...cand(id, score, "leader"),
+    tags: { subject: "leader", military: true },
+  });
+
+  it("кадр вождя уступает обычному военному при равной оценке", () => {
+    expect(rank(cand(2, 75, "armor"))).toBeGreaterThan(rank(leader(1, 75)));
+  });
+
+  it("два вождя подряд не идут", () => {
+    const picked = planAuto([leader(1, 95), leader(2, 92), cand(3, 60, "armor")], noRecent, 2);
+    expect(picked.map((c) => c.id)).toEqual([1, 3]);
+  });
+
+  it("вождь среди вышедших придерживает следующего", () => {
+    const picked = planAuto(
+      [leader(1, 95), cand(2, 55, "infantry")],
+      { subjects: ["leader"], civilian: false },
+      1,
+    );
+    expect(picked[0]?.id).toBe(2);
+  });
+});

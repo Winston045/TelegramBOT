@@ -93,6 +93,13 @@ export const MAX_CIVILIAN_IN_WINDOW = 1;
  * бессмысленно - перекос просто меняет флаг; ограничиваем на отборе.
  */
 export const MAX_SAME_ARCHIVE_IN_WINDOW = 2;
+/**
+ * Вожди и церемонии с ними («leader») - самые «фотогеничные» кадры в
+ * архивах, модель щедра к ним на оценку, и лента превращалась в галерею
+ * Гитлера. Держим их редкой краской: не чаще одного на окно.
+ */
+export const LEADER_PENALTY = 10;
+export const MAX_LEADERS_IN_WINDOW = 1;
 
 /** Видимая длина цитаты внутри blockquote. */
 export function quoteLength(captionHtml: string | null): number {
@@ -117,7 +124,8 @@ export function rank(c: PlanCandidate): number {
   const color = c.tags?.color === true ? COLOR_BONUS : 0;
   const oldEra = c.tags?.period && OLD_PERIODS.has(c.tags.period) ? OLD_ERA_PENALTY : 0;
   const civilian = c.tags?.military === false ? CIVILIAN_PENALTY : 0;
-  return (c.score ?? 0) + quote + color - staticShot - oldEra - civilian;
+  const leader = c.tags?.subject === "leader" ? LEADER_PENALTY : 0;
+  return (c.score ?? 0) + quote + color - staticShot - oldEra - civilian - leader;
 }
 
 export type RecentContext = {
@@ -191,6 +199,14 @@ export function planAuto(
         return false;
       // лента не должна неделями сидеть в одном году - эпохи чередуются
       if (stuckPeriod && c.tags?.period === stuckPeriod) return false;
+      // вожди - редкая краска, а не каждый второй пост
+      if (
+        c.tags?.subject === "leader" &&
+        subjects.slice(0, RECENT_WINDOW).filter((s) => s === "leader").length >=
+          MAX_LEADERS_IN_WINDOW
+      ) {
+        return false;
+      }
       // и не должна быть витриной одного архива: «одни немцы», «одни британцы»
       const archive = c.attribution;
       if (

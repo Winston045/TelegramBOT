@@ -12,7 +12,7 @@ export type VisionScore = {
 };
 
 /** Схема полей оценки в JSON-ответе анализа (analyze.ts). */
-export const SCORE_FIELDS_SCHEMA = `"score": <0-100>, "tags": {"period": "<конкретный конфликт или эпоха: "pre_ww1" | "WW1" | "russian_civil_war" | "interwar" | "spanish_civil_war" | "winter_war" | "WW2" | "korea" | "vietnam" | "cold_war" | "afghanistan" - выбирай самый точный, cold_war только если точнее не определить>", "region": "<регион, напр. "europe" | "ussr" | "usa" | "asia" | "africa" | "pacific">", "subject": "<тема одним словом, напр. "armor" | "aviation" | "street" | "portrait" | "navy" | "homefront" | "infantry" | "artillery" | "pow" | "medicine">", "military": <true|false - война и армия или мирный сюжет>, "action": <true|false - в кадре что-то происходит или это статика/постановка>, "color": <true|false - подлинный цветной снимок эпохи>}, "unsafe": <true|false>`;
+export const SCORE_FIELDS_SCHEMA = `"score": <0-100>, "tags": {"period": "<конкретный конфликт или эпоха: "pre_ww1" | "WW1" | "russian_civil_war" | "interwar" | "spanish_civil_war" | "winter_war" | "WW2" | "korea" | "vietnam" | "cold_war" | "afghanistan" - выбирай самый точный, cold_war только если точнее не определить>", "region": "<регион, напр. "europe" | "ussr" | "usa" | "asia" | "africa" | "pacific">", "subject": "<тема одним словом, напр. "armor" | "aviation" | "street" | "portrait" | "navy" | "homefront" | "infantry" | "artillery" | "pow" | "medicine" | "leader" - вожди, политики и генералы как главные герои кадра (Гитлер, Сталин, Черчилль, смотры и церемонии с ними) всегда "leader">", "military": <true|false - война и армия или мирный сюжет>, "action": <true|false - в кадре что-то происходит или это статика/постановка>, "color": <true|false - подлинный цветной снимок эпохи>}, "unsafe": <true|false>`;
 
 /** Критерии оценки снимка - вставляется в промпт анализа. */
 export const SCORING_CRITERIA = `score отвечает ТОЛЬКО на один вопрос: насколько
@@ -45,6 +45,10 @@ export const SCORING_CRITERIA = `score отвечает ТОЛЬКО на оди
 канал о войне без прикрас.
 
 Теги ставь честно, они важнее оценки для подбора ленты:
+- subject: "leader" ставь всегда, когда главный герой кадра - политический
+  или военный вождь (Гитлер, Сталин, Черчилль, Муссолини, генералы на
+  смотрах и церемониях). Канал про войну и людей на ней, а не галерея
+  вождей: этот тег придерживает такие кадры в ленте;
 - military: true, если война и армия (фронт, техника, флот, авиация, тыл
   войны, пленные, разрушения, военачальники); false для мирного сюжета;
 - action: true, если в кадре ЧТО-ТО ПРОИСХОДИТ - бой, стрельба, марш,

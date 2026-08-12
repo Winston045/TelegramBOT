@@ -28,19 +28,30 @@ export type CollectedItem = RawItem & { source: string };
  * Каждой записи считаем «глубину» в своём источнике (доля от размера его
  * пула) и сортируем по ней: срез любой длины держит пропорции пулов.
  */
-export function interleaveBySource<T extends { source: string }>(items: T[]): T[] {
+export function interleaveBySource<T extends { source: string; attribution?: string }>(
+  items: T[],
+): T[] {
+  // мешаем по АРХИВУ, а не по источнику: commons - это девять архивов в
+  // одной куче, и срез «на анализ» состоял из первого архива списка
+  // (Бундесархив), отчего лента шла сплошными немцами
+  const bucketOf = (it: T) => it.attribution ?? it.source;
+
   const poolSizes = new Map<string, number>();
-  for (const it of items) poolSizes.set(it.source, (poolSizes.get(it.source) ?? 0) + 1);
+  for (const it of items) {
+    const b = bucketOf(it);
+    poolSizes.set(b, (poolSizes.get(b) ?? 0) + 1);
+  }
 
   const poolIndex = new Map<string, number>();
   return items
     .map((item) => {
-      const idx = poolIndex.get(item.source) ?? 0;
-      poolIndex.set(item.source, idx + 1);
-      const depth = (idx + 0.5) / (poolSizes.get(item.source) ?? 1);
-      return { item, depth, idx };
+      const b = bucketOf(item);
+      const idx = poolIndex.get(b) ?? 0;
+      poolIndex.set(b, idx + 1);
+      const depth = (idx + 0.5) / (poolSizes.get(b) ?? 1);
+      return { item, depth, idx, bucket: b };
     })
-    .sort((a, b) => a.depth - b.depth || a.idx - b.idx || a.item.source.localeCompare(b.item.source))
+    .sort((a, b) => a.depth - b.depth || a.idx - b.idx || a.bucket.localeCompare(b.bucket))
     .map((r) => r.item);
 }
 

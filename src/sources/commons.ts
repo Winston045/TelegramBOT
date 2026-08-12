@@ -63,9 +63,19 @@ export const commons: SourceAdapter = {
     }
     const sharedTerms = cfg.categories?.length ? cfg.categories : [""];
     const perArchive = Math.max(5, Math.ceil(limit / archives.length));
-    const items: RawItem[] = [];
+    // выдачу каждого архива держим отдельно: в конце сливаем по кругу,
+    // иначе первый архив списка (Бундесархив) занимал весь лимит, а
+    // дописанные в конец (Anefo, Signal Corps) не доходили никогда
+    const byArchive: RawItem[][] = [];
+    // стартовый архив сдвигается каждый прогон - при малом лимите очередь
+    // обходит весь пул за несколько заходов, а не долбит одни и те же
+    const startIdx = await cursors.get("commons", "archive-start");
+    const rotated = archives.map(
+      (_, i) => archives[(i + startIdx) % archives.length]!,
+    );
 
-    for (const archive of archives) {
+    for (const archive of rotated) {
+      const items: RawItem[] = [];
       // у архива могут быть свои слова: у РИА Новости в названиях файлов
       // нет годов, ей нужен пустой фильтр — просто листаем категорию
       const terms = archive.terms?.length ? archive.terms : sharedTerms;
@@ -107,8 +117,23 @@ export const commons: SourceAdapter = {
       // и на гигантских категориях бот неделями сидел в первом годе списка:
       // живая лента превратилась в сплошную ПМВ
       await cursors.set("commons", `term:${archive.category}`, termIdx + 1);
+      if (items.length) byArchive.push(items);
     }
-    return items.slice(0, limit);
+
+    await cursors.set("commons", "archive-start", (startIdx + 1) % archives.length);
+    // слияние по кругу: первый кадр каждого архива, потом второй и так
+    // далее - срез любой длины остаётся представительным
+    const merged: RawItem[] = [];
+    for (let row = 0; merged.length < limit; row++) {
+      const before = merged.length;
+      for (const list of byArchive) {
+        const item = list[row];
+        if (item) merged.push(item);
+        if (merged.length >= limit) break;
+      }
+      if (merged.length === before) break; // все списки исчерпаны
+    }
+    return merged;
   },
 
   /**
