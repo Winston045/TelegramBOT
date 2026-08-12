@@ -215,9 +215,14 @@ async function main() {
       if (a.unsafe) console.log(`  пометка unsafe: [${item.source}] ${item.sourceId}`);
       if (a.score < minScore) {
         skippedDull++;
-        console.log(`  скучное (score ${a.score} < ${minScore}): [${item.source}] ${item.sourceId}`);
+        console.log(
+          `  скучное (score ${a.score} < ${minScore}): [${item.source}] ${item.sourceId}` +
+            (a.score_why ? ` - ${a.score_why}` : ""),
+        );
         continue;
       }
+      // обоснование балла видно в логе сбора: по нему ловим завышения
+      if (a.score_why) console.log(`  score ${a.score}: ${a.score_why}`);
 
       const row = {
         source: item.source,
@@ -230,7 +235,9 @@ async function main() {
         raw_lang: item.lang,
         year: item.year ?? null,
         place: item.place ?? null,
-        tags: a.tags,
+        // обоснование храним рядом с тегами: отдельной колонки ради одной
+        // строки заводить не стоит, а в отчёте по подписям оно нужно
+        tags: a.score_why ? { ...a.tags, why: a.score_why } : a.tags,
         score: a.score,
         license: item.license,
         attribution: item.attribution ?? null,

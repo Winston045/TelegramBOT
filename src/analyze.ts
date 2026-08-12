@@ -48,6 +48,7 @@ export async function analyzeImage(
   ]);
   return {
     score: Math.max(0, Math.min(100, Math.round(result.score ?? 0))),
+    score_why: result.score_why?.trim().slice(0, 120) || undefined,
     tags: result.tags ?? {},
     unsafe: Boolean(result.unsafe),
     caption: result.caption ?? "",

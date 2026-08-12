@@ -116,6 +116,24 @@ describe("buildAnalysisPrompt", () => {
     expect(prompt).toContain("score");
     expect(prompt).toContain("quote_place");
   });
+
+  it("требует обоснование балла и запрещает завышать оценку рутине", () => {
+    const prompt = buildAnalysisPrompt(
+      { sourceId: "1", sourceUrl: "https://x", imageUrl: "https://x.jpg", lang: "en", license: "PD" },
+      {},
+    );
+    expect(prompt).toContain("score_why");
+    expect(prompt).toContain("Средний архивный кадр это 45-55");
+    expect(prompt).toContain("учения и подготовка в тылу");
+  });
+
+  it("разрешает вывести страну из описания, когда топонима нет", () => {
+    const prompt = buildAnalysisPrompt(
+      { sourceId: "1", sourceUrl: "https://x", imageUrl: "https://x.jpg", lang: "en", license: "PD" },
+      {},
+    );
+    expect(prompt).toContain("Года без места быть не должно");
+  });
 });
 
 describe("placeToQuote (лекарь: дата из тела в цитату)", async () => {

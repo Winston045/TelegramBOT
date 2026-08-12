@@ -13,7 +13,7 @@ async function main() {
   const { data, error } = await getDb()
     .from("candidates")
     .select(
-      "id, source, source_url, raw_title, raw_desc, raw_lang, year, place, score, quote_kind, status, caption_html",
+      "id, source, source_url, raw_title, raw_desc, raw_lang, year, place, score, quote_kind, status, caption_html, tags",
     )
     .order("id", { ascending: false })
     .limit(limit);
@@ -25,7 +25,10 @@ async function main() {
 
   for (const c of data.reverse()) {
     console.log("═".repeat(70));
-    console.log(`#${c.id} [${c.source}] status=${c.status} score=${c.score} quote=${c.quote_kind}`);
+    const why = (c.tags as { why?: string } | null)?.why;
+    console.log(
+      `#${c.id} [${c.source}] status=${c.status} score=${c.score}${why ? ` (${why})` : ""} quote=${c.quote_kind}`,
+    );
     console.log(`${c.source_url}`);
     console.log("─ исходные метаданные ".padEnd(70, "─"));
     console.log(`  title (${c.raw_lang}): ${c.raw_title ?? "(нет)"}`);
