@@ -127,6 +127,19 @@ describe("buildAnalysisPrompt", () => {
     expect(prompt).toContain("учения и подготовка в тылу");
   });
 
+  it("описывает крючки поста примерами из ручной редактуры канала", () => {
+    const prompt = buildAnalysisPrompt(
+      { sourceId: "1", sourceUrl: "https://x", imageUrl: "https://x.jpg", lang: "en", license: "PD" },
+      {},
+    );
+    expect(prompt).toContain('"hook"');
+    for (const hook of ["trophy", "wreck", "moment", "rare", "oddity", "human", "action", "none"]) {
+      expect(prompt).toContain(hook);
+    }
+    // поза не мешает трофею: так отбирала живая редакция
+    expect(prompt).toContain("Поза тут не мешает");
+  });
+
   it("разрешает вывести страну из описания, когда топонима нет", () => {
     const prompt = buildAnalysisPrompt(
       { sourceId: "1", sourceUrl: "https://x", imageUrl: "https://x.jpg", lang: "en", license: "PD" },

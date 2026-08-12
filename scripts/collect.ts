@@ -203,11 +203,11 @@ async function main() {
   // которого /more шлёт карточки вообще без обращения к Gemini
   console.log("анализ (оценка + подпись одним запросом)...");
   const minScore = cfg.collect.min_score ?? 45;
-  const staticMinScore = cfg.collect.static_min_score ?? 85;
+  const hooklessMinScore = cfg.collect.hookless_min_score ?? 85;
   let written = 0;
   let failed = 0;
   let skippedDull = 0;
-  let skippedStatic = 0;
+  let skippedHookless = 0;
   let rewritten = 0;
 
   for (const item of hashed) {
@@ -231,19 +231,21 @@ async function main() {
         );
         continue;
       }
-      // канал держится на действии: позирование и построения проходят
-      // только исключительными. Раньше статику лишь придерживал
-      // планировщик - и резерв копил солдат, позирующих с девушками
-      if (a.tags.action === false && a.score < staticMinScore) {
-        skippedStatic++;
+      // кадр без крючка в резерв не пишем. Крючки выведены из ручной
+      // редактуры канала: трофей, обломки, момент, редкость, странность,
+      // человеческая история, действие. Раньше такие кадры лишь
+      // придерживал планировщик - и лента копила позирующих солдат
+      const hook = a.tags.hook ?? "none";
+      if (hook === "none" && a.score < hooklessMinScore) {
+        skippedHookless++;
         console.log(
-          `  статика (score ${a.score} < ${staticMinScore}): [${item.source}] ${item.sourceId}` +
+          `  без крючка (score ${a.score} < ${hooklessMinScore}): [${item.source}] ${item.sourceId}` +
             (a.score_why ? ` - ${a.score_why}` : ""),
         );
         continue;
       }
       // обоснование балла видно в логе сбора: по нему ловим завышения
-      if (a.score_why) console.log(`  score ${a.score}: ${a.score_why}`);
+      if (a.score_why) console.log(`  score ${a.score} [${hook}]: ${a.score_why}`);
 
       const row = {
         source: item.source,
@@ -318,7 +320,7 @@ async function main() {
       ].join(" → "),
   );
   console.log(
-    `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), статики ${skippedStatic} (без действия и слабее ${staticMinScore}), брака подписи ${failed}, цитат переписано ${rewritten}`,
+    `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), без крючка ${skippedHookless} (слабее ${hooklessMinScore}), брака подписи ${failed}, цитат переписано ${rewritten}`,
   );
 
   // та же воронка в базу: по ней бот сам замечает, что что-то сломалось
