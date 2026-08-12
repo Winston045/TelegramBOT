@@ -83,3 +83,42 @@ describe("служебная строка", () => {
     expect(parseCandidateId(undefined)).toBeUndefined();
   });
 });
+
+describe("шахматный порядок архивов в партии", () => {
+  const card = (id: number, archive: string, subject: string) => ({
+    id,
+    tags: { subject },
+    attribution: `${archive}, Фотограф / CC BY-SA`,
+  });
+
+  it("партия из трёх - три разных архива, даже если лучшие все из одного", () => {
+    const items = [
+      card(1, "Bundesarchiv", "armor"),
+      card(2, "Bundesarchiv", "navy"),
+      card(3, "Bundesarchiv", "aviation"),
+      card(4, "IWM", "infantry"),
+      card(5, "РИА Новости", "artillery"),
+    ];
+    const picked = pickBalanced(items, new Map(), 3, 3);
+    const archives = picked.map((c) => c.attribution.split(",")[0]);
+    expect(new Set(archives).size).toBe(3);
+    expect(picked[0]?.id).toBe(1); // внутри архива - лучший
+  });
+
+  it("если разных архивов меньше, чем нужно - добираем повторами, но не пусто", () => {
+    const items = [
+      card(1, "Bundesarchiv", "armor"),
+      card(2, "Bundesarchiv", "navy"),
+      card(3, "IWM", "infantry"),
+    ];
+    expect(pickBalanced(items, new Map(), 3, 3)).toHaveLength(3);
+  });
+
+  it("кадры без архива не ломают чередование", () => {
+    const items = [
+      { id: 1, tags: { subject: "armor" } },
+      card(2, "IWM", "navy"),
+    ];
+    expect(pickBalanced(items as never, new Map(), 2, 3)).toHaveLength(2);
+  });
+});

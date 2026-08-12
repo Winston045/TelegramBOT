@@ -312,12 +312,13 @@ describe("баланс архивов", () => {
     attribution,
   });
 
-  it("три подряд из одного архива не идут: третьим входит другой", () => {
+  it("шахматка: два подряд из одного архива не идут", () => {
     const a1 = fromArchive(1, 90, "armor", "Bundesarchiv");
     const a2 = fromArchive(2, 88, "navy", "Bundesarchiv");
     const a3 = fromArchive(3, 86, "aviation", "Bundesarchiv");
     const other = fromArchive(4, 60, "infantry", "IWM");
-    expect(planAuto([a1, a2, a3, other], noRecent, 3).map((c) => c.id)).toEqual([1, 2, 4]);
+    // после Бундесархива обязан войти другой архив, потом снова можно
+    expect(planAuto([a1, a2, a3, other], noRecent, 3).map((c) => c.id)).toEqual([1, 4, 2]);
   });
 
   it("архивы вышедших постов учитываются", () => {
@@ -380,6 +381,6 @@ describe("archiveKey", () => {
     const b = { ...cand(2, 88, "navy"), attribution: "Bundesarchiv, Schmidt / CC BY-SA 3.0 de" };
     const c = { ...cand(3, 86, "aviation"), attribution: "Bundesarchiv, Weber / CC BY-SA 3.0 de" };
     const other = { ...cand(4, 60, "infantry"), attribution: "IWM / PD" };
-    expect(planAuto([a, b, c, other], noRecent, 3).map((x) => x.id)).toEqual([1, 2, 4]);
+    expect(planAuto([a, b, c, other], noRecent, 3).map((x) => x.id)).toEqual([1, 4, 2]);
   });
 });
