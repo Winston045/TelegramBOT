@@ -203,9 +203,11 @@ async function main() {
   // которого /more шлёт карточки вообще без обращения к Gemini
   console.log("анализ (оценка + подпись одним запросом)...");
   const minScore = cfg.collect.min_score ?? 45;
+  const staticMinScore = cfg.collect.static_min_score ?? 85;
   let written = 0;
   let failed = 0;
   let skippedDull = 0;
+  let skippedStatic = 0;
   let rewritten = 0;
 
   for (const item of hashed) {
@@ -225,6 +227,17 @@ async function main() {
         skippedDull++;
         console.log(
           `  скучное (score ${a.score} < ${minScore}): [${item.source}] ${item.sourceId}` +
+            (a.score_why ? ` - ${a.score_why}` : ""),
+        );
+        continue;
+      }
+      // канал держится на действии: позирование и построения проходят
+      // только исключительными. Раньше статику лишь придерживал
+      // планировщик - и резерв копил солдат, позирующих с девушками
+      if (a.tags.action === false && a.score < staticMinScore) {
+        skippedStatic++;
+        console.log(
+          `  статика (score ${a.score} < ${staticMinScore}): [${item.source}] ${item.sourceId}` +
             (a.score_why ? ` - ${a.score_why}` : ""),
         );
         continue;
@@ -305,7 +318,7 @@ async function main() {
       ].join(" → "),
   );
   console.log(
-    `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), брака подписи ${failed}, цитат переписано ${rewritten}`,
+    `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), статики ${skippedStatic} (без действия и слабее ${staticMinScore}), брака подписи ${failed}, цитат переписано ${rewritten}`,
   );
 
   // та же воронка в базу: по ней бот сам замечает, что что-то сломалось
