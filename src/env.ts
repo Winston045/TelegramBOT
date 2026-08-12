@@ -41,12 +41,17 @@ export const env = {
    * ключей = кратная квота), иначе одиночный GEMINI_API_KEY.
    */
   get geminiApiKeys(): string[] {
-    const raw = process.env.GEMINI_API_KEYS || required("GEMINI_API_KEY");
-    const keys = raw
-      .split(",")
+    // объединяем оба секрета: GitHub не показывает значение уже сохранённого
+    // ключа, поэтому добавить второй проще отдельным секретом, а не
+    // переписывая список целиком. Дубликаты схлопываем
+    const keys = [
+      ...(process.env.GEMINI_API_KEYS ?? "").split(","),
+      ...(process.env.GEMINI_API_KEY ?? "").split(","),
+    ]
       .map((s) => s.trim())
       .filter(Boolean);
-    if (!keys.length) throw new Error("ни одного ключа Gemini не задано");
-    return keys;
+    const unique = [...new Set(keys)];
+    if (!unique.length) throw new Error("ни одного ключа Gemini не задано");
+    return unique;
   },
 };
