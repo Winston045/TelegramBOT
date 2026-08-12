@@ -232,8 +232,18 @@ export function planAuto(
       }
       return true;
     };
-    const idx = pool.findIndex(fits);
-    const [pick] = pool.splice(idx === -1 ? 0 : idx, 1);
+    let idx = pool.findIndex(fits);
+    if (idx === -1) {
+      // под все правила не подошёл никто (резерв беден) - берём лучшего,
+      // но хотя бы не из того же архива, что предыдущий пост: слепой
+      // добор давал «Бундесархив, Бундесархив, Бундесархив» подряд
+      const lastArchive = archives[0];
+      const other = lastArchive
+        ? pool.findIndex((c) => archiveKey(c.attribution) !== lastArchive)
+        : -1;
+      idx = other === -1 ? 0 : other;
+    }
+    const [pick] = pool.splice(idx, 1);
     if (!pick) break;
     chosen.push(pick);
     if (pick.tags?.subject) subjects.unshift(pick.tags.subject);

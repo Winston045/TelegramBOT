@@ -384,3 +384,25 @@ describe("archiveKey", () => {
     expect(planAuto([a, b, c, other], noRecent, 3).map((x) => x.id)).toEqual([1, 4, 2]);
   });
 });
+
+describe("добор при бедном резерве не ставит один архив подряд", () => {
+  const a = (id: number, score: number, subject: string, archive: string) => ({
+    ...cand(id, score, subject),
+    attribution: `${archive}, Фотограф / CC BY-SA`,
+    tags: { subject, military: true, period: "WW2" },
+  });
+
+  it("когда все правила против, всё равно чередует архивы", () => {
+    // одна эпоха, одна тема - под правила не подходит никто
+    const items = [
+      a(1, 90, "armor", "Bundesarchiv"),
+      a(2, 88, "armor", "Bundesarchiv"),
+      a(3, 60, "armor", "IWM"),
+      a(4, 55, "armor", "Bundesarchiv"),
+    ];
+    const picked = planAuto(items, noRecent, 3).map((c) => c.id);
+    expect(picked).toHaveLength(3);
+    // второй пост обязан быть из другого архива, хотя по рангу он слабее
+    expect(picked[1]).toBe(3);
+  });
+});
