@@ -64,3 +64,31 @@ describe("prefilter", () => {
     expect(rejected.get("stop_word")).toBe(1);
   });
 });
+
+describe("карточки альбомов вместо снимков", () => {
+  const base = {
+    sourceId: "1",
+    sourceUrl: "https://x",
+    imageUrl: "https://x.jpg",
+    lang: "en",
+    license: "PD",
+    year: 1944,
+    place: "France",
+  };
+
+  it("записи «... Collection» и альбомы отсеиваются до анализа", () => {
+    for (const title of [
+      "Harold Charles Braly Collection",
+      "James A. Yost World War II Photograph Album",
+      "Bruce F. Meyers Collection",
+    ]) {
+      expect(rejectReason({ ...base, title }, cfg)).toBe("album_record");
+    }
+  });
+
+  it("обычный снимок со словом collection внутри названия не трогаем", () => {
+    expect(
+      rejectReason({ ...base, title: "Tank of the collection unit moves through Percy" }, cfg),
+    ).toBeNull();
+  });
+});

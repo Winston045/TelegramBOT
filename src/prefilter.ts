@@ -7,6 +7,7 @@ export type RejectReason =
   | "year_out_of_range"
   | "too_small"
   | "stereograph"
+  | "album_record"
   | "stop_word";
 
 /** Дешёвый префильтр до vision-скоринга. Возвращает причину брака или null. */
@@ -28,6 +29,13 @@ export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null
   // стереокарточки: два одинаковых кадра на картонке - в канал не годятся
   if (/stereograph|stereoscop|stereo card|stereo view/.test(haystack)) {
     return "stereograph";
+  }
+  // карточка целого альбома вместо снимка: у LOC такие приходят с обычной
+  // картинкой-обложкой и проходят все проверки, а на анализе выясняется,
+  // что описывать нечего (живой прогон 12.08: три подряд «... Collection»)
+  const title = (item.title ?? "").trim();
+  if (/\b(collection|photograph album|scrapbook|papers)$/i.test(title)) {
+    return "album_record";
   }
   for (const word of cfg.filters.stop_words) {
     if (haystack.includes(word.toLowerCase())) return "stop_word";
