@@ -771,7 +771,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
     autoPublish
       ? db
           .from("candidates")
-          .select("id, caption_html, score, tags, attribution")
+          .select("id, caption_html, score, tags, attribution, source")
           .in("status", ["new", "shown"])
           .not("caption_html", "is", null)
           .order("score", { ascending: false })
@@ -779,7 +779,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       : Promise.resolve({ data: [], error: null }),
     db
       .from("candidates")
-      .select("tags, caption_html, attribution")
+      .select("tags, caption_html, attribution, source")
       .eq("status", "published")
       .order("published_at", { ascending: false })
       .limit(RECENT_WINDOW),
@@ -805,6 +805,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
     tags: PlanTags;
     caption_html?: string | null;
     attribution?: string | null;
+    source?: string | null;
   }>;
   return buildPlan(
     {
@@ -823,7 +824,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
         civilian: recentRows.some((p) => p.tags?.military === false),
         statics: recentRows.filter((p) => p.tags?.action === false).length,
         longs: recentRows.filter((p) => quoteLength(p.caption_html ?? null) >= LONG_QUOTE).length,
-        archives: recentRows.map((p) => archiveKey(p.attribution)),
+        archives: recentRows.map((p) => archiveKey(p.attribution) || (p.source ?? "")),
       },
       autoPublish,
       formatScheduled: moscowTime,

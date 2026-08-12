@@ -21,6 +21,8 @@ export type Taggable = {
   tags: { subject?: string; region?: string; period?: string } | null;
   /** Архив-поставщик: партия не должна быть витриной одного архива. */
   attribution?: string | null;
+  /** Запасной ключ чередования для кандидатов без архива. */
+  source?: string | null;
 };
 
 export function pickBalanced<T extends Taggable>(
@@ -41,7 +43,7 @@ export function pickBalanced<T extends Taggable>(
   // очереди по архивам, внутри каждой - порядок ранга
   const queues = new Map<string, T[]>();
   for (const item of ordered) {
-    const key = archiveKey(item.attribution) || "(без архива)";
+    const key = archiveKey(item.attribution) || item.source || "(без архива)";
     const q = queues.get(key);
     if (q) q.push(item);
     else queues.set(key, [item]);

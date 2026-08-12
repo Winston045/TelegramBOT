@@ -27,6 +27,9 @@ export type PlanCandidate = {
   scheduled_at?: string | null;
   /** Архив-поставщик («Bundesarchiv», «IWM», «РИА Новости»...). */
   attribution?: string | null;
+  /** Источник («commons», «loc», «pastvu») - запасной ключ чередования
+   *  для старых кандидатов, собранных без архива. */
+  source?: string | null;
 };
 
 /** Откуда пост попал в план - это видно редактору в /queue. */
@@ -222,7 +225,7 @@ export function planAuto(
         return false;
       }
       // и не должна быть витриной одного архива: «одни немцы», «одни британцы»
-      const archive = archiveKey(c.attribution);
+      const archive = archiveKey(c.attribution) || (c.source ?? "");
       if (
         archive &&
         archives.slice(0, ARCHIVE_WINDOW).filter((a) => a === archive).length >=
@@ -239,7 +242,7 @@ export function planAuto(
       // добор давал «Бундесархив, Бундесархив, Бундесархив» подряд
       const lastArchive = archives[0];
       const other = lastArchive
-        ? pool.findIndex((c) => archiveKey(c.attribution) !== lastArchive)
+        ? pool.findIndex((c) => (archiveKey(c.attribution) || (c.source ?? "")) !== lastArchive)
         : -1;
       idx = other === -1 ? 0 : other;
     }
@@ -249,7 +252,7 @@ export function planAuto(
     if (pick.tags?.subject) subjects.unshift(pick.tags.subject);
     periods.unshift(pick.tags?.period ?? "");
     civiliansWindow.unshift(pick.tags?.military === false);
-    archives.unshift(archiveKey(pick.attribution));
+    archives.unshift(archiveKey(pick.attribution) || (pick.source ?? ""));
     staticsWindow.unshift(pick.tags?.action === false);
     longsWindow.unshift(quoteLength(pick.caption_html ?? null) >= LONG_QUOTE);
   }
