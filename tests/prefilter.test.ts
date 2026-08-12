@@ -92,3 +92,27 @@ describe("карточки альбомов вместо снимков", () => 
     ).toBeNull();
   });
 });
+
+describe("студийные портреты", () => {
+  const base = {
+    sourceId: "1",
+    sourceUrl: "https://x",
+    imageUrl: "https://x.jpg",
+    lang: "en",
+    license: "PD",
+    year: 1943,
+    place: "London",
+  };
+
+  it("«Churchill portrait» не доходит до анализа", () => {
+    expect(rejectReason({ ...base, title: "Churchill portrait NYP 45063" }, cfg)).toBe(
+      "studio_portrait",
+    );
+  });
+
+  it("портрет рядом с техникой оставляем - там может быть трофей", () => {
+    expect(
+      rejectReason({ ...base, title: "Portrait of crew with captured Tiger tank" }, cfg),
+    ).toBeNull();
+  });
+});

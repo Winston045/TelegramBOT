@@ -8,6 +8,7 @@ export type RejectReason =
   | "too_small"
   | "stereograph"
   | "album_record"
+  | "studio_portrait"
   | "stop_word";
 
 /** Дешёвый префильтр до vision-скоринга. Возвращает причину брака или null. */
@@ -36,6 +37,12 @@ export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null
   const title = (item.title ?? "").trim();
   if (/\b(collection|photograph album|scrapbook|papers)$/i.test(title)) {
     return "album_record";
+  }
+  // студийный портрет: в названии так и сказано. Крючка у такого кадра
+  // нет по определению, а анализ он всё равно съедает (сухой прогон
+  // 12.08: «Churchill portrait NYP 45063»)
+  if (/\bportrait\b/i.test(title) && !/\b(tank|aircraft|ship|gun|wreck)\b/i.test(title)) {
+    return "studio_portrait";
   }
   for (const word of cfg.filters.stop_words) {
     if (haystack.includes(word.toLowerCase())) return "stop_word";

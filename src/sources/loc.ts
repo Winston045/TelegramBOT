@@ -169,6 +169,19 @@ export const loc: SourceAdapter = {
         // насовсем (живой случай: «loc: сбор упал» каждый день)
         console.warn(`  loc: «${q}» стр. ${page} — ${(err as Error).message}`);
         await cursors.set("loc", q, 0);
+        // и сразу заходим с начала выдачи: иначе запрос впустую теряет
+        // свою долю партии до следующего прогона (сухой прогон 12.08:
+        // четыре запроса упёрлись в конец, LOC отдал 14 из 33)
+        try {
+          results = await fetchQuery(q, perQuery, 1);
+        } catch {
+          continue;
+        }
+        for (const r of results) {
+          const item = mapLocResult(r);
+          if (item) items.push(item);
+        }
+        await cursors.set("loc", q, results.length < perQuery ? 0 : 1);
         continue;
       }
       for (const r of results) {
