@@ -21,6 +21,59 @@ import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 /** Сколько дней кандидат из резерва считается свежим для автопостинга. */
 const RESERVE_TTL_DAYS = 10;
 
+/**
+ * Чем жила лента последнее время: темы, эпохи, архивы, доля статики и
+ * изюминок. Нужен и автопостингу, и очереди одобренных - порядок в ленте
+ * решается одинаково, кто бы ни выбрал сам кадр.
+ */
+async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
+  const { data: lastPosts } = await db
+    .from("candidates")
+    .select("tags, caption_html, attribution, source")
+    .eq("status", "published")
+    .order("published_at", { ascending: false })
+    .limit(RECENT_WINDOW);
+  const posts = lastPosts ?? [];
+
+  // доли архивов за неделю: лента не должна быть «в среднем немецкой»,
+  // даже если соседние посты честно чередуются
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
+  const { data: weekPosts } = await db
+    .from("candidates")
+    .select("attribution, source")
+    .eq("status", "published")
+    .gte("published_at", weekAgo);
+  const week = weekPosts ?? [];
+  const archiveShare: Record<string, number> = {};
+  for (const p of week) {
+    const key =
+      archiveKey((p as { attribution?: string | null }).attribution) ||
+      ((p as { source?: string | null }).source ?? "");
+    if (key) archiveShare[key] = (archiveShare[key] ?? 0) + 1;
+  }
+  for (const key of Object.keys(archiveShare)) {
+    archiveShare[key] = (archiveShare[key] ?? 0) / Math.max(1, week.length);
+  }
+
+  return {
+    subjects: posts
+      .map((p) => (p.tags as { subject?: string } | null)?.subject)
+      .filter((s): s is string => Boolean(s)),
+    periods: posts.map((p) => (p.tags as { period?: string } | null)?.period ?? ""),
+    civilian: posts.some((p) => (p.tags as { military?: boolean } | null)?.military === false),
+    statics: posts.filter((p) => (p.tags as { action?: boolean } | null)?.action === false).length,
+    longs: posts.filter(
+      (p) => quoteLength((p as { caption_html?: string | null }).caption_html ?? null) >= LONG_QUOTE,
+    ).length,
+    archives: posts.map(
+      (p) =>
+        archiveKey((p as { attribution?: string | null }).attribution) ||
+        ((p as { source?: string | null }).source ?? ""),
+    ),
+    archiveShare,
+  };
+}
+
 async function main() {
   const cfg = loadConfig();
   const db = getDb();
@@ -69,17 +122,33 @@ async function main() {
       return;
     }
 
-    // верхний пост очереди: одобренные без своего времени, в порядке одобрения
+    // одобренные без своего времени. Порядок внутри очереди решает
+    // планировщик, а не номер карточки: редактор говорит, ЧТО достойно
+    // канала, а чередование архивов, эпох и тем - забота ленты. До 13.08
+    // здесь стоял простой order by id, и все правила разнообразия
+    // работали только в автопостинге (живой случай 12.08: два кадра
+    // Бундесархива подряд, хотя в очереди ждал британский)
     const res = await db
       .from("candidates")
-      .select("id, image_url, image_hash, caption_html")
+      .select("id, image_url, image_hash, caption_html, score, tags, attribution, source")
       .eq("status", "approved")
       .not("caption_html", "is", null)
       .is("scheduled_at", null)
       .order("id", { ascending: true })
-      .limit(1);
+      .limit(20);
     if (res.error) throw new Error(`чтение очереди: ${res.error.message}`);
-    queue = res.data;
+    const approved = res.data ?? [];
+    if (approved.length) {
+      const recent = await recentContext(db, now);
+      const [pick] = planAuto(approved, recent, 1);
+      const chosen = pick ? approved.find((c) => c.id === pick.id) : approved[0];
+      queue = chosen ? [chosen] : [];
+      if (chosen && approved.length > 1) {
+        console.log(`очередь одобренных: выбран #${chosen.id} из ${approved.length}`);
+      }
+    } else {
+      queue = [];
+    }
   }
 
   // полная автоматизация (тумблер /auto в боте): очередь одобренных пуста -
@@ -106,34 +175,7 @@ async function main() {
 
     // темы последних постов: три парома «Зибель» подряд формально разные
     // кадры, а в ленте выглядят одним и тем же - такие темы придерживаем
-    const { data: lastPosts } = await db
-      .from("candidates")
-      .select("tags, caption_html, attribution, source")
-      .eq("status", "published")
-      .order("published_at", { ascending: false })
-      .limit(RECENT_WINDOW);
-    const recent = {
-      subjects: (lastPosts ?? [])
-        .map((p) => (p.tags as { subject?: string } | null)?.subject)
-        .filter((s): s is string => Boolean(s)),
-      periods: (lastPosts ?? []).map(
-        (p) => (p.tags as { period?: string } | null)?.period ?? "",
-      ),
-      civilian: (lastPosts ?? []).some(
-        (p) => (p.tags as { military?: boolean } | null)?.military === false,
-      ),
-      statics: (lastPosts ?? []).filter(
-        (p) => (p.tags as { action?: boolean } | null)?.action === false,
-      ).length,
-      longs: (lastPosts ?? []).filter(
-        (p) => quoteLength((p as { caption_html?: string | null }).caption_html ?? null) >= LONG_QUOTE,
-      ).length,
-      archives: (lastPosts ?? []).map(
-        (p) =>
-          archiveKey((p as { attribution?: string | null }).attribution) ||
-          ((p as { source?: string | null }).source ?? ""),
-      ),
-    };
+    const recent = await recentContext(db, now);
 
     // битые кадры выкидываем до планировщика: он решает только «что интереснее»
     const alive: typeof res.data = [];
@@ -146,28 +188,8 @@ async function main() {
       alive.push(cand);
     }
 
-    // доли архивов за неделю: лента не должна быть «в среднем немецкой»,
-    // даже если соседние посты честно чередуются
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
-    const { data: weekPosts } = await db
-      .from("candidates")
-      .select("attribution, source")
-      .eq("status", "published")
-      .gte("published_at", weekAgo);
-    const archiveShare: Record<string, number> = {};
-    const week = weekPosts ?? [];
-    for (const p of week) {
-      const key =
-        archiveKey((p as { attribution?: string | null }).attribution) ||
-        ((p as { source?: string | null }).source ?? "");
-      if (key) archiveShare[key] = (archiveShare[key] ?? 0) + 1;
-    }
-    for (const key of Object.keys(archiveShare)) {
-      archiveShare[key] = (archiveShare[key] ?? 0) / Math.max(1, week.length);
-    }
-
     // тот же планировщик, что показывает /queue - предпросмотр не врёт
-    const [pick] = planAuto(alive, { ...recent, archiveShare }, 1);
+    const [pick] = planAuto(alive, recent, 1);
     if (pick) {
       queue = alive.filter((c) => c.id === pick.id);
       autoPicked = true;

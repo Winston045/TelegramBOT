@@ -100,6 +100,40 @@ export const MAX_CIVILIAN_IN_WINDOW = 1;
 export const MAX_SAME_ARCHIVE_IN_WINDOW = 1;
 export const ARCHIVE_WINDOW = 2;
 /**
+ * Чередования архивов мало: у одной страны их бывает несколько. Живой
+ * случай 13.08 - в пуле четыре американских поставщика (LOC как источник,
+ * та же Библиотека Конгресса внутри Commons, NARA и Signal Corps). Для
+ * правила выше это четыре разных архива, которые честно сменяют друг
+ * друга, а читатель видит подряд США, США, США. Поэтому же окно, но по
+ * стране архива.
+ */
+export const MAX_SAME_NATION_IN_WINDOW = 1;
+export const NATION_WINDOW = 2;
+
+/** Страна архива: ключ archiveKey → флаг. Незнакомые архивы - без страны. */
+const ARCHIVE_NATIONS: Record<string, string> = {
+  bundesarchiv: "germany",
+  iwm: "uk",
+  "library of congress": "usa",
+  loc: "usa",
+  nara: "usa",
+  "us army signal corps": "usa",
+  "риа новости": "ussr",
+  pastvu: "ussr",
+  "sa-kuva": "finland",
+  awm: "australia",
+  anefo: "netherlands",
+};
+
+/**
+ * Страна архива по его ключу. Пустая строка - страна неизвестна, такой
+ * кадр правило по странам не придерживает (лучше выпустить, чем молчать).
+ */
+export function archiveNation(attribution?: string | null, source?: string | null): string {
+  const key = archiveKey(attribution) || (source ?? "");
+  return ARCHIVE_NATIONS[key] ?? "";
+}
+/**
  * Вожди и церемонии с ними («leader») - самые «фотогеничные» кадры в
  * архивах, модель щедра к ним на оценку, и лента превращалась в галерею
  * Гитлера. Держим их редкой краской: не чаще одного на окно.
@@ -204,6 +238,9 @@ export function planAuto(
   const civiliansWindow: boolean[] = recent.civilian ? [true] : [];
   // архивы последних постов: лента не должна быть витриной одного архива
   const archives = [...(recent.archives ?? [])];
+  // и страны этих архивов: четыре разных американских архива подряд -
+  // формально чередование, а на деле «канал про США»
+  const nations = archives.map((a) => ARCHIVE_NATIONS[a] ?? "");
   // окно скользит: сколько статики в последних RECENT_WINDOW постах
   const staticsWindow: boolean[] = Array.from(
     { length: Math.min(recent.statics ?? 0, RECENT_WINDOW) },
@@ -253,6 +290,15 @@ export function planAuto(
       ) {
         return false;
       }
+      // то же по стране архива - иначе перекос просто меняет флаг
+      const nation = archiveNation(c.attribution, c.source);
+      if (
+        nation &&
+        nations.slice(0, NATION_WINDOW).filter((n) => n === nation).length >=
+          MAX_SAME_NATION_IN_WINDOW
+      ) {
+        return false;
+      }
       return true;
     };
     let idx = pool.findIndex(fits);
@@ -260,10 +306,20 @@ export function planAuto(
       // под все правила не подошёл никто (резерв беден) - берём лучшего,
       // но хотя бы не из того же архива, что предыдущий пост: слепой
       // добор давал «Бундесархив, Бундесархив, Бундесархив» подряд
+      // сначала пробуем другую страну, потом хотя бы другой архив
+      const lastNation = nations[0];
       const lastArchive = archives[0];
-      const other = lastArchive
-        ? pool.findIndex((c) => (archiveKey(c.attribution) || (c.source ?? "")) !== lastArchive)
+      let other = lastNation
+        ? pool.findIndex((c) => {
+            const n = archiveNation(c.attribution, c.source);
+            return n !== "" && n !== lastNation;
+          })
         : -1;
+      if (other === -1 && lastArchive) {
+        other = pool.findIndex(
+          (c) => (archiveKey(c.attribution) || (c.source ?? "")) !== lastArchive,
+        );
+      }
       idx = other === -1 ? 0 : other;
     }
     const [pick] = pool.splice(idx, 1);
@@ -273,6 +329,7 @@ export function planAuto(
     periods.unshift(pick.tags?.period ?? "");
     civiliansWindow.unshift(pick.tags?.military === false);
     archives.unshift(archiveKey(pick.attribution) || (pick.source ?? ""));
+    nations.unshift(archiveNation(pick.attribution, pick.source));
     staticsWindow.unshift(pick.tags?.action === false);
     longsWindow.unshift(quoteLength(pick.caption_html ?? null) >= LONG_QUOTE);
   }
@@ -373,7 +430,16 @@ export function buildPlan(input: PlanInput, count: number): PlanEntry[] {
     });
   }
 
-  const bySlot: Array<{ candidate: PlanCandidate; kind: PlanKind }> = input.approved.map((c) => ({
+  // Одобренная очередь тоже раскладывается планировщиком, а не по номеру
+  // карточки. Редактор решает, ЧТО достойно канала; порядок - забота
+  // ленты. Раньше одобренные шли строго по id, и все правила чередования
+  // работали только в автопостинге: 12.08 подряд вышли два кадра
+  // Бундесархива, хотя в очереди ждал британский.
+  const bySlot: Array<{ candidate: PlanCandidate; kind: PlanKind }> = planAuto(
+    input.approved,
+    input.recent,
+    input.approved.length,
+  ).map((c) => ({
     candidate: c,
     kind: "approved" as const,
   }));

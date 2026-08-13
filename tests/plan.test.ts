@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  archiveNation,
   buildPlan,
   planAuto,
   quoteLength,
@@ -404,5 +405,54 @@ describe("добор при бедном резерве не ставит оди
     expect(picked).toHaveLength(3);
     // второй пост обязан быть из другого архива, хотя по рангу он слабее
     expect(picked[1]).toBe(3);
+  });
+});
+
+describe("чередование по стране архива", () => {
+  const cand = (id: number, attribution: string, subject: string) => ({
+    id,
+    caption_html: `текст ${id}`,
+    score: 70,
+    attribution,
+    tags: { subject, period: "WW2", military: true, action: true },
+  });
+
+  it("знает страну по ключу архива", () => {
+    expect(archiveNation("Bundesarchiv, Koch / CC BY-SA 3.0 de")).toBe("germany");
+    expect(archiveNation("NARA")).toBe("usa");
+    expect(archiveNation("US Army Signal Corps")).toBe("usa");
+    expect(archiveNation("Library of Congress")).toBe("usa");
+    expect(archiveNation(null, "loc")).toBe("usa");
+    expect(archiveNation("Неизвестный архив")).toBe("");
+  });
+
+  it("после двух американских архивов берёт другую страну, а не третий американский", () => {
+    const pool = [
+      cand(1, "US Army Signal Corps", "infantry"),
+      cand(2, "IWM", "navy"),
+    ];
+    const [pick] = planAuto(pool, {
+      subjects: [],
+      periods: [],
+      civilian: false,
+      statics: 0,
+      longs: 0,
+      // предыдущие два поста: Библиотека Конгресса и NARA - оба США
+      archives: ["nara", "library of congress"],
+    }, 1);
+    expect(pick?.id).toBe(2);
+  });
+
+  it("страна неизвестна - правило не мешает кадру выйти", () => {
+    const pool = [cand(3, "Неизвестный архив", "armor")];
+    const [pick] = planAuto(pool, {
+      subjects: [],
+      periods: [],
+      civilian: false,
+      statics: 0,
+      longs: 0,
+      archives: ["nara", "loc"],
+    }, 1);
+    expect(pick?.id).toBe(3);
   });
 });

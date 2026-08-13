@@ -15,7 +15,7 @@
  * добираем лучшими оставшимися. Пустой чат хуже повтора.
  */
 
-import { archiveKey } from "./plan.js";
+import { archiveKey, archiveNation } from "./plan.js";
 
 export type Taggable = {
   tags: { subject?: string; region?: string; period?: string } | null;
@@ -40,10 +40,16 @@ export function pickBalanced<T extends Taggable>(
   // эпохи тоже мешаем: партия из одной ПМВ - скука, даже если темы разные
   const maxPerPeriod = Math.max(1, Math.ceil(limit / 2));
 
-  // очереди по архивам, внутри каждой - порядок ранга
+  // очереди по архивам, внутри каждой - порядок ранга. Ключ - страна, а
+  // не архив: у США их четыре, и по-архивная очередь давала партию из
+  // трёх американцев, формально «из разных архивов» (случай 13.08)
   const queues = new Map<string, T[]>();
   for (const item of ordered) {
-    const key = archiveKey(item.attribution) || item.source || "(без архива)";
+    const key =
+      archiveNation(item.attribution, item.source) ||
+      archiveKey(item.attribution) ||
+      item.source ||
+      "(без архива)";
     const q = queues.get(key);
     if (q) q.push(item);
     else queues.set(key, [item]);
