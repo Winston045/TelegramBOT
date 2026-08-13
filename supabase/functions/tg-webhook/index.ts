@@ -5,9 +5,9 @@
  * У опубликованных: Удалить из канала.
  *
  * Команды (только вайтлист EDITOR_USER_IDS, остальных молча игнорируем):
- *   /status           - полная сводка: очередь и запас хода, слоты и лента,
- *                       воронка последнего сбора, крючки резерва,
- *                       разнообразие за неделю, здоровье работ, режимы
+ *   /status           - сводка для админа: запас хода, ближайший пост, слоты,
+ *                       итог последнего сбора, крючки резерва, режимы.
+ *                       Блок «Требует внимания» появляется только при беде
  *   /queue            - план публикаций: что и когда выйдет, с кнопками
  *                       (одобренное и то, что выберет автопостинг)
  *   /schedule         - панель расписания: слоты и число постов (МСК)
@@ -740,33 +740,13 @@ bot.on("callback_query:data", async (ctx) => {
 
 bot.command("status", async (ctx) => {
   const now = new Date();
-  const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
   const twoDaysAgo = new Date(now.getTime() - 48 * 3600 * 1000).toISOString();
 
-  const [
-    fresh,
-    shown,
-    queued,
-    published,
-    rejected,
-    broken,
-    seenRes,
-    beatsRes,
-    recentPubRes,
-    weekPubRes,
-    runRes,
-    reserveRes,
-    times,
-    autoOn,
-    plan,
-  ] = await Promise.all([
+  const [fresh, shown, queued, beatsRes, recentPubRes, runRes, reserveRes, times, autoOn, plan] =
+    await Promise.all([
     countByStatus("new"),
     countByStatus("shown"),
     countByStatus("approved"),
-    countByStatus("published"),
-    countByStatus("rejected"),
-    countByStatus("failed"),
-    db.from("seen_hashes").select("image_hash", { count: "exact", head: true }),
     db.from("heartbeats").select("job, last_ok, last_error"),
     db
       .from("candidates")
@@ -774,13 +754,8 @@ bot.command("status", async (ctx) => {
       .eq("status", "published")
       .gte("published_at", twoDaysAgo),
     db
-      .from("candidates")
-      .select("tags, attribution, source")
-      .eq("status", "published")
-      .gte("published_at", weekAgo),
-    db
       .from("collect_runs")
-      .select("raw, prefiltered, analyzed, written, junk, broken, quota_failed, started_at")
+      .select("analyzed, written, quota_failed, started_at")
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -794,18 +769,11 @@ bot.command("status", async (ctx) => {
     currentPlan(1),
   ]);
 
-  // ---- лента: слоты, сутки, неделя
+  // ---- лента: слоты и сутки
   const today = mskDate(now);
   const publishedToday = ((recentPubRes.data ?? []) as Array<{ published_at: string | null }>)
     .filter((r) => r.published_at && mskDate(new Date(r.published_at)) === today).length;
   const passed = slotsPassedToday(times, now);
-  // слоты хранятся по возрастанию: следующий - тот, что стоит за пройденными
-  const nextSlot = passed < times.length ? times[passed] : undefined;
-  const weekRows = (weekPubRes.data ?? []) as Array<{
-    tags: PlanTags;
-    attribution?: string | null;
-    source?: string | null;
-  }>;
 
   // ---- резерв: крючки и возраст
   const reserve = (reserveRes.data ?? []) as Array<{
@@ -824,88 +792,69 @@ bot.command("status", async (ctx) => {
 
   // ---- сбор: воронка последнего прогона
   const run = runRes.data as {
-    raw: number;
-    prefiltered: number;
     analyzed: number;
     written: number;
-    junk: number | null;
-    broken: number | null;
     quota_failed: number | null;
     started_at: string;
   } | null;
 
-  // ---- служба: все работы, а не только сборщик
+  // ---- служба: пульс работ (нужен только тревогам)
   const beats = (beatsRes.data ?? []) as Array<{
     job: string;
     last_ok: string | null;
     last_error: string | null;
   }>;
   const beat = (job: string) => beats.find((b) => b.job === job);
-  const beatLine = (job: string, label: string) => {
-    const b = beat(job);
-    if (!b) return `${label}: не отчитывался`;
-    return `${label}: ${moscowTime(b.last_ok)}${b.last_error ? " - была ошибка" : ""}`;
-  };
 
   const [next] = plan;
   const nextPost = next
     ? `${next.when}, #${next.candidate.id} (${planMark(next.kind)})`
     : "нечего публиковать";
 
+  // Тревоги: строка появляется, ТОЛЬКО когда с показателем что-то не так.
+  // Иначе сводка распухает до полотна, которое перестают читать - а
+  // молчание блока само по себе значит «здесь порядок».
+  const alerts: string[] = [];
+  if (run && (run.quota_failed ?? 0) > 0) {
+    alerts.push(`Партию оборвал лимит Gemini: ${run.quota_failed} кадров. Сброс в 10:00 МСК`);
+  }
+  if (passed > publishedToday) {
+    alerts.push(`Слот прошёл, а пост не вышел: ${publishedToday} из ${passed}`);
+  }
+  if (ready < perDay) alerts.push("Готового меньше, чем постов на день - нужен /more");
+  const pubBeat = beat("publisher");
+  const pubSilent = pubBeat?.last_ok
+    ? now.getTime() - new Date(pubBeat.last_ok).getTime() > 2 * 3600 * 1000
+    : true;
+  if (pubSilent) alerts.push(`Публикатор молчит с ${moscowTime(pubBeat?.last_ok ?? null)}`);
+  const colBeat = beat("collector");
+  if (colBeat?.last_error) alerts.push("Последний сбор закончился ошибкой");
+  if (reserve.length && oldestDays >= 10) {
+    alerts.push(`В резерве есть карточки старше 10 дней - автопостинг их уже не берёт`);
+  }
+
   // null - строка, которой в этом прогоне нет; пустая строка - разделитель
   const lines: Array<string | null> = [
     `<b>СВОДКА</b> · ${moscowTime(now.toISOString())} МСК`,
     "",
-    "<b>Очередь</b>",
-    `На разборе в чате: ${shown}`,
-    `Собрано, не отправлено: ${fresh}`,
-    `Одобрено вручную: ${queued}`,
+    `Готово к выходу: <b>${ready}</b> (на разборе ${shown}, одобрено ${queued})`,
     `Запас хода: ${runway} ${plural(Math.round(Number(runway)), "день", "дня", "дней")} при ${perDay} постах в сутки`,
     "",
-    "<b>Лента</b>",
     `Ближайший пост: ${nextPost}`,
-    `Слоты сегодня: прошло ${passed} из ${times.length}, вышло ${publishedToday}`,
-    nextSlot ? `Следующий слот: ${nextSlot} МСК` : "Слоты на сегодня кончились",
-    `Расписание: ${times.join(", ")} МСК`,
-    `Опубликовано всего: ${published}`,
+    `Сегодня: ${publishedToday} из ${times.length} - ${times.join(", ")} МСК`,
     "",
-    run ? `<b>Последний сбор</b> · ${moscowTime(run.started_at)}` : "<b>Последний сбор</b>",
     run
-      ? `Воронка: ${run.raw} сырых → ${run.prefiltered} после префильтра → ${run.analyzed} на анализ → ${run.written} в резерв`
-      : "Прогонов ещё не было",
-    run
-      ? `Отсев: мусор ${run.junk ?? 0}, брак подписи ${run.broken ?? 0}, сорвано квотой ${run.quota_failed ?? 0}`
-      : null,
-    run && (run.quota_failed ?? 0) > 0
-      ? "Партию оборвал лимит Gemini. Сброс квоты в 10:00 МСК"
-      : null,
+      ? `Сбор ${moscowTime(run.started_at)}: ${run.analyzed} на анализ → ${run.written} в резерв`
+      : "Сборов ещё не было",
+    `Резерв по крючкам: ${hooks}`,
     "",
-    "<b>Резерв</b>",
-    `Крючки: ${hooks}`,
-    reserve.length
-      ? `Старейшая карточка: ${oldestDays} ${plural(oldestDays, "день", "дня", "дней")} (автопостинг берёт моложе 10)`
-      : "Резерв пуст",
+    autoOn ? "Автопостинг включён - посты выходят сами" : "Автопостинг выключен - только одобренные",
+    INSTANT_PUBLISH ? "Режим тестовый - одобрение выводит сразу" : null,
+    alerts.length ? "" : null,
+    alerts.length ? "<b>Требует внимания</b>" : null,
+    ...alerts.map((a) => `- ${a}`),
     "",
-    `<b>Разнообразие за неделю</b> · ${weekRows.length} ${plural(weekRows.length, "пост", "поста", "постов")}`,
-    `Архивы: ${topThree(weekRows.map((p) => archiveKey(p.attribution) || p.source || ""))}`,
-    `Эпохи: ${topThree(weekRows.map((p) => p.tags?.period ?? ""))}`,
-    `Темы: ${topThree(weekRows.map((p) => p.tags?.subject ?? ""))}`,
-    "",
-    "<b>Служба</b>",
-    beatLine("collector", "Сбор"),
-    beatLine("publisher", "Публикатор"),
-    `База дедупа: ${seenRes.count ?? 0} фото`,
-    `Отклонено: ${rejected}, брака: ${broken}`,
-    "",
-    "<b>Режимы</b>",
-    INSTANT_PUBLISH
-      ? "Публикация: тестовая - одобрение выводит сразу"
-      : "Публикация: боевая - по расписанию",
-    autoOn
-      ? "Автопостинг: включён - посты выходят без одобрения"
-      : "Автопостинг: выключен - только одобренные",
-    "",
-    "<i>План: /queue · Расписание: /schedule · Автопостинг: /auto</i>",
+    "<i>Подробности: /queue · /schedule · /auto</i>",
   ];
 
   await ctx.reply(lines.filter((l) => l !== null).join("\n"), { parse_mode: "HTML" });
