@@ -207,6 +207,7 @@ async function main() {
   const hooklessMinScore = cfg.collect.hookless_min_score ?? 85;
   let written = 0;
   let failed = 0;
+  let quotaFailed = 0;
   let skippedDull = 0;
   let skippedHookless = 0;
   let rewritten = 0;
@@ -292,7 +293,11 @@ async function main() {
         console.warn(`  брак подписи: [${item.source}] ${item.sourceId} — ${check.reason}`);
       }
     } catch (err) {
-      failed++;
+      // сорванный лимитом кадр - не брак подписи: подписи у него не было
+      // вовсе. Считаем отдельно, иначе диагноз врёт («брака подписи 4»
+      // при четырёх отказах по квоте - живой случай 13.08)
+      if (err instanceof GeminiQuotaError) quotaFailed++;
+      else failed++;
       console.warn(`  анализ упал: [${item.source}] ${item.sourceId} — ${(err as Error).message}`);
       if (err instanceof GeminiQuotaError && quotaTripped()) {
         console.error("❌ дневная квота Gemini исчерпана — прекращаю до следующего запуска");
@@ -315,7 +320,8 @@ async function main() {
       ].join(" → "),
   );
   console.log(
-    `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), без крючка ${skippedHookless} (слабее ${hooklessMinScore}), брака подписи ${failed}, цитат переписано ${rewritten}`,
+    `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), без крючка ${skippedHookless} (слабее ${hooklessMinScore}), ` +
+      `брака подписи ${failed}, сорвано квотой ${quotaFailed}, цитат переписано ${rewritten}`,
   );
 
   // та же воронка в базу: по ней бот сам замечает, что что-то сломалось
@@ -326,6 +332,7 @@ async function main() {
     written,
     junk: skippedDull,
     broken: failed,
+    quota_failed: quotaFailed,
     sources: lastSourceCounts,
   });
   if (runErr) console.warn(`запись прогона в историю: ${runErr.message}`);

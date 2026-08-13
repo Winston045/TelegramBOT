@@ -54,3 +54,24 @@ describe("findProblems", () => {
     expect(problems.some((p) => p.text.includes("вдвое меньше"))).toBe(false);
   });
 });
+
+describe("сорванная квота не выдаётся за брак фильтров", () => {
+  const run = {
+    raw: 110,
+    prefiltered: 41,
+    analyzed: 29,
+    written: 0,
+    sources: { commons: 80, loc: 30 },
+  };
+
+  it("называет настоящую причину, когда кадры срывала квота", () => {
+    const [first] = findProblems({ ...run, quota_failed: 4 }, []);
+    expect(first?.text).toContain("сорвана лимитом Gemini");
+    expect(first?.text).toContain("GEMINI_API_KEYS");
+  });
+
+  it("без отказов по квоте диагноз прежний - брак подписей", () => {
+    const [first] = findProblems({ ...run, quota_failed: 0 }, []);
+    expect(first?.text).toContain("не сгенерировались подписи");
+  });
+});

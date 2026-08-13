@@ -16,6 +16,8 @@ type RunRow = {
   prefiltered: number;
   analyzed: number;
   written: number;
+  /** кадры, сорванные лимитом Gemini: это не брак фильтров */
+  quota_failed?: number | null;
   sources: Record<string, number> | null;
 };
 
@@ -48,7 +50,17 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
     });
   }
 
-  if (last.analyzed > 0 && last.written === 0) {
+  const quotaFailed = last.quota_failed ?? 0;
+  if (last.analyzed > 0 && last.written === 0 && quotaFailed > 0) {
+    // диагноз должен называть настоящую причину: 13.08 квота кончилась в
+    // середине сбора, а бот отчитался про брак подписей - и поиски пошли
+    // не туда
+    problems.push({
+      text:
+        `Партия сорвана лимитом Gemini: ${quotaFailed} кадров не дошли до анализа, в резерв не попало ничего. ` +
+        "Квота сбрасывается в 10:00 МСК; второй ключ в GEMINI_API_KEYS снял бы это совсем.",
+    });
+  } else if (last.analyzed > 0 && last.written === 0) {
     problems.push({
       text: "Ни один кадр партии не дошёл до резерва: либо все отсеяны как брак, либо не сгенерировались подписи.",
     });
@@ -83,7 +95,7 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
 export async function reportHealth(db: SupabaseClient, _cfg: AppConfig): Promise<void> {
   const { data, error } = await db
     .from("collect_runs")
-    .select("raw, prefiltered, analyzed, written, sources")
+    .select("raw, prefiltered, analyzed, written, quota_failed, sources")
     .order("started_at", { ascending: false })
     .limit(HISTORY + 1);
   if (error || !data?.length) return;
