@@ -132,9 +132,20 @@ async function main() {
 
   console.log("\nЛЕНТА ПО ПОРЯДКУ");
   rows.forEach((r, i) => {
-    const head = (r.caption_html ?? "").replace(/<[^>]+>/g, "").split("\n")[0]?.slice(0, 52) ?? "";
+    const head = (r.caption_html ?? "").replace(/<[^>]+>/g, "").split("\n")[0]?.slice(0, 46) ?? "";
+    // дата и время публикации: без них не отделить посты до правок от тех,
+    // что вышли уже по новым правилам
+    const when = r.published_at
+      ? new Intl.DateTimeFormat("ru-RU", {
+          timeZone: "Europe/Moscow",
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(new Date(r.published_at))
+      : "-";
     console.log(
-      `  ${String(i + 1).padStart(2)}. [${archives[i] || "?"}] ${periods[i] || "?"}/${subjects[i] || "?"} - ${head}`,
+      `  ${String(i + 1).padStart(2)}. ${when} [${archives[i] || "?"}] ${periods[i] || "?"}/${subjects[i] || "?"} - ${head}`,
     );
   });
 }
