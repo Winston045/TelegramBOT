@@ -45,6 +45,10 @@ jobs:
             npx tsx scripts/probe-context.ts 6
           elif grep -q reserve .github/report.trigger 2>/dev/null; then
             npx tsx scripts/reserve-report.ts
+          elif grep -q diversity .github/report.trigger 2>/dev/null; then
+            # разбор вышедших постов: архивы, эпохи, темы, серии подряд
+            n=$(grep -oP 'diversity:\K\d+' .github/report.trigger || true)
+            npx tsx scripts/diversity.ts ${n:-60}
           elif grep -q handwork .github/report.trigger 2>/dev/null; then
             # ручная редактура канала: чем жили посты до бота
             from=$(grep -oP 'from:\K\d{4}-\d{2}' .github/report.trigger || true)
