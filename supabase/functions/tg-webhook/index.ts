@@ -5,7 +5,9 @@
  * У опубликованных: Удалить из канала.
  *
  * Команды (только вайтлист EDITOR_USER_IDS, остальных молча игнорируем):
- *   /status           - сводка: черновики, ближайший пост, вышло, сбор, дедуп
+ *   /status           - полная сводка: очередь и запас хода, слоты и лента,
+ *                       воронка последнего сбора, крючки резерва,
+ *                       разнообразие за неделю, здоровье работ, режимы
  *   /queue            - план публикаций: что и когда выйдет, с кнопками
  *                       (одобренное и то, что выберет автопостинг)
  *   /schedule         - панель расписания: слоты и число постов (МСК)
@@ -271,6 +273,45 @@ function moscowTime(iso: string | null): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(iso));
+}
+
+/** Дата в московском поясе как «2026-08-13» - для сравнения суток. */
+function mskDate(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(d);
+}
+
+/** «WW2 8, korea 1» - три самых частых значения из списка. */
+function topThree(values: string[]): string {
+  const counts = new Map<string, number>();
+  for (const v of values) {
+    if (!v) continue;
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  if (!counts.size) return "-";
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([k, n]) => `${k} ${n}`)
+    .join(", ");
+}
+
+/** Сколько слотов расписания уже прошло сегодня. */
+function slotsPassedToday(times: string[], now: Date): number {
+  const hhmm = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Moscow",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(now);
+  return times.filter((t) => t <= hhmm).length;
+}
+
+/** Склонение: 1 день, 2 дня, 5 дней. */
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
 }
 
 function doneKeyboard(label: string) {
@@ -698,56 +739,176 @@ bot.on("callback_query:data", async (ctx) => {
 // ---------- команды ----------
 
 bot.command("status", async (ctx) => {
-  const [fresh, shown, queued, published] = await Promise.all([
+  const now = new Date();
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
+  const twoDaysAgo = new Date(now.getTime() - 48 * 3600 * 1000).toISOString();
+
+  const [
+    fresh,
+    shown,
+    queued,
+    published,
+    rejected,
+    broken,
+    seenRes,
+    beatsRes,
+    recentPubRes,
+    weekPubRes,
+    runRes,
+    reserveRes,
+    times,
+    autoOn,
+    plan,
+  ] = await Promise.all([
     countByStatus("new"),
     countByStatus("shown"),
     countByStatus("approved"),
     countByStatus("published"),
+    countByStatus("rejected"),
+    countByStatus("failed"),
+    db.from("seen_hashes").select("image_hash", { count: "exact", head: true }),
+    db.from("heartbeats").select("job, last_ok, last_error"),
+    db
+      .from("candidates")
+      .select("published_at")
+      .eq("status", "published")
+      .gte("published_at", twoDaysAgo),
+    db
+      .from("candidates")
+      .select("tags, attribution, source")
+      .eq("status", "published")
+      .gte("published_at", weekAgo),
+    db
+      .from("collect_runs")
+      .select("raw, prefiltered, analyzed, written, junk, broken, quota_failed, started_at")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("candidates")
+      .select("tags, created_at")
+      .in("status", ["new", "shown"])
+      .not("caption_html", "is", null),
+    getPublishTimes(),
+    getAutoPublish(),
+    currentPlan(1),
   ]);
-  const { count: seen } = await db
-    .from("seen_hashes")
-    .select("image_hash", { count: "exact", head: true });
-  const { data: hb } = await db
-    .from("heartbeats")
-    .select("job, last_ok, last_error")
-    .eq("job", "collector")
-    .maybeSingle();
 
-  const dayAgo = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const { count: today } = await db
-    .from("candidates")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "published")
-    .gte("published_at", dayAgo);
+  // ---- лента: слоты, сутки, неделя
+  const today = mskDate(now);
+  const publishedToday = ((recentPubRes.data ?? []) as Array<{ published_at: string | null }>)
+    .filter((r) => r.published_at && mskDate(new Date(r.published_at)) === today).length;
+  const passed = slotsPassedToday(times, now);
+  // слоты хранятся по возрастанию: следующий - тот, что стоит за пройденными
+  const nextSlot = passed < times.length ? times[passed] : undefined;
+  const weekRows = (weekPubRes.data ?? []) as Array<{
+    tags: PlanTags;
+    attribution?: string | null;
+    source?: string | null;
+  }>;
 
-  const times = await getPublishTimes();
-  const autoOn = await getAutoPublish();
-  // сводка показывает не «сколько одобрено», а что реально выйдет следующим
-  const [next] = await currentPlan(1);
+  // ---- резерв: крючки и возраст
+  const reserve = (reserveRes.data ?? []) as Array<{
+    tags: { hook?: string } | null;
+    created_at: string;
+  }>;
+  const hooks = topThree(reserve.map((r) => r.tags?.hook ?? "без крючка"));
+  const oldestMs = reserve.length
+    ? Math.max(...reserve.map((r) => now.getTime() - new Date(r.created_at).getTime()))
+    : 0;
+  const oldestDays = Math.floor(oldestMs / (24 * 3600 * 1000));
+  // запас хода: сколько дней лента проживёт на готовом без новых сборов
+  const ready = fresh + shown + queued;
+  const perDay = Math.max(1, times.length);
+  const runway = (ready / perDay).toFixed(1);
+
+  // ---- сбор: воронка последнего прогона
+  const run = runRes.data as {
+    raw: number;
+    prefiltered: number;
+    analyzed: number;
+    written: number;
+    junk: number | null;
+    broken: number | null;
+    quota_failed: number | null;
+    started_at: string;
+  } | null;
+
+  // ---- служба: все работы, а не только сборщик
+  const beats = (beatsRes.data ?? []) as Array<{
+    job: string;
+    last_ok: string | null;
+    last_error: string | null;
+  }>;
+  const beat = (job: string) => beats.find((b) => b.job === job);
+  const beatLine = (job: string, label: string) => {
+    const b = beat(job);
+    if (!b) return `${label}: не отчитывался`;
+    return `${label}: ${moscowTime(b.last_ok)}${b.last_error ? " - была ошибка" : ""}`;
+  };
+
+  const [next] = plan;
   const nextPost = next
     ? `${next.when}, #${next.candidate.id} (${planMark(next.kind)})`
     : "нечего публиковать";
-  const lines = [
-    "Сводка",
+
+  // null - строка, которой в этом прогоне нет; пустая строка - разделитель
+  const lines: Array<string | null> = [
+    `<b>СВОДКА</b> · ${moscowTime(now.toISOString())} МСК`,
     "",
-    `Черновиков на разборе в чате: ${shown}`,
-    `Собрано, ещё не отправлено: ${fresh}`,
+    "<b>Очередь</b>",
+    `На разборе в чате: ${shown}`,
+    `Собрано, не отправлено: ${fresh}`,
     `Одобрено вручную: ${queued}`,
-    `Ближайший пост: ${nextPost} (весь план: /queue)`,
-    `Вышло за сутки: ${today ?? 0} (всего: ${published})`,
-    `Расписание: ${times.length} в день - ${times.join(", ")} МСК (менять: /schedule)`,
+    `Запас хода: ${runway} ${plural(Math.round(Number(runway)), "день", "дня", "дней")} при ${perDay} постах в сутки`,
     "",
-    `Последний сбор: ${moscowTime(hb?.last_ok ?? null)}${hb?.last_error ? " - была ошибка" : ""}`,
-    `База дедупа: ${seen ?? 0} фото`,
+    "<b>Лента</b>",
+    `Ближайший пост: ${nextPost}`,
+    `Слоты сегодня: прошло ${passed} из ${times.length}, вышло ${publishedToday}`,
+    nextSlot ? `Следующий слот: ${nextSlot} МСК` : "Слоты на сегодня кончились",
+    `Расписание: ${times.join(", ")} МСК`,
+    `Опубликовано всего: ${published}`,
     "",
+    run ? `<b>Последний сбор</b> · ${moscowTime(run.started_at)}` : "<b>Последний сбор</b>",
+    run
+      ? `Воронка: ${run.raw} сырых → ${run.prefiltered} после префильтра → ${run.analyzed} на анализ → ${run.written} в резерв`
+      : "Прогонов ещё не было",
+    run
+      ? `Отсев: мусор ${run.junk ?? 0}, брак подписи ${run.broken ?? 0}, сорвано квотой ${run.quota_failed ?? 0}`
+      : null,
+    run && (run.quota_failed ?? 0) > 0
+      ? "Партию оборвал лимит Gemini. Сброс квоты в 10:00 МСК"
+      : null,
+    "",
+    "<b>Резерв</b>",
+    `Крючки: ${hooks}`,
+    reserve.length
+      ? `Старейшая карточка: ${oldestDays} ${plural(oldestDays, "день", "дня", "дней")} (автопостинг берёт моложе 10)`
+      : "Резерв пуст",
+    "",
+    `<b>Разнообразие за неделю</b> · ${weekRows.length} ${plural(weekRows.length, "пост", "поста", "постов")}`,
+    `Архивы: ${topThree(weekRows.map((p) => archiveKey(p.attribution) || p.source || ""))}`,
+    `Эпохи: ${topThree(weekRows.map((p) => p.tags?.period ?? ""))}`,
+    `Темы: ${topThree(weekRows.map((p) => p.tags?.subject ?? ""))}`,
+    "",
+    "<b>Служба</b>",
+    beatLine("collector", "Сбор"),
+    beatLine("publisher", "Публикатор"),
+    `База дедупа: ${seenRes.count ?? 0} фото`,
+    `Отклонено: ${rejected}, брака: ${broken}`,
+    "",
+    "<b>Режимы</b>",
     INSTANT_PUBLISH
-      ? "Режим: тестовый - одобрение публикует сразу"
-      : "Режим: боевой - публикация по расписанию",
+      ? "Публикация: тестовая - одобрение выводит сразу"
+      : "Публикация: боевая - по расписанию",
     autoOn
-      ? "Автопостинг: ВКЛЮЧЁН - без одобрения (менять: /auto)"
-      : "Автопостинг: выключен - только одобренные (менять: /auto)",
+      ? "Автопостинг: включён - посты выходят без одобрения"
+      : "Автопостинг: выключен - только одобренные",
+    "",
+    "<i>План: /queue · Расписание: /schedule · Автопостинг: /auto</i>",
   ];
-  await ctx.reply(lines.join("\n"));
+
+  await ctx.reply(lines.filter((l) => l !== null).join("\n"), { parse_mode: "HTML" });
 });
 
 /** План публикаций: то же, что решит публикатор - и вручную, и автоматом. */
