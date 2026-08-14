@@ -45,6 +45,9 @@ jobs:
             npx tsx scripts/probe-context.ts 6
           elif grep -q reserve .github/report.trigger 2>/dev/null; then
             npx tsx scripts/reserve-report.ts
+          elif grep -q sources .github/report.trigger 2>/dev/null; then
+            # проверка источников: каждый архив и запрос по отдельности
+            npx tsx scripts/sources-check.ts
           elif grep -q diversity .github/report.trigger 2>/dev/null; then
             # разбор вышедших постов: архивы, эпохи, темы, серии подряд
             n=$(grep -oP 'diversity:\K\d+' .github/report.trigger || true)

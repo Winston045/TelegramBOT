@@ -19,12 +19,17 @@ const API = "https://commons.wikimedia.org/w/api.php";
 const MIN_DESC_WITHOUT_PLACE = 60;
 
 /** Пауза между запросами к API, чтобы не собирать 429 на ровном месте. */
-const POLITE_GAP_MS = 1_200;
+export const POLITE_GAP_MS = 1_200;
 /** Ожидания перед повторами при 429 - лимит Викимедиа держится минутами. */
 const RETRY_DELAYS_MS = [3_000, 12_000, 30_000];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function search(
+/**
+ * Один запрос к API Commons. Экспортирован ради проверки источников:
+ * scripts/sources-check.ts опрашивает каждый архив отдельно, чтобы было
+ * видно, кто из них жив, а кто сменил имя категории.
+ */
+export async function searchCategory(
   category: string,
   term: string,
   limit: number,
@@ -116,7 +121,7 @@ export const commons: SourceAdapter = {
         // пауза перед каждым следующим архивом: девять запросов подряд
         // Викимедиа считает наплывом и отбивает все разом
         if (requests++) await sleep(POLITE_GAP_MS);
-        pages = await search(archive.category, term, perArchive, offset);
+        pages = await searchCategory(archive.category, term, perArchive, offset);
       } catch (err) {
         console.warn(`  commons: ${archive.attribution} — ${(err as Error).message}`);
         continue;

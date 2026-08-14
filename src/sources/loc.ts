@@ -90,7 +90,8 @@ export function mapLocResult(r: LocResult): RawItem | undefined {
   };
 }
 
-async function fetchQuery(query: string, count: number, page: number): Promise<LocResult[]> {
+/** Один запрос к поиску LOC. Экспортирован для проверки источников. */
+export async function fetchQuery(query: string, count: number, page: number): Promise<LocResult[]> {
   const url = new URL("https://www.loc.gov/photos/");
   url.searchParams.set("q", query);
   url.searchParams.set("fo", "json");
