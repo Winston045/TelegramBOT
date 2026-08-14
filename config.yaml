@@ -32,13 +32,16 @@ sources:
       - "korean war combat"                               # годных 3
       - "world war 1944"                                  # годных 1
       - "cold war missile test"                           # годных 1
-      # замены пустых запросов - те же темы другими словами
+      # Замены, проверенные пробой: работает формула «театр + год +
+      # слово photograph». По ней LOC отдаёт снимки, а не карточки
+      # коллекций. «normandy 1944 photograph» и «soldiers training 1942
+      # photograph» по той же формуле дали ноль и заменены дальше.
       - "office of war information photograph 1944"
       - "marines pacific 1945 photograph"
-      - "normandy 1944 photograph"
+      - "philippines 1945 photograph"
       - "korea 1951 photograph"
       - "vietnam 1967 photograph"
-      - "soldiers training 1942 photograph"
+      - "north africa 1943 photograph"
   # архивы разных стран на Wikimedia Commons - главный источник разнообразия
   commons:
     enabled: true
