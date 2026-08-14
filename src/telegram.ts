@@ -1,4 +1,4 @@
-import { Api } from "grammy";
+import { Api, InputFile } from "grammy";
 import { env } from "./env.js";
 
 let api: Api | undefined;
@@ -23,12 +23,47 @@ export async function sendPhotoHtml(
   captionHtml: string,
   replyMarkup?: InlineKeyboard,
 ): Promise<number> {
-  const msg = await getTelegram().sendPhoto(chatId, photoUrl, {
+  const options = {
     caption: captionHtml,
-    parse_mode: "HTML",
+    parse_mode: "HTML" as const,
     reply_markup: replyMarkup,
-  });
-  return msg.message_id;
+  };
+  try {
+    const msg = await getTelegram().sendPhoto(chatId, photoUrl, options);
+    return msg.message_id;
+  } catch (err) {
+    const message = (err as Error).message;
+    if (!isDeadImageError(message)) throw err;
+    // Телеграм не смог скачать файл сам - это не всегда мёртвая ссылка:
+    // архив может резать чужие качалки или отвечать слишком медленно
+    // (живой случай 14.08: две карточки LOC подряд). Пробуем скачать
+    // сами и отдать байтами. Файл нигде не сохраняем - только в памяти
+    const buffer = await downloadImage(photoUrl);
+    if (!buffer) throw err;
+    console.warn(`  Телеграм не забрал ссылку сам, отправляю файлом: ${photoUrl}`);
+    const msg = await getTelegram().sendPhoto(chatId, new InputFile(buffer), options);
+    return msg.message_id;
+  }
+}
+
+/** Скачивание картинки в память для повторной отправки файлом. */
+async function downloadImage(url: string): Promise<Buffer | undefined> {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(45_000),
+      headers: {
+        "user-agent":
+          "story-team-bot/0.1 (Telegram history channel; contact via t.me/Story_Teams)",
+        accept: "image/*",
+      },
+    });
+    if (!res.ok) return undefined;
+    const buffer = Buffer.from(await res.arrayBuffer());
+    // лимит Телеграма на фото - 10 МБ; больше отдавать бессмысленно
+    return buffer.length && buffer.length <= 10 * 1024 * 1024 ? buffer : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function sendMessageHtml(

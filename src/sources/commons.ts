@@ -18,6 +18,12 @@ const API = "https://commons.wikimedia.org/w/api.php";
 /** Без места нужен хотя бы такой длины текст описания — иначе брак. */
 const MIN_DESC_WITHOUT_PLACE = 60;
 
+/** Пауза между запросами к API, чтобы не собирать 429 на ровном месте. */
+const POLITE_GAP_MS = 1_200;
+/** Ожидания перед повторами при 429 - лимит Викимедиа держится минутами. */
+const RETRY_DELAYS_MS = [3_000, 12_000, 30_000];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function search(
   category: string,
   term: string,
@@ -43,13 +49,31 @@ async function search(
     "ImageDescription|DateTimeOriginal|LicenseShortName|Artist|Credit",
   );
 
-  const res = await fetch(url, {
-    headers: { "user-agent": "story-team-bot/0.1 (contentbot)" },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) throw new Error(`commons: ${category} → HTTP ${res.status}`);
-  const body = (await res.json()) as { query?: { pages?: CommonsPage[] } };
-  return body.query?.pages ?? [];
+  // Викимедиа режет датацентровые адреса (GitHub Actions) кодом 429 и
+  // требует контакт в User-Agent. Живой прогон 14.08: девять запросов
+  // подряд за три секунды - все девять архивов получили 429, и партия
+  // осталась без Commons целиком. Поэтому вежливый темп и ретраи.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, {
+      headers: {
+        "user-agent":
+          "story-team-bot/0.1 (Telegram history channel; contact via t.me/Story_Teams)",
+        accept: "application/json",
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (res.ok) {
+      const body = (await res.json()) as { query?: { pages?: CommonsPage[] } };
+      return body.query?.pages ?? [];
+    }
+    const delay = RETRY_DELAYS_MS[attempt];
+    if (res.status !== 429 || delay === undefined) {
+      throw new Error(`commons: ${category} → HTTP ${res.status}`);
+    }
+    // Retry-After в секундах, если сервер его прислал
+    const after = Number(res.headers.get("retry-after"));
+    await sleep(Number.isFinite(after) && after > 0 ? Math.min(after * 1000, 30_000) : delay);
+  }
 }
 
 export const commons: SourceAdapter = {
@@ -74,6 +98,7 @@ export const commons: SourceAdapter = {
       (_, i) => archives[(i + startIdx) % archives.length]!,
     );
 
+    let requests = 0;
     for (const archive of rotated) {
       const items: RawItem[] = [];
       // у архива могут быть свои слова: у РИА Новости в названиях файлов
@@ -88,6 +113,9 @@ export const commons: SourceAdapter = {
 
       let pages: CommonsPage[];
       try {
+        // пауза перед каждым следующим архивом: девять запросов подряд
+        // Викимедиа считает наплывом и отбивает все разом
+        if (requests++) await sleep(POLITE_GAP_MS);
         pages = await search(archive.category, term, perArchive, offset);
       } catch (err) {
         console.warn(`  commons: ${archive.attribution} — ${(err as Error).message}`);

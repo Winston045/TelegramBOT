@@ -95,7 +95,8 @@ async function main() {
       // занимать место в каждой партии и никогда не отправится
       if (isDeadImageError(msg)) {
         await db.from("candidates").update({ status: "failed" }).eq("id", c.id);
-        console.warn(`  карточка #${c.id}: архив не отдаёт фото, помечена браком`);
+        console.warn(`  карточка #${c.id}: архив не отдаёт фото, помечена браком - ${msg}`);
+        console.warn(`    ссылка: ${c.image_url}`);
       } else {
         console.warn(`  карточка #${c.id} не отправилась: ${msg}`);
       }
