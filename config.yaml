@@ -41,7 +41,7 @@ sources:
       - "philippines 1945 photograph"
       - "korea 1951 photograph"
       - "vietnam 1967 photograph"
-      - "north africa 1943 photograph"
+      - "kodachrome 1943 photograph"   # второй заход в цветной пласт FSA/OWI
   # архивы разных стран на Wikimedia Commons - главный источник разнообразия
   commons:
     enabled: true
