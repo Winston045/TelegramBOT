@@ -14,24 +14,31 @@ sources:
     # (полторы тысячи кадров, сохранность идеальная) и крупноформатная
     # съёмка военных лет.
     queries:
-      - "farm security administration color kodachrome"
-      - "office of war information color 1943"
-      - "war production color 1942"
-      - "world war 1939"
-      - "world war 1944"
-      - "red army"
-      - "royal air force"
-      - "navy pacific 1942"
-      - "tank battle"
-      - "military aviation 1940"
-      - "pacific 1944 landing"
-      # холодная война: от Кореи до восьмидесятых
-      - "korean war combat"
-      - "vietnam war patrol"
-      - "vietnam helicopter 1968"
-      - "berlin wall 1961"
-      - "cuban missile crisis"
-      - "cold war missile test"
+      # Список выверен пробой 14.08 (scripts/sources-check.ts): каждый
+      # запрос проверен отдельно, «годных» - сколько записей дошло до
+      # кандидатов. Шесть прежних формулировок давали ноль годных и были
+      # заменены: LOC либо не находил по ним ничего («red army»,
+      # «vietnam helicopter 1968»), либо отдавал карточки коллекций с
+      # заглушкой вместо фотографии («world war 1939», «cuban missile
+      # crisis», «military aviation 1940», «vietnam war patrol»).
+      - "farm security administration color kodachrome"   # годных 2 из 6
+      - "office of war information color 1943"            # годных 1
+      - "war production color 1942"                       # годных 5
+      - "pacific 1944 landing"                            # годных 5
+      - "royal air force"                                 # годных 4
+      - "berlin wall 1961"                                # годных 4
+      - "navy pacific 1942"                               # годных 3
+      - "tank battle"                                     # годных 3
+      - "korean war combat"                               # годных 3
+      - "world war 1944"                                  # годных 1
+      - "cold war missile test"                           # годных 1
+      # замены пустых запросов - те же темы другими словами
+      - "office of war information photograph 1944"
+      - "marines pacific 1945 photograph"
+      - "normandy 1944 photograph"
+      - "korea 1951 photograph"
+      - "vietnam 1967 photograph"
+      - "soldiers training 1942 photograph"
   # архивы разных стран на Wikimedia Commons - главный источник разнообразия
   commons:
     enabled: true
