@@ -27,7 +27,26 @@ function say(need: boolean, reason: string, keep = 0) {
   }
 }
 
+/**
+ * --force [N] - собрать несмотря на запас. Нужен, когда правки в
+ * источниках или ключах надо проверить в бою, а сторож честно говорит
+ * «хватает» и сбор не запускается сутками. Счётчик заходов за сутки при
+ * этом не трогаем: принудительный прогон - осознанное решение человека,
+ * а не автоматика, которую надо ограничивать.
+ */
+function forcedKeep(): number | undefined {
+  const i = process.argv.indexOf("--force");
+  if (i === -1) return undefined;
+  const n = Number(process.argv[i + 1]);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 30) : 6;
+}
+
 async function main() {
+  const forced = forcedKeep();
+  if (forced !== undefined) {
+    say(true, `принудительный сбор (--force), запас не проверяем`, forced);
+    return;
+  }
   const cfg = loadConfig();
   const db = getDb();
   const now = new Date();

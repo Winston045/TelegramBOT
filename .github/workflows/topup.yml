@@ -53,10 +53,13 @@ jobs:
           cache: npm
       - run: npm ci || npm install
         if: steps.guard.outputs.ok == 'true'
+      # Пуш маркера .github/topup.trigger - это ручная просьба собрать
+      # сейчас: сторож пропускается, партия маленькая. По расписанию
+      # решает сторож, как и раньше.
       - name: Нужен ли добор
         id: need
         if: steps.guard.outputs.ok == 'true'
-        run: npx tsx scripts/topup-guard.ts
+        run: npx tsx scripts/topup-guard.ts ${{ github.event_name == 'push' && '--force 6' || '' }}
       # размер партии считает сторож: ровно столько, сколько не хватает
       # до запаса, с поправкой на выбраковку по порогу оценки
       - name: Сбор свежей партии
