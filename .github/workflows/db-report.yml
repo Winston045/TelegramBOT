@@ -20,6 +20,9 @@ jobs:
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
       CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
       EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID }}
+      # для режима keys: проверка пула ключей Gemini
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,6 +48,9 @@ jobs:
             npx tsx scripts/probe-context.ts 6
           elif grep -q reserve .github/report.trigger 2>/dev/null; then
             npx tsx scripts/reserve-report.ts
+          elif grep -q keys .github/report.trigger 2>/dev/null; then
+            # пул ключей Gemini: сколько видит бот и живой ли каждый
+            npx tsx scripts/keys-check.ts
           elif grep -q sources .github/report.trigger 2>/dev/null; then
             # проверка источников: каждый архив и запрос по отдельности
             npx tsx scripts/sources-check.ts
