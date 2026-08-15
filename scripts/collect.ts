@@ -202,7 +202,11 @@ async function main() {
   // один запрос Gemini на фото: оценка + подпись сразу. Все прошедшие
   // порог кандидаты пишутся в базу со статусом new — это резерв, из
   // которого /more шлёт карточки вообще без обращения к Gemini
-  console.log("анализ (оценка + подпись одним запросом)...");
+  // сколько ключей в пуле - видно сразу: добавленный секрет либо
+  // подхватился, либо нет, и гадать по отказам 429 не приходится
+  console.log(
+    `анализ (оценка + подпись одним запросом), ключей Gemini: ${env.geminiApiKeys.length}...`,
+  );
   const minScore = cfg.collect.min_score ?? 45;
   const hooklessMinScore = cfg.collect.hookless_min_score ?? 85;
   let written = 0;
