@@ -52,9 +52,14 @@ async function checkCommons(cfg: ReturnType<typeof loadConfig>) {
       all.push(...items);
       if (pages.length) alive++;
       const ms = Date.now() - started;
+      // префильтр считаем ПО КАЖДОМУ архиву: общая цифра отсева прячет
+      // архивы, которые отвечают, но целиком гибнут на проверках -
+      // именно так РИА Новости не давал ни одного кадра в ленту
+      const { kept, rejected } = prefilter(items, cfg);
+      const why = [...rejected.entries()].map(([r, n]) => `${r}×${n}`).join(", ");
       console.log(
         `  ${archive.attribution.padEnd(22)} «${term || "без слова"}» → ${verdict(pages.length)}` +
-          `, годных ${items.length}, ${ms} мс`,
+          `, годных ${items.length}, ДОШЛО ${kept.length}${why ? ` (отсев: ${why})` : ""}, ${ms} мс`,
       );
       if (!pages.length) {
         console.log(`      категория «${archive.category}» - проверьте имя, поиск ничего не вернул`);
@@ -85,8 +90,11 @@ async function checkLoc(cfg: ReturnType<typeof loadConfig>) {
       const items = results.map(mapLocResult).filter((it): it is RawItem => Boolean(it));
       all.push(...items);
       if (results.length) alive++;
+      const { kept, rejected } = prefilter(items, cfg);
+      const why = [...rejected.entries()].map(([r, n]) => `${r}×${n}`).join(", ");
       console.log(
-        `  «${q}» → ${verdict(results.length)}, годных ${items.length}, ${Date.now() - started} мс`,
+        `  «${q}» → ${verdict(results.length)}, годных ${items.length}, ДОШЛО ${kept.length}` +
+          `${why ? ` (отсев: ${why})` : ""}, ${Date.now() - started} мс`,
       );
     } catch (err) {
       console.log(`  «${q}» → ${verdict(null, (err as Error).message)}`);
