@@ -116,3 +116,42 @@ describe("студийные портреты", () => {
     ).toBeNull();
   });
 });
+
+describe("свой порог ширины у отдельных архивов", () => {
+  const cfgWithOverride = {
+    collect: {
+      min_image_width: 800,
+      min_year: 1850,
+      max_year: 1999,
+      min_image_width_by_archive: { "риа новости": 600 },
+    },
+    filters: { stop_words: [] },
+  } as unknown as AppConfig;
+
+  const frame = (attribution: string, imageWidth: number) => ({
+    sourceId: "1",
+    sourceUrl: "https://x",
+    imageUrl: "https://x.jpg",
+    title: "Атака пехоты",
+    lang: "ru",
+    license: "PD",
+    year: 1943,
+    place: "Сталинград",
+    attribution,
+    imageWidth,
+  });
+
+  it("советский архив проходит по своему, пониженному порогу", () => {
+    expect(rejectReason(frame("РИА Новости, Иванов / CC BY-SA 3.0", 700), cfgWithOverride)).toBeNull();
+  });
+
+  it("но совсем мелкий кадр не проходит и у него", () => {
+    expect(rejectReason(frame("РИА Новости / CC BY-SA 3.0", 500), cfgWithOverride)).toBe("too_small");
+  });
+
+  it("остальным архивам послабление не достаётся", () => {
+    expect(rejectReason(frame("Bundesarchiv, Koch / CC BY-SA 3.0 de", 700), cfgWithOverride)).toBe(
+      "too_small",
+    );
+  });
+});

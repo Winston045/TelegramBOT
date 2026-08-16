@@ -28,6 +28,13 @@ export type AppConfig = {
     min_image_width: number;
     min_year?: number;
     max_year?: number;
+    /**
+     * Свой порог ширины для отдельных архивов: ключ archiveKey → пиксели.
+     * У РИА Новости сканы на Commons мельче европейских, и общий порог
+     * съедал две трети выдачи - единственный советский архив уходил в
+     * ноль. Мыло всё равно ловит оценка, а не эта цифра.
+     */
+    min_image_width_by_archive?: Record<string, number>;
     /** ниже этой оценки кандидат в резерв не пишется (по умолчанию 45) */
     min_score?: number;
     /**

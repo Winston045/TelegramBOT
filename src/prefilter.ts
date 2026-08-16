@@ -1,5 +1,6 @@
 import type { AppConfig } from "./config.js";
 import type { RawItem } from "./sources/types.js";
+import { archiveKey } from "./plan.js";
 
 export type RejectReason =
   | "no_year"
@@ -22,7 +23,12 @@ export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null
   if ((min_year && item.year < min_year) || (max_year && item.year > max_year)) {
     return "year_out_of_range";
   }
-  if (item.imageWidth !== undefined && item.imageWidth < cfg.collect.min_image_width) {
+  // порог ширины: у отдельных архивов он свой. Живой замер 16.08: у РИА
+  // Новости общий порог отсекал 4 кадра из 6, и единственный советский
+  // архив не доходил до ленты вовсе
+  const perArchive = cfg.collect.min_image_width_by_archive?.[archiveKey(item.attribution)];
+  const minWidth = perArchive ?? cfg.collect.min_image_width;
+  if (item.imageWidth !== undefined && item.imageWidth < minWidth) {
     return "too_small";
   }
 
