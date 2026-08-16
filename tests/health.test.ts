@@ -44,9 +44,10 @@ describe("findProblems", () => {
     expect(problems.some((p) => p.text.includes("вдвое меньше"))).toBe(true);
   });
 
-  it("анализ почти весь пропал - называем квоту, а не источники", () => {
+  it("анализ почти весь пропал без объяснения - зовём смотреть лог", () => {
+    // разбивки отсева у этого прогона нет, значит потери необъяснимы
     const problems = findProblems(run({ analyzed: 8, written: 1 }), week);
-    expect(problems.some((p) => p.text.includes("квота Gemini"))).toBe(true);
+    expect(problems.some((p) => p.text.includes("пропали без объяснения"))).toBe(true);
   });
 
   it("без истории сравнение с нормой не срабатывает - не с чем сравнивать", () => {
@@ -67,7 +68,7 @@ describe("сорванная квота не выдаётся за брак фи
   it("называет настоящую причину, когда кадры срывала квота", () => {
     const [first] = findProblems({ ...run, quota_failed: 4 }, []);
     expect(first?.text).toContain("сорвана лимитом Gemini");
-    expect(first?.text).toContain("GEMINI_API_KEYS");
+    expect(first?.text).toContain("Квота сбрасывается в 10:00 МСК");
   });
 
   it("без отказов по квоте и без разбивки - сообщение без домыслов", () => {
@@ -93,5 +94,30 @@ describe("диагноз называет состав отсева", () => {
     const [first] = findProblems({ ...run, junk: 0, hookless: 0, broken: 6, quota_failed: 0 }, []);
     expect(first?.text).toContain("Ни один кадр партии не дошёл до резерва");
     expect(first?.text).toContain("6 с браком подписи");
+  });
+});
+
+describe("низкий выход - не повод для тревоги сам по себе", () => {
+  // живой прогон 17.08: 1 из 8, но все потери объяснены отсевом
+  const run = { raw: 90, prefiltered: 50, analyzed: 8, written: 1, sources: { commons: 60 } };
+
+  it("молчит, когда потери объяснены ситом", () => {
+    const problems = findProblems({ ...run, junk: 5, hookless: 2, broken: 0, quota_failed: 0 }, []);
+    expect(problems.map((p) => p.text).join(" ")).not.toContain("До резерва дошло");
+  });
+
+  it("не советует добавить ключ, который давно добавлен", () => {
+    const problems = findProblems({ ...run, junk: 5, hookless: 2, broken: 0, quota_failed: 0 }, []);
+    expect(problems.map((p) => p.text).join(" ")).not.toContain("GEMINI_API_KEYS");
+  });
+
+  it("говорит про квоту только когда она реально сорвала кадры", () => {
+    const [first] = findProblems({ ...run, junk: 3, hookless: 1, broken: 0, quota_failed: 3 }, []);
+    expect(first?.text).toContain("3 кадров сорвал лимит Gemini");
+  });
+
+  it("бьёт тревогу, когда кадры пропали необъяснимо", () => {
+    const [first] = findProblems({ ...run, junk: 1, hookless: 0, broken: 0, quota_failed: 0 }, []);
+    expect(first?.text).toContain("пропали без объяснения");
   });
 });
