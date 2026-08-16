@@ -19,6 +19,7 @@ import {
 } from "../src/sources/index.js";
 import { reportHealth } from "../src/health.js";
 import { prefilter } from "../src/prefilter.js";
+import { byPromise, promise } from "../src/promise.js";
 import { hiResLocUrl } from "../src/sources/loc.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { isStereoPair } from "../src/stereo.js";
@@ -167,10 +168,21 @@ async function main() {
   }
 
   const keepLimit = numArg("--keep") ?? cfg.collect.prefilter_keep;
-  // срез только после перемешивания: иначе первые keepLimit - это целиком
-  // первый источник из конфига, а остальные не доходят до анализа
-  const survivors = interleaveBySource(kept).slice(0, keepLimit);
-  console.log(`выжило после префильтра: ${survivors.length} (лимит ${keepLimit})`);
+  // сначала сортируем по «обещанию» (метаданные, без ИИ), потом мешаем по
+  // архивам. Перемешивание держит порядок внутри архива, поэтому от
+  // каждого первым берётся самый перспективный кадр, а не случайный
+  const ranked = byPromise(kept);
+  const survivors = interleaveBySource(ranked).slice(0, keepLimit);
+  const avg = survivors.length
+    ? survivors.reduce((s, it) => s + promise(it), 0) / survivors.length
+    : 0;
+  const rest = ranked.slice(keepLimit);
+  const avgRest = rest.length ? rest.reduce((s, it) => s + promise(it), 0) / rest.length : 0;
+  console.log(
+    `выжило после префильтра: ${survivors.length} (лимит ${keepLimit}), ` +
+      `обещание очереди ${avg.toFixed(1)}` +
+      (rest.length ? ` против ${avgRest.toFixed(1)} у отложенных` : ""),
+  );
 
   if (dry) {
     for (const item of survivors) {
