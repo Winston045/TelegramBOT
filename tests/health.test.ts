@@ -70,8 +70,28 @@ describe("сорванная квота не выдаётся за брак фи
     expect(first?.text).toContain("GEMINI_API_KEYS");
   });
 
-  it("без отказов по квоте диагноз прежний - брак подписей", () => {
+  it("без отказов по квоте и без разбивки - сообщение без домыслов", () => {
+    // разбивки в старых прогонах нет: говорим факт, а не выдумываем причину
     const [first] = findProblems({ ...run, quota_failed: 0 }, []);
-    expect(first?.text).toContain("не сгенерировались подписи");
+    expect(first?.text).toContain("Ни один кадр партии не дошёл до резерва");
+    expect(first?.text).not.toContain("брак");
+  });
+});
+
+describe("диагноз называет состав отсева", () => {
+  const run = { raw: 92, prefiltered: 54, analyzed: 6, written: 0, sources: { commons: 60 } };
+
+  it("партия отсеяна ситом - объясняет, что это не поломка", () => {
+    // живой прогон 16.08: 4 слабых, 1 без крючка, 1 сорван сбоем Gemini
+    const [first] = findProblems({ ...run, junk: 4, hookless: 1, broken: 1, quota_failed: 0 }, []);
+    expect(first?.text).toContain("4 слабых по оценке");
+    expect(first?.text).toContain("1 без крючка");
+    expect(first?.text).toContain("не поломка");
+  });
+
+  it("если сито ни при чём - формулировка прежняя, тревожная", () => {
+    const [first] = findProblems({ ...run, junk: 0, hookless: 0, broken: 6, quota_failed: 0 }, []);
+    expect(first?.text).toContain("Ни один кадр партии не дошёл до резерва");
+    expect(first?.text).toContain("6 с браком подписи");
   });
 });

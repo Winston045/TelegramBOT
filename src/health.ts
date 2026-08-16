@@ -18,6 +18,10 @@ type RunRow = {
   written: number;
   /** кадры, сорванные лимитом Gemini: это не брак фильтров */
   quota_failed?: number | null;
+  /** отсев ситом: слабая оценка и отсутствие крючка - это не поломка */
+  junk?: number | null;
+  hookless?: number | null;
+  broken?: number | null;
   sources: Record<string, number> | null;
 };
 
@@ -61,8 +65,24 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
         "Квота сбрасывается в 10:00 МСК; второй ключ в GEMINI_API_KEYS снял бы это совсем.",
     });
   } else if (last.analyzed > 0 && last.written === 0) {
+    // называем состав отсева поимённо. 16.08 бот написал «все отсеяны как
+    // брак», хотя брака не было вовсе: четыре слабых кадра, один без
+    // крючка и один сорванный сбоем Gemini - то есть сито отработало как
+    // задумано, а сообщение выглядело как поломка
+    const parts: string[] = [];
+    if (last.junk) parts.push(`${last.junk} слабых по оценке`);
+    if (last.hookless) parts.push(`${last.hookless} без крючка`);
+    if (last.broken) parts.push(`${last.broken} с браком подписи`);
+    const details = parts.length ? `: ${parts.join(", ")}` : "";
+    // «сито виновато», если им отсеяно большинство партии: остаток могли
+    // унести единичные сбои сети, и это не повод бить тревогу
+    const bySieve = (last.junk ?? 0) + (last.hookless ?? 0);
+    const allFiltered = bySieve * 2 >= last.analyzed;
     problems.push({
-      text: "Ни один кадр партии не дошёл до резерва: либо все отсеяны как брак, либо не сгенерировались подписи.",
+      text: allFiltered
+        ? `Партия целиком отсеяна ситом${details}. Это не поломка - материал попался слабый; ` +
+          "если так повторится подряд, стоит смотреть на источники, а не на фильтры."
+        : `Ни один кадр партии не дошёл до резерва${details}.`,
     });
   } else if (last.analyzed >= 4 && last.written <= last.analyzed / 4) {
     // источники дали материал, а анализ почти весь пропал - это почерк
@@ -95,7 +115,7 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
 export async function reportHealth(db: SupabaseClient, _cfg: AppConfig): Promise<void> {
   const { data, error } = await db
     .from("collect_runs")
-    .select("raw, prefiltered, analyzed, written, quota_failed, sources")
+    .select("raw, prefiltered, analyzed, written, quota_failed, junk, hookless, broken, sources")
     .order("started_at", { ascending: false })
     .limit(HISTORY + 1);
   if (error || !data?.length) return;
