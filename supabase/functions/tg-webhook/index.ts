@@ -182,6 +182,20 @@ const bot = new Bot(requireEnv("BOT_TOKEN"), {
   botInfo,
   client: { timeoutSeconds: 25 },
 });
+
+/**
+ * Длинные тире - самая заметная примета машинного текста. Чистим их на
+ * выходе, перехватывая любой вызов Telegram API: ответы команд, панели,
+ * правки подписей, всплывашки на кнопках. Правило в одном месте, поэтому
+ * его нельзя забыть в новом сообщении.
+ */
+bot.api.config.use(async (prev, method, payload, signal) => {
+  const p = payload as { text?: unknown; caption?: unknown };
+  const plain = (t: string) => t.replace(/[\u2012\u2013\u2014\u2015\u2212]/g, "-");
+  if (typeof p.text === "string") p.text = plain(p.text);
+  if (typeof p.caption === "string") p.caption = plain(p.caption);
+  return prev(method, payload, signal);
+});
 // имена с префиксом SUPABASE_ в secrets функций зарезервированы, поэтому
 // свой ключ туда не положить - берём служебный, он всегда есть в среде
 const db = createClient(

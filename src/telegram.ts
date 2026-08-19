@@ -3,8 +3,30 @@ import { env } from "./env.js";
 
 let api: Api | undefined;
 
+/**
+ * Длинные тире - самая заметная примета машинного текста, и в канале про
+ * историю она лишняя. Меняем на обычный дефис ВЕЗДЕ, что уходит в
+ * Телеграм: подписи постов, карточки, ответы команд, служебные сообщения.
+ *
+ * Правило живёт одной строкой на выходе, а не в каждом сообщении по
+ * отдельности: так его нельзя забыть в новом тексте.
+ */
+export function plainDashes(text: string): string {
+  return text.replace(/[\u2012\u2013\u2014\u2015\u2212]/g, "-");
+}
+
 export function getTelegram(): Api {
-  if (!api) api = new Api(env.botToken);
+  if (!api) {
+    api = new Api(env.botToken);
+    // перехватываем любой исходящий вызов: текст и подпись чистим до
+    // отправки, что бы их ни сформировало
+    api.config.use(async (prev, method, payload, signal) => {
+      const p = payload as { text?: unknown; caption?: unknown };
+      if (typeof p.text === "string") p.text = plainDashes(p.text);
+      if (typeof p.caption === "string") p.caption = plainDashes(p.caption);
+      return prev(method, payload, signal);
+    });
+  }
   return api;
 }
 

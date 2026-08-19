@@ -242,3 +242,31 @@ describe("страховка формата обычного поста", () => 
     expect(html).not.toContain("blockquote");
   });
 });
+
+describe("длинные тире не уходят в Телеграм", async () => {
+  const { plainDashes } = await import("../src/telegram.js");
+
+  it("меняет все виды длинного тире на дефис", () => {
+    expect(plainDashes("Берлин — 1945")).toBe("Берлин - 1945");
+    expect(plainDashes("1941–1945")).toBe("1941-1945");
+    expect(plainDashes("шкала −5")).toBe("шкала -5");
+    expect(plainDashes("текст ― вставка")).toBe("текст - вставка");
+  });
+
+  it("обычный дефис и минус в числах не трогает", () => {
+    expect(plainDashes("Т-34-85, 8,8-см")).toBe("Т-34-85, 8,8-см");
+  });
+
+  it("сборка подписи не оставляет длинных тире", () => {
+    const html = assembleCaptionHtml(
+      {
+        caption: "Танкисты — на трофейном «Тигре».",
+        quote: "Курская дуга — июль 1943 года.",
+        quote_kind: "context",
+      },
+      { license: "PD" },
+      channel,
+    );
+    expect(html).not.toMatch(/[‒–—―−]/);
+  });
+});
