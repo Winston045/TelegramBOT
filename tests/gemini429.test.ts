@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classify429 } from "../src/gemini.js";
+import { classify429, quotaLabel } from "../src/gemini.js";
 
 /**
  * Ответы Gemini на 429 - в том виде, в каком их отдаёт API. Разница между
@@ -47,5 +47,44 @@ describe("разбор 429 от Gemini", () => {
 
   it("пустое тело - считаем суточной квотой, это безопаснее", () => {
     expect(classify429("").perMinute).toBe(false);
+  });
+});
+
+describe("имя исчерпанной квоты в логе", () => {
+  it("берёт quotaId и метрику, когда Google их прислал", () => {
+    const body = JSON.stringify({
+      error: {
+        details: [
+          {
+            violations: [
+              {
+                quotaMetric: "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+                quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(quotaLabel(body)).toBe(
+      "GenerateRequestsPerDayPerProjectPerModel-FreeTier / " +
+        "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+    );
+  });
+
+  it("без quotaId довольствуется текстом ошибки", () => {
+    expect(quotaLabel(PER_MINUTE)).toBe(
+      "Quota exceeded for quota metric 'Generate requests per minute'",
+    );
+  });
+
+  it("совсем чужой ответ печатает как есть, одной строкой", () => {
+    expect(quotaLabel("<html>\n  429 Too Many Requests\n</html>")).toBe(
+      "<html> 429 Too Many Requests </html>",
+    );
+  });
+
+  it("пустое тело так и называет", () => {
+    expect(quotaLabel("")).toBe("тело ответа пустое");
   });
 });

@@ -60,6 +60,10 @@ type ModelInfo = { name: string; supportedGenerationMethods?: string[] };
 let resolvedModel: string | undefined;
 const deadModels = new Set<string>();
 
+/** Сколько 503 подряд считаем приговором модели, а не случайностью. */
+const OVERLOAD_TRIP_AFTER = 3;
+let overloadStreak = 0;
+
 function pickModel(models: ModelInfo[]): string | undefined {
   const usable = models
     .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
@@ -126,6 +130,24 @@ export function classify429(body: string): { perMinute: boolean; waitMs: number 
   return { perMinute, waitMs };
 }
 
+/**
+ * Как назвать в логе исчерпанную квоту.
+ *
+ * Разбор 19.08 упёрся в то, что тело 429 нигде не сохранялось: по логу
+ * «квота ключа кончилась» нельзя отличить настоящий суточный лимит от
+ * ответа, в котором про минуты просто не написано. Ключа в теле нет - он
+ * уходит заголовком, - так что печатать безопасно.
+ */
+export function quotaLabel(body: string): string {
+  const id = body.match(/"quotaId"\s*:\s*"([^"]+)"/)?.[1];
+  const metric = body.match(/"quotaMetric"\s*:\s*"([^"]+)"/)?.[1];
+  if (id ?? metric) return [id, metric].filter(Boolean).join(" / ");
+  const message = body.match(/"message"\s*:\s*"([^"]{1,160})"/)?.[1];
+  if (message) return message;
+  const plain = body.slice(0, 160).replace(/\s+/g, " ").trim();
+  return plain || "тело ответа пустое";
+}
+
 export async function geminiJson<T>(
   parts: GeminiPart[],
   opts: { model?: string; temperature?: number } = {},
@@ -183,6 +205,8 @@ export async function geminiJson<T>(
         // сброса. Различаем по телу ответа.
         const body = await res.text().catch(() => "");
         const { perMinute, waitMs } = classify429(body);
+        // без имени квоты в логе разбор упирается в догадки
+        console.warn(`gemini: 429 - ${quotaLabel(body)}`);
         if (perMinute) {
           // минутное окно: ждём и пробуем ТЕМ ЖЕ ключом, ключи тут ни при чём
           console.warn(`gemini: лимит в минуту, жду ${Math.round(waitMs / 1000)} с`);
@@ -204,6 +228,18 @@ export async function geminiJson<T>(
         // кадр, исчерпав все четыре попытки за четырнадцать секунд.
         // Ключи тут не помогают - перегружен сам сервис, а не наш лимит
         lastError = new Error(`gemini: HTTP ${res.status}`);
+        // Алиас *-flash-latest ведёт на самую свежую модель, а она же и
+        // самая загруженная: ежедневный сбор 19.08 потерял на 503 шесть
+        // кадров из семнадцати - больше, чем на квоте. Три перегрузки
+        // подряд - вычёркиваем модель и берём стабильную версию до конца
+        // прогона; ждать тут нечего, отвечает другая машина.
+        if (!opts.model && ++overloadStreak >= OVERLOAD_TRIP_AFTER && resolvedModel) {
+          console.warn(`gemini: ${resolvedModel} перегружена - перехожу на другую модель`);
+          deadModels.add(resolvedModel);
+          resolvedModel = undefined;
+          overloadStreak = 0;
+          continue;
+        }
         await sleep(5000 * 2 ** (attempt - 1));
         continue;
       }
@@ -224,6 +260,7 @@ export async function geminiJson<T>(
       const text = body.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) throw new Error("gemini: пустой ответ");
       consecutiveQuotaFails = 0;
+      overloadStreak = 0;
       return JSON.parse(text) as T;
     }
 
