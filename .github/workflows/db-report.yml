@@ -48,6 +48,11 @@ jobs:
             npx tsx scripts/probe-context.ts 6
           elif grep -q reserve .github/report.trigger 2>/dev/null; then
             npx tsx scripts/reserve-report.ts
+          elif grep -q cards .github/report.trigger 2>/dev/null; then
+            # выслать карточки из уже готового резерва: Gemini не тратим,
+            # сбор не запускаем - только показываем то, что уже разобрано
+            n=$(grep -oP 'cards:\K\d+' .github/report.trigger || true)
+            npm run send-candidates -- --limit ${n:-3}
           elif grep -q keys .github/report.trigger 2>/dev/null; then
             # пул ключей Gemini: сколько видит бот и живой ли каждый
             npx tsx scripts/keys-check.ts
