@@ -10,6 +10,9 @@
  *                       Блок «Требует внимания» появляется только при беде
  *   /queue            - план публикаций: что и когда выйдет, с кнопками
  *                       (одобренное и то, что выберет автопостинг)
+ *   /reserve [N]      - резерв: разобранные, но не решённые карточки,
+ *                       по оценке, с кнопками. Gemini не тратит
+ *   /more             - карточки из резерва, а если он пуст - новый сбор
  *   /schedule         - панель расписания: слоты и число постов (МСК)
  *   /auto             - тумблер полной автоматизации (посты без одобрения)
  *   /tidy             - автоочистка чата: служебные ответы бота удаляются
@@ -327,6 +330,21 @@ function plural(n: number, one: string, few: string, many: string): string {
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
   return many;
 }
+
+/** Возраст карточки словами: «сегодня», «3 дня». */
+function ageWords(iso: string, now: Date): string {
+  const days = Math.floor((now.getTime() - new Date(iso).getTime()) / (24 * 3600 * 1000));
+  if (days <= 0) return "сегодня";
+  return `${days} ${plural(days, "день", "дня", "дней")}`;
+}
+
+/**
+ * Срок годности резерва - тот же, что отмерил публикатор
+ * (RESERVE_TTL_DAYS в scripts/publish.ts). Карточку старше автопостинг
+ * не возьмёт, и в списке её надо помечать: иначе редактор ждёт от неё
+ * выхода зря.
+ */
+const RESERVE_TTL_DAYS = 10;
 
 function doneKeyboard(label: string) {
   return { inline_keyboard: [[{ text: label, callback_data: "noop" }]] };
@@ -843,8 +861,10 @@ bot.command("status", async (ctx) => {
   if (pubSilent) alerts.push(`Публикатор молчит с ${moscowTime(pubBeat?.last_ok ?? null)}`);
   const colBeat = beat("collector");
   if (colBeat?.last_error) alerts.push("Последний сбор закончился ошибкой");
-  if (reserve.length && oldestDays >= 10) {
-    alerts.push(`В резерве есть карточки старше 10 дней - автопостинг их уже не берёт`);
+  if (reserve.length && oldestDays >= RESERVE_TTL_DAYS) {
+    alerts.push(
+      `В резерве есть карточки старше ${RESERVE_TTL_DAYS} дней - автопостинг их уже не берёт (/reserve)`,
+    );
   }
 
   // null - строка, которой в этом прогоне нет; пустая строка - разделитель
@@ -999,6 +1019,90 @@ bot.command("queue", async (ctx) => {
         },
       },
     );
+  }
+});
+
+/**
+ * Резерв: разобранные, но ещё не решённые карточки.
+ *
+ * Отдельная команда нужна потому, что подойти к резерву было нечем:
+ * /queue показывает только план публикаций, а /more при пустом резерве
+ * уходит собирать новую партию и жжёт Gemini. Здесь - ни одного обращения
+ * к модели, только чтение базы.
+ *
+ * Порядок - по оценке, то есть тот же, в каком резерв разбирает
+ * автопостинг: список должен показывать реальную очередь, а не порядок
+ * записи в базу.
+ */
+bot.command("reserve", async (ctx) => {
+  const arg = (ctx.match ?? "").trim();
+  const asked = Number(arg);
+  const limit = arg && Number.isFinite(asked) && asked > 0 ? Math.min(Math.trunc(asked), 15) : 8;
+  const now = new Date();
+
+  const { data, error } = await db
+    .from("candidates")
+    .select("id, caption_html, score, tags, created_at")
+    .in("status", ["new", "shown"])
+    .not("caption_html", "is", null)
+    // nullsFirst: иначе Postgres поднимает карточки без оценки наверх списка
+    .order("score", { ascending: false, nullsFirst: false })
+    .limit(200);
+  if (error) {
+    await ctx.reply(`Резерв не читается: ${error.message}`);
+    return;
+  }
+
+  const rows = (data ?? []) as Array<{
+    id: number;
+    caption_html: string | null;
+    score: number | null;
+    tags: { hook?: string } | null;
+    created_at: string;
+  }>;
+  if (!rows.length) {
+    await ctx.reply(
+      "Резерв пуст: разбирать нечего. Наполнит ежедневный сбор в 10:20 МСК, ускорить - /more.",
+    );
+    return;
+  }
+
+  const staleBefore = now.getTime() - RESERVE_TTL_DAYS * 24 * 3600 * 1000;
+  const isStale = (iso: string) => new Date(iso).getTime() < staleBefore;
+  const stale = rows.filter((r) => isStale(r.created_at)).length;
+  const page = rows.slice(0, limit);
+
+  const head: Array<string | null> = [
+    `<b>РЕЗЕРВ</b> - ${rows.length} ${plural(rows.length, "карточка", "карточки", "карточек")}`,
+    `По крючкам: ${topThree(rows.map((r) => r.tags?.hook ?? "без крючка"))}`,
+    stale
+      ? `Просрочено (старше ${RESERVE_TTL_DAYS} дней): ${stale} - автопостинг их не берёт`
+      : null,
+    "",
+    `Ниже - лучшие по оценке (${page.length}).` +
+      (rows.length > page.length && limit < 15 ? " Больше: /reserve 15" : ""),
+  ];
+  await ctx.reply(head.filter((l) => l !== null).join("\n"), { parse_mode: "HTML" });
+
+  for (const c of page) {
+    const marks = [
+      `#${c.id}`,
+      `оценка ${c.score ?? "?"}`,
+      c.tags?.hook ?? "без крючка",
+      ageWords(c.created_at, now),
+      isStale(c.created_at) ? "просрочена" : null,
+    ].filter((m) => m !== null);
+    await ctx.reply(`${marks.join(" · ")}\n${headline(c.caption_html)}`, {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "Показать", callback_data: `show:${c.id}` },
+            { text: "Одобрить", callback_data: `ok:${c.id}` },
+            { text: "Пропустить", callback_data: `skip:${c.id}` },
+          ],
+        ],
+      },
+    });
   }
 });
 
