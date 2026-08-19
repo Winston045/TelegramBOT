@@ -112,6 +112,20 @@ function sleep(ms: number) {
 }
 
 /** Один запрос к Gemini, ответ — распарсенный JSON типа T. */
+/**
+ * Что именно значит 429 от Gemini: лимит в минуту или суточная квота.
+ *
+ * Google возвращает оба одним кодом, но в теле ответа пишет, какая квота
+ * исчерпана, и сколько ждать (retryDelay). Минутный лечится паузой тем же
+ * ключом; суточный - только сбросом в 10:00 МСК и сменой ключа.
+ */
+export function classify429(body: string): { perMinute: boolean; waitMs: number } {
+  const perMinute = /per[\s-]?minute/i.test(body);
+  const seconds = Number(body.match(/"?retryDelay"?:\s*"?(\d+)s/i)?.[1]);
+  const waitMs = Math.min(60_000, (Number.isFinite(seconds) && seconds > 0 ? seconds : 30) * 1000);
+  return { perMinute, waitMs };
+}
+
 export async function geminiJson<T>(
   parts: GeminiPart[],
   opts: { model?: string; temperature?: number } = {},
@@ -159,8 +173,25 @@ export async function geminiJson<T>(
       }
 
       if (res.status === 429) {
+        // Google отдаёт 429 и на СУТОЧНЫЙ лимит, и на лимит В МИНУТУ, а
+        // лечатся они по-разному: суточный - только сбросом в 10:00,
+        // минутный - паузой в полминуты. Раньше любой 429 считался
+        // суточным: ключи гонялись по кругу, после трёх неудач рвался
+        // предохранитель и сбор глох до завтра. Живой прогон 19.08 выдал
+        // «ключ кончился» четыре раза подряд, переключаясь туда-обратно, -
+        // так дневная квота себя не ведёт, исчерпанный ключ мёртв до
+        // сброса. Различаем по телу ответа.
+        const body = await res.text().catch(() => "");
+        const { perMinute, waitMs } = classify429(body);
+        if (perMinute) {
+          // минутное окно: ждём и пробуем ТЕМ ЖЕ ключом, ключи тут ни при чём
+          console.warn(`gemini: лимит в минуту, жду ${Math.round(waitMs / 1000)} с`);
+          lastError = new Error("gemini: HTTP 429 (лимит в минуту)");
+          await sleep(waitMs);
+          continue;
+        }
         quotaFailure = true;
-        lastError = new Error(`gemini: HTTP 429`);
+        lastError = new Error("gemini: HTTP 429 (суточная квота)");
         // есть запасные ключи — не ждём минутные окна, после второй
         // неудачи сразу переключаемся; единственный ключ — ждём долго
         if (totalKeys > 1 && attempt >= 2) break;
