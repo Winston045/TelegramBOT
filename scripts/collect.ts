@@ -28,7 +28,7 @@ import { GeminiQuotaError, quotaTripped } from "../src/gemini.js";
 import { analyzeImage } from "../src/analyze.js";
 import { passesGate } from "../src/scoring.js";
 import { reviewQuote } from "../src/critic.js";
-import { assembleCaptionHtml } from "../src/caption.js";
+import { assembleCaptionHtml, descriptiveSentences } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 import { env } from "../src/env.js";
@@ -238,6 +238,10 @@ async function main() {
   let skippedDull = 0;
   let skippedHookless = 0;
   let rewritten = 0;
+  // тело длиннее одного предложения: не брак, а сигнал, что промпт
+  // недожимает. Живой случай - вьетнамский пост 502-го полка, где во
+  // второе предложение уехали и справка, и второй раз названное место
+  let longBody = 0;
 
   let outOfTime = false;
   let analyzed = 0;
@@ -307,6 +311,14 @@ async function main() {
         rewritten++;
       }
 
+      const sentences = descriptiveSentences(reviewed.caption.caption);
+      if (sentences > 1) {
+        longBody++;
+        console.warn(
+          `  тело в ${sentences} предложения: [${item.source}] ${item.sourceId} - «${reviewed.caption.caption.replace(/\n/g, " ")}»`,
+        );
+      }
+
       const captionHtml = assembleCaptionHtml(reviewed.caption, item, cfg.channel);
       const check = validateCaption(captionHtml, item);
       const { error } = await db.from("candidates").upsert(
@@ -359,7 +371,8 @@ async function main() {
   );
   console.log(
     `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), без крючка ${skippedHookless} (слабее ${hooklessMinScore}), ` +
-      `брака подписи ${failed}, сорвано квотой ${quotaFailed}, цитат переписано ${rewritten}`,
+      `брака подписи ${failed}, сорвано квотой ${quotaFailed}, цитат переписано ${rewritten}, ` +
+      `тело длиннее предложения ${longBody}`,
   );
 
   // та же воронка в базу: по ней бот сам замечает, что что-то сломалось
