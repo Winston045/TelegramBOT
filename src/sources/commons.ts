@@ -20,6 +20,8 @@ const MIN_DESC_WITHOUT_PLACE = 60;
 
 /** Пауза между запросами к API, чтобы не собирать 429 на ровном месте. */
 export const POLITE_GAP_MS = 1_200;
+/** Бюджет времени на весь источник: медленный архив не должен съесть прогон. */
+const COMMONS_TIME_BUDGET_MS = 6 * 60_000;
 /** Ожидания перед повторами при 429 - лимит Викимедиа держится минутами. */
 const RETRY_DELAYS_MS = [3_000, 12_000, 30_000];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -104,7 +106,12 @@ export const commons: SourceAdapter = {
     );
 
     let requests = 0;
+    const deadline = Date.now() + COMMONS_TIME_BUDGET_MS;
     for (const archive of rotated) {
+      if (Date.now() > deadline) {
+        console.warn(`  commons: бюджет времени исчерпан, архивов пройдено ${requests}`);
+        break;
+      }
       const items: RawItem[] = [];
       // у архива могут быть свои слова: у РИА Новости в названиях файлов
       // нет годов, ей нужен пустой фильтр — просто листаем категорию

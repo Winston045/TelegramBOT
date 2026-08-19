@@ -18,6 +18,9 @@ type LocResult = {
   access_restricted?: boolean;
 };
 
+/** Сколько всего времени отводим источнику за один прогон. */
+const LOC_TIME_BUDGET_MS = 6 * 60_000;
+
 export function parseYear(text: string | undefined): number | undefined {
   if (!text) return undefined;
   const m = text.match(/\b(1[89]\d{2}|20\d{2})\b/);
@@ -158,7 +161,17 @@ export const loc: SourceAdapter = {
     const queries = cfg.queries?.length ? cfg.queries : [""];
     const perQuery = Math.ceil(limit / queries.length);
     const items: RawItem[] = [];
+    // Бюджет времени на весь источник. loc.gov регулярно отвечает по
+    // 45 секунд, а запросов семнадцать и у каждого две попытки - в плохой
+    // день это полчаса, и сбор целиком убивало таймаутом воркфлоу (19.08:
+    // два ежедневных прогона подряд отменены на 30-й минуте). Лучше
+    // неполная выдача, чем мёртвый сбор: остальное доберём завтра.
+    const deadline = Date.now() + LOC_TIME_BUDGET_MS;
     for (const q of queries) {
+      if (Date.now() > deadline) {
+        console.warn(`  loc: бюджет времени исчерпан, собрано ${items.length} - остальные запросы пропущены`);
+        break;
+      }
       // курсор — номер страницы прошлого запуска; 0 значит «ещё не ходили»
       const page = Math.max(1, (await cursors.get("loc", q)) + 1);
       let results: LocResult[];

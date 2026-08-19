@@ -52,6 +52,17 @@ async function notifyQuotaExhausted() {
 
 const dry = process.argv.includes("--dry");
 
+/**
+ * Общий бюджет прогона. У воркфлоу таймаут 30 минут, и когда сбор в него
+ * упирался, job убивали на полпути: 18 и 19.08 два ежедневных прогона
+ * подряд отменены, карточки не пришли, heartbeat замолчал на 50 часов.
+ * Теперь анализ останавливается сам, не доходя до потолка, - партия
+ * выходит неполной, зато прогон завершается штатно: пишет воронку,
+ * ставит отметку и отдаёт то, что успел.
+ */
+const RUN_BUDGET_MS = 22 * 60_000;
+const runStartedAt = Date.now();
+
 function numArg(name: string): number | undefined {
   const i = process.argv.findIndex((a) => a === name || a.startsWith(`${name}=`));
   if (i === -1) return undefined;
@@ -228,7 +239,17 @@ async function main() {
   let skippedHookless = 0;
   let rewritten = 0;
 
+  let outOfTime = false;
+  let analyzed = 0;
   for (const item of hashed) {
+    if (Date.now() - runStartedAt > RUN_BUDGET_MS) {
+      outOfTime = true;
+      console.warn(
+        `бюджет прогона исчерпан: проанализировано ${analyzed} из ${hashed.length}, остальные ждут следующего раза`,
+      );
+      break;
+    }
+    analyzed++;
     // умные цитаты: полное описание со страницы архива как доп. контекст
     let extraContext: string | undefined;
     try {
@@ -332,8 +353,9 @@ async function main() {
         `на анализ ${survivors.length}`,
         `новых ${fresh.length}`,
         `уникальных ${hashed.length}`,
+        `разобрано ${analyzed}`,
         `в резерв ${written}`,
-      ].join(" → "),
+      ].join(" → ") + (outOfTime ? " (прогон оборван бюджетом времени)" : ""),
   );
   console.log(
     `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), без крючка ${skippedHookless} (слабее ${hooklessMinScore}), ` +
@@ -344,7 +366,7 @@ async function main() {
   const { error: runErr } = await db.from("collect_runs").insert({
     raw: raw.length,
     prefiltered: kept.length,
-    analyzed: hashed.length,
+    analyzed,
     written,
     junk: skippedDull,
     broken: failed,
