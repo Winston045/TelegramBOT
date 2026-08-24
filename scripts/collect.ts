@@ -385,6 +385,7 @@ async function main() {
     broken: failed,
     quota_failed: quotaFailed,
     hookless: skippedHookless,
+    out_of_time: outOfTime,
     sources: lastSourceCounts,
   });
   if (runErr) console.warn(`запись прогона в историю: ${runErr.message}`);

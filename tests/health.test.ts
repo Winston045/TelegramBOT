@@ -121,3 +121,46 @@ describe("низкий выход - не повод для тревоги сам
     expect(first?.text).toContain("пропали без объяснения");
   });
 });
+
+describe("обрыв по бюджету времени называется своим именем", () => {
+  // живой прогон 24.08 (вечер): Gemini перегружен, разобрано 3 из 29,
+  // в резерв 1 - а сводка предложила искать просевший источник
+  const evening = {
+    raw: 89,
+    prefiltered: 30,
+    analyzed: 3,
+    written: 1,
+    junk: 0,
+    hookless: 0,
+    broken: 2,
+    quota_failed: 0,
+    out_of_time: true,
+    sources: { commons: 73, loc: 16 },
+  };
+  const week = Array.from({ length: 5 }, () => ({
+    raw: 120,
+    prefiltered: 80,
+    analyzed: 20,
+    written: 10,
+    sources: { loc: 27, commons: 54 },
+  }));
+
+  it("называет бюджет времени и обещает добор следующим сбором", () => {
+    const texts = findProblems(evening, week).map((p) => p.text).join(" ");
+    expect(texts).toContain("бюджет времени");
+    expect(texts).toContain("возьмёт следующий сбор");
+    expect(texts).toContain("квота при этом цела");
+  });
+
+  it("не гадает про просевший источник, когда причина известна", () => {
+    const texts = findProblems(evening, week).map((p) => p.text).join(" ");
+    expect(texts).not.toContain("какой источник просел");
+  });
+
+  it("без обрыва сравнение с нормой работает как раньше", () => {
+    const texts = findProblems({ ...evening, out_of_time: false, analyzed: 20 }, week)
+      .map((p) => p.text)
+      .join(" ");
+    expect(texts).toContain("вдвое меньше");
+  });
+});

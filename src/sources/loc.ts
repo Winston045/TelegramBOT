@@ -64,6 +64,12 @@ export function hiResLocUrl(imageUrl: string): string | undefined {
 export function mapLocResult(r: LocResult): RawItem | undefined {
   if (r.access_restricted) return undefined;
   if (!r.image_url?.length || !r.id) return undefined;
+  // в выдачу попадают и страницы КОЛЛЕКЦИЙ (id вида .../collections/...):
+  // это не фотография, а обложка раздела. Дважды (21 и 24.08) такая
+  // страница проходила все фильтры и сжигала слот анализа Gemini
+  if (!/\/(item|resource)\//.test(r.id) && !/\/(item|resource)\//.test(r.url ?? "")) {
+    return undefined;
+  }
 
   const image = pickLargestImage(r.image_url);
   if (!image) return undefined;

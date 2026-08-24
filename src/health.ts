@@ -22,6 +22,8 @@ type RunRow = {
   junk?: number | null;
   hookless?: number | null;
   broken?: number | null;
+  /** прогон оборван бюджетом времени: неразобранное возьмёт следующий сбор */
+  out_of_time?: boolean | null;
   sources: Record<string, number> | null;
 };
 
@@ -110,9 +112,24 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
     }
   }
 
-  // резкое падение против недели - обычно значит, что архив поменял выдачу
+  // обрыв по бюджету времени - причина известна, гадать не надо. Живой
+  // случай 24.08: вечерняя партия разобрала 3 из 29 (Gemini перегружен,
+  // каждый запрос висел до таймаута), а сводка предложила «посмотреть,
+  // какой источник просел» - хотя источники отдали полную партию
+  if (last.out_of_time) {
+    const left = Math.max(0, last.prefiltered - last.analyzed);
+    problems.push({
+      text:
+        `Прогон упёрся в бюджет времени: разобрано ${last.analyzed}, в резерв ${last.written}` +
+        (left > 0 ? `, ещё ~${left} кадров не дождались очереди - их возьмёт следующий сбор.` : ".") +
+        " Так бывает, когда Gemini или архивы отвечают медленно; квота при этом цела.",
+    });
+  }
+
+  // резкое падение против недели - обычно значит, что архив поменял
+  // выдачу. Но не когда прогон оборван бюджетом: там причина уже названа
   const prev = history.filter((r) => r.written > 0);
-  if (prev.length >= 3) {
+  if (prev.length >= 3 && !last.out_of_time) {
     const avg = prev.reduce((s, r) => s + r.written, 0) / prev.length;
     if (last.written > 0 && last.written < avg * DROP_RATIO) {
       problems.push({
@@ -130,7 +147,9 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
 export async function reportHealth(db: SupabaseClient, _cfg: AppConfig): Promise<void> {
   const { data, error } = await db
     .from("collect_runs")
-    .select("raw, prefiltered, analyzed, written, quota_failed, junk, hookless, broken, sources")
+    .select(
+      "raw, prefiltered, analyzed, written, quota_failed, junk, hookless, broken, out_of_time, sources",
+    )
     .order("started_at", { ascending: false })
     .limit(HISTORY + 1);
   if (error || !data?.length) return;
