@@ -40,19 +40,26 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
   const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
   const { data: weekPosts } = await db
     .from("candidates")
-    .select("attribution, source")
+    .select("attribution, source, tags")
     .eq("status", "published")
     .gte("published_at", weekAgo);
   const week = weekPosts ?? [];
   const archiveShare: Record<string, number> = {};
+  // и доли эпох: замер 24.08 - ВМВ заняла 70% ленты и шла девятками
+  const periodShare: Record<string, number> = {};
   for (const p of week) {
     const key =
       archiveKey((p as { attribution?: string | null }).attribution) ||
       ((p as { source?: string | null }).source ?? "");
     if (key) archiveShare[key] = (archiveShare[key] ?? 0) + 1;
+    const period = (p as { tags?: { period?: string } | null }).tags?.period;
+    if (period) periodShare[period] = (periodShare[period] ?? 0) + 1;
   }
   for (const key of Object.keys(archiveShare)) {
     archiveShare[key] = (archiveShare[key] ?? 0) / Math.max(1, week.length);
+  }
+  for (const key of Object.keys(periodShare)) {
+    periodShare[key] = (periodShare[key] ?? 0) / Math.max(1, week.length);
   }
 
   return {
@@ -71,6 +78,7 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
         ((p as { source?: string | null }).source ?? ""),
     ),
     archiveShare,
+    periodShare,
   };
 }
 

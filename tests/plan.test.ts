@@ -456,3 +456,62 @@ describe("чередование по стране архива", () => {
     expect(pick?.id).toBe(3);
   });
 });
+
+describe("недельный перекос эпохи", () => {
+  const p = (id: number, score: number, period: string, subject: string): PlanCandidate => ({
+    id,
+    caption_html: `текст ${id}`,
+    score,
+    tags: { subject, period, military: true, action: true },
+  });
+
+  it("эпоха сверх половины недели уступает при равном качестве", () => {
+    const share = { WW2: 0.7 };
+    expect(rank(p(1, 70, "korea", "navy"), undefined, share)).toBeGreaterThan(
+      rank(p(2, 70, "WW2", "armor"), undefined, share),
+    );
+  });
+
+  it("до половины недели штрафа нет - ВМВ остаётся ядром канала", () => {
+    const share = { WW2: 0.45 };
+    expect(rank(p(1, 70, "WW2", "armor"), undefined, share)).toBe(70);
+  });
+
+  it("сильный кадр доминирующей эпохи всё равно выигрывает у слабого", () => {
+    const share = { WW2: 0.9 };
+    expect(rank(p(1, 90, "WW2", "armor"), undefined, share)).toBeGreaterThan(
+      rank(p(2, 55, "korea", "navy"), undefined, share),
+    );
+  });
+});
+
+describe("добор при бедном резерве меняет эпоху застрявшей серии", () => {
+  const e = (id: number, score: number, period: string): PlanCandidate => ({
+    id,
+    caption_html: `текст ${id}`,
+    score,
+    // одна тема у всех - правило тем валит каждого, работает запасной путь
+    tags: { subject: "armor", period, military: true, action: true },
+  });
+
+  it("после двух ВМВ подряд берёт другую эпоху, а не третью ВМВ", () => {
+    const pool = [e(1, 90, "WW2"), e(2, 88, "WW2"), e(3, 60, "korea")];
+    const picked = planAuto(
+      pool,
+      { subjects: ["armor"], periods: ["WW2", "WW2"], civilian: false },
+      1,
+    ).map((c) => c.id);
+    // живой замер 24.08: девять ВМВ подряд - именно этим путём
+    expect(picked[0]).toBe(3);
+  });
+
+  it("когда другой эпохи в резерве нет, берёт лучшего - слот дороже", () => {
+    const pool = [e(1, 90, "WW2"), e(2, 88, "WW2")];
+    const picked = planAuto(
+      pool,
+      { subjects: ["armor"], periods: ["WW2", "WW2"], civilian: false },
+      1,
+    ).map((c) => c.id);
+    expect(picked[0]).toBe(1);
+  });
+});

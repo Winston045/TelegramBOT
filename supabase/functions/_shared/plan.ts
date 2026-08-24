@@ -169,19 +169,28 @@ export function headline(captionHtml: string | null, limit = 70): string {
  * Место в очереди: качество кадра плюс редакционные предпочтения.
  * Оценка отвечает за качество, здесь - за характер ленты.
  */
-export function rank(c: PlanCandidate, archiveShare?: Record<string, number>): number {
+export function rank(
+  c: PlanCandidate,
+  archiveShare?: Record<string, number>,
+  periodShare?: Record<string, number>,
+): number {
   const quote = quoteLength(c.caption_html ?? null) >= LONG_QUOTE ? QUOTE_BONUS : 0;
   const staticShot = c.tags?.action === false ? STATIC_PENALTY : 0;
   const color = c.tags?.color === true ? COLOR_BONUS : 0;
   const oldEra = c.tags?.period && OLD_PERIODS.has(c.tags.period) ? OLD_ERA_PENALTY : 0;
   const civilian = c.tags?.military === false ? CIVILIAN_PENALTY : 0;
   const leader = c.tags?.subject === "leader" ? LEADER_PENALTY : 0;
-  // недельный перекос: архив, занявший больше трети ленты, уступает
+  // недельный перекос: архив, занявший больше четверти ленты, уступает
   const share = archiveShare?.[archiveKey(c.attribution) || (c.source ?? "")] ?? 0;
   const overshare =
     share > ARCHIVE_SHARE_SOFT ? (share - ARCHIVE_SHARE_SOFT) * ARCHIVE_SHARE_PENALTY : 0;
+  // и эпоха, занявшая больше половины недели, тоже - иначе при резерве
+  // из одной ВМВ прочие эпохи не выходят из хвоста очереди неделями
+  const pShare = c.tags?.period ? (periodShare?.[c.tags.period] ?? 0) : 0;
+  const periodOver =
+    pShare > PERIOD_SHARE_SOFT ? (pShare - PERIOD_SHARE_SOFT) * PERIOD_SHARE_PENALTY : 0;
   return (
-    (c.score ?? 0) + quote + color - staticShot - oldEra - civilian - leader - overshare
+    (c.score ?? 0) + quote + color - staticShot - oldEra - civilian - leader - overshare - periodOver
   );
 }
 
@@ -205,12 +214,29 @@ export type RecentContext = {
    * получает штраф в ранге - тем больший, чем сильнее он занял неделю.
    */
   archiveShare?: Record<string, number>;
+  /** Доли эпох за неделю: {"WW2": 0.7}. Работает как archiveShare. */
+  periodShare?: Record<string, number>;
 };
 
-/** С какой доли за неделю архив считается доминирующим. */
-export const ARCHIVE_SHARE_SOFT = 0.35;
-/** Штраф за каждый процент сверх мягкой доли (0.6 доли = 15 баллов). */
+/**
+ * С какой доли за неделю архив считается доминирующим. Было 0.35 - и
+ * замер 24.08 показал, что IWM неделями сидит ровно на трети ленты
+ * (10 постов из 30), не долетая до штрафа. Четверть - честный потолок
+ * для девяти живых архивов.
+ */
+export const ARCHIVE_SHARE_SOFT = 0.25;
+/** Штраф за каждый процент сверх мягкой доли (0.45 доли = 12 баллов). */
 export const ARCHIVE_SHARE_PENALTY = 60;
+
+/**
+ * То же для эпох. ВМВ - ядро канала, и половина ленты за ней по праву,
+ * но замер 24.08 дал 70% и серию из девяти постов ВМВ подряд: чередование
+ * соседних постов с этим не справляется, когда эпоха доминирует в самом
+ * резерве. Сверх половины эпоха начинает уступать при равном качестве -
+ * редкие кадры других эпох всплывают раньше, а не ждут в хвосте.
+ */
+export const PERIOD_SHARE_SOFT = 0.5;
+export const PERIOD_SHARE_PENALTY = 40;
 
 /** Сколько постов одной эпохи подряд допускаем, прежде чем сменить её. */
 export const MAX_SAME_PERIOD_STREAK = 2;
@@ -229,7 +255,9 @@ export function planAuto(
   count: number,
 ): PlanCandidate[] {
   const pool = [...reserve].sort(
-    (a, b) => rank(b, recent.archiveShare) - rank(a, recent.archiveShare) || a.id - b.id,
+    (a, b) =>
+      rank(b, recent.archiveShare, recent.periodShare) -
+        rank(a, recent.archiveShare, recent.periodShare) || a.id - b.id,
   );
   const chosen: PlanCandidate[] = [];
   const subjects = [...recent.subjects];
@@ -304,21 +332,30 @@ export function planAuto(
     let idx = pool.findIndex(fits);
     if (idx === -1) {
       // под все правила не подошёл никто (резерв беден) - берём лучшего,
-      // но хотя бы не из того же архива, что предыдущий пост: слепой
-      // добор давал «Бундесархив, Бундесархив, Бундесархив» подряд
-      // сначала пробуем другую страну, потом хотя бы другой архив
+      // но по цепочке предпочтений, а не слепо: слепой добор давал
+      // «Бундесархив, Бундесархив, Бундесархив» и девять ВМВ подряд
+      // (живой замер 24.08, посты 15-23). Сначала пробуем сменить эпоху
+      // застрявшей серии, потом страну архива, потом хотя бы сам архив.
       const lastNation = nations[0];
       const lastArchive = archives[0];
-      let other = lastNation
-        ? pool.findIndex((c) => {
-            const n = archiveNation(c.attribution, c.source);
-            return n !== "" && n !== lastNation;
-          })
-        : -1;
-      if (other === -1 && lastArchive) {
-        other = pool.findIndex(
-          (c) => (archiveKey(c.attribution) || (c.source ?? "")) !== lastArchive,
-        );
+      const otherPeriod = (c: PlanCandidate) =>
+        Boolean(stuckPeriod) && Boolean(c.tags?.period) && c.tags?.period !== stuckPeriod;
+      const otherNation = (c: PlanCandidate) => {
+        const n = archiveNation(c.attribution, c.source);
+        return Boolean(lastNation) && n !== "" && n !== lastNation;
+      };
+      const otherArchive = (c: PlanCandidate) =>
+        Boolean(lastArchive) && (archiveKey(c.attribution) || (c.source ?? "")) !== lastArchive;
+      const prefs = [
+        (c: PlanCandidate) => otherPeriod(c) && otherNation(c),
+        otherPeriod,
+        otherNation,
+        otherArchive,
+      ];
+      let other = -1;
+      for (const pref of prefs) {
+        other = pool.findIndex(pref);
+        if (other !== -1) break;
       }
       idx = other === -1 ? 0 : other;
     }
