@@ -164,3 +164,40 @@ describe("обрыв по бюджету времени называется с�
     expect(texts).toContain("вдвое меньше");
   });
 });
+
+describe("сбои сети не выдаются за брак подписи", () => {
+  // живое утро 25.08: два кадра сорвали 503 и таймаут Gemini, а сводка
+  // написала «2 с браком подписи»
+  const morning = {
+    raw: 84,
+    prefiltered: 64,
+    analyzed: 2,
+    written: 0,
+    junk: 0,
+    hookless: 0,
+    broken: 0,
+    net_failed: 2,
+    quota_failed: 0,
+    out_of_time: true,
+    queued: 30,
+    sources: { commons: 76, loc: 8 },
+  };
+
+  it("называет сбои Gemini и сети своим именем", () => {
+    const texts = findProblems(morning, []).map((p) => p.text).join(" ");
+    expect(texts).toContain("2 сорваны сбоями Gemini или сети");
+    expect(texts).not.toContain("браком подписи");
+  });
+
+  it("недождавшиеся считаются от очереди анализа, а не от префильтра", () => {
+    const texts = findProblems(morning, []).map((p) => p.text).join(" ");
+    expect(texts).toContain("~28 кадров");
+    expect(texts).not.toContain("~62");
+  });
+
+  it("низкий выход с объяснёнными сетевыми потерями не пугает логом", () => {
+    const ok = { ...morning, out_of_time: false, analyzed: 8, written: 2, junk: 4, net_failed: 2 };
+    const texts = findProblems(ok, []).map((p) => p.text).join(" ");
+    expect(texts).not.toContain("пропали без объяснения");
+  });
+});

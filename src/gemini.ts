@@ -148,6 +148,17 @@ export function quotaLabel(body: string): string {
   return plain || "тело ответа пустое";
 }
 
+/**
+ * Потолок времени на ОДИН вызов со всеми ретраями и сменами ключей.
+ *
+ * Без него худший случай - 4 попытки × 90 с таймаута × 2 ключа плюс паузы:
+ * утренний прогон 25.08 потратил семь минут на один кадр (Gemini сутки
+ * отвечал 503 и вис), и бюджет прогона кончился на 2 кадрах из 30. Лучше
+ * бросить упрямый кадр и успеть остальные: перегрузка - не наша поломка,
+ * и пересиживать её ретраями дороже, чем жить дальше.
+ */
+const CALL_BUDGET_MS = 150_000;
+
 export async function geminiJson<T>(
   parts: GeminiPart[],
   opts: { model?: string; temperature?: number } = {},
@@ -157,12 +168,18 @@ export async function geminiJson<T>(
   }
 
   const totalKeys = env.geminiApiKeys.length;
+  const callDeadline = Date.now() + CALL_BUDGET_MS;
   let lastError: Error | undefined;
 
   for (let keyTry = 0; keyTry < totalKeys; keyTry++) {
     let quotaFailure = false;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (Date.now() > callDeadline) {
+        throw new Error(
+          `gemini: вызов не уложился в ${Math.round(CALL_BUDGET_MS / 1000)} с (${lastError?.message ?? "без ответа"})`,
+        );
+      }
       const model = opts.model ?? (await resolveModel());
       const url = `${BASE}/${model}:generateContent`;
 

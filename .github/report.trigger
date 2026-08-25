@@ -1,1 +1,1 @@
-migrate 2026-08-24T16:16:54Z: колонка out_of_time
+migrate 2026-08-25T17:32:58Z: net_failed и queued

@@ -242,6 +242,9 @@ async function main() {
   // недожимает. Живой случай - вьетнамский пост 502-го полка, где во
   // второе предложение уехали и справка, и второй раз названное место
   let longBody = 0;
+  // сбои сети и перегрузка Gemini (503, таймауты): это не брак подписи и
+  // не квота. Утро 25.08: два таких сбоя ушли в сводку как «брак подписи»
+  let netFailed = 0;
 
   let outOfTime = false;
   let analyzed = 0;
@@ -346,7 +349,7 @@ async function main() {
       // вовсе. Считаем отдельно, иначе диагноз врёт («брака подписи 4»
       // при четырёх отказах по квоте - живой случай 13.08)
       if (err instanceof GeminiQuotaError) quotaFailed++;
-      else failed++;
+      else netFailed++;
       console.warn(`  анализ упал: [${item.source}] ${item.sourceId} — ${(err as Error).message}`);
       if (err instanceof GeminiQuotaError && quotaTripped()) {
         console.error("❌ дневная квота Gemini исчерпана — прекращаю до следующего запуска");
@@ -371,8 +374,8 @@ async function main() {
   );
   console.log(
     `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), без крючка ${skippedHookless} (слабее ${hooklessMinScore}), ` +
-      `брака подписи ${failed}, сорвано квотой ${quotaFailed}, цитат переписано ${rewritten}, ` +
-      `тело длиннее предложения ${longBody}`,
+      `брака подписи ${failed}, сорвано квотой ${quotaFailed}, сбоев сети/сервиса ${netFailed}, ` +
+      `цитат переписано ${rewritten}, тело длиннее предложения ${longBody}`,
   );
 
   // та же воронка в базу: по ней бот сам замечает, что что-то сломалось
@@ -386,6 +389,11 @@ async function main() {
     quota_failed: quotaFailed,
     hookless: skippedHookless,
     out_of_time: outOfTime,
+    net_failed: netFailed,
+    // реальная очередь анализа: prefiltered - это ВСЕ прошедшие фильтр,
+    // а сюда попало не больше лимита партии (сводка считала недождавшихся
+    // от 64 вместо 30 - живой случай 25.08)
+    queued: hashed.length,
     sources: lastSourceCounts,
   });
   if (runErr) console.warn(`запись прогона в историю: ${runErr.message}`);

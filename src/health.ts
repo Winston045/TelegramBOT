@@ -24,6 +24,10 @@ type RunRow = {
   broken?: number | null;
   /** прогон оборван бюджетом времени: неразобранное возьмёт следующий сбор */
   out_of_time?: boolean | null;
+  /** сбои сети и перегрузка Gemini (503, таймауты) - не брак и не квота */
+  net_failed?: number | null;
+  /** реальная очередь анализа после лимита партии и дедупа */
+  queued?: number | null;
   sources: Record<string, number> | null;
 };
 
@@ -75,6 +79,7 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
     if (last.junk) parts.push(`${last.junk} слабых по оценке`);
     if (last.hookless) parts.push(`${last.hookless} без крючка`);
     if (last.broken) parts.push(`${last.broken} с браком подписи`);
+    if (last.net_failed) parts.push(`${last.net_failed} сорваны сбоями Gemini или сети`);
     const details = parts.length ? `: ${parts.join(", ")}` : "";
     // «сито виновато», если им отсеяно большинство партии: остаток могли
     // унести единичные сбои сети, и это не повод бить тревогу
@@ -95,7 +100,8 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
     // добавить второй ключ. Догадка была неверной (квота считается
     // отдельно и была цела), а совет - устаревшим: ключ давно добавлен.
     const explained =
-      (last.junk ?? 0) + (last.hookless ?? 0) + (last.broken ?? 0) + quotaFailed;
+      (last.junk ?? 0) + (last.hookless ?? 0) + (last.broken ?? 0) + quotaFailed +
+      (last.net_failed ?? 0);
     const lost = last.analyzed - last.written - explained;
     if (quotaFailed > 0) {
       problems.push({
@@ -117,7 +123,10 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
   // каждый запрос висел до таймаута), а сводка предложила «посмотреть,
   // какой источник просел» - хотя источники отдали полную партию
   if (last.out_of_time) {
-    const left = Math.max(0, last.prefiltered - last.analyzed);
+    // считаем от реальной очереди анализа: 25.08 сводка написала «~62
+    // кадров не дождались», взяв весь префильтр вместо очереди из 30
+    const queue = last.queued ?? last.prefiltered;
+    const left = Math.max(0, queue - last.analyzed);
     problems.push({
       text:
         `Прогон упёрся в бюджет времени: разобрано ${last.analyzed}, в резерв ${last.written}` +
@@ -148,7 +157,7 @@ export async function reportHealth(db: SupabaseClient, _cfg: AppConfig): Promise
   const { data, error } = await db
     .from("collect_runs")
     .select(
-      "raw, prefiltered, analyzed, written, quota_failed, junk, hookless, broken, out_of_time, sources",
+      "raw, prefiltered, analyzed, written, quota_failed, junk, hookless, broken, out_of_time, net_failed, queued, sources",
     )
     .order("started_at", { ascending: false })
     .limit(HISTORY + 1);
