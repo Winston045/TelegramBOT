@@ -123,6 +123,12 @@ const ARCHIVE_NATIONS: Record<string, string> = {
   "sa-kuva": "finland",
   awm: "australia",
   anefo: "netherlands",
+  // расширение 29.08: лента была на 73% англосаксонской
+  "narodowe archiwum cyfrowe": "poland",
+  "agence rol": "france",
+  "pd-japan": "japan",
+  "sino-japanese war": "china",
+  "yugoslav partisans": "yugoslavia",
 };
 
 /**

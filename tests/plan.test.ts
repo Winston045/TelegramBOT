@@ -515,3 +515,13 @@ describe("добор при бедном резерве меняет эпоху 
     expect(picked[0]).toBe(1);
   });
 });
+
+describe("страны новых архивов известны шахматке", () => {
+  it("расширение 29.08: Польша, Франция, Япония, Китай, Югославия", () => {
+    expect(archiveNation("Narodowe Archiwum Cyfrowe")).toBe("poland");
+    expect(archiveNation("Agence Rol / BnF")).toBe("france");
+    expect(archiveNation("PD-Japan")).toBe("japan");
+    expect(archiveNation("Sino-Japanese War")).toBe("china");
+    expect(archiveNation("Yugoslav Partisans")).toBe("yugoslavia");
+  });
+});

@@ -105,6 +105,42 @@ sources:
         attribution: "US Army Signal Corps"
         lang: "en"
         terms: [""]        # категория небольшая - листаем всю подряд
+      # ---- Расширение 29.08: лента была на 73% англосаксонской ----
+      # (замер diversity 24.08). Новые архивы принято искать пробой
+      # sources-check после добавления: имя категории должно отдавать
+      # живые кадры, иначе запись убираем.
+      #
+      # Национальный цифровой архив Польши: 15 тысяч файлов - межвоенка,
+      # сентябрь 1939, оккупация, Варшавское восстание
+      - category: "Images from Narodowe Archiwum Cyfrowe"
+        attribution: "Narodowe Archiwum Cyfrowe"
+        lang: "pl"
+        terms: ["1939", "1920", "1944", "wojsko", "1943"]
+      # Пресс-агентство Rol из BnF: 110 тысяч кадров 1904-1937 - Франция,
+      # ПМВ и межвоенка. Эпоха старая (штраф OLD_ERA и так есть), поэтому
+      # запросы прицельно военные
+      - category: "Photographs by Agence Rol in the Bibliothèque nationale de France"
+        attribution: "Agence Rol / BnF"
+        lang: "fr"
+        terms: ["guerre", "soldats", "1916", "1918", "militaire"]
+      # Японская военная съёмка ВМВ (PD-Japan: до 1946 года) - Азия,
+      # которой в ленте не было вовсе
+      - category: "Historic Japanese World War II photographs"
+        attribution: "PD-Japan"
+        lang: "en"
+        terms: [""]
+      # Японо-китайская война 1937-1945: китайский театр, в ленте не был
+      # представлен никогда. Пропаганду и карты отсеет сито
+      - category: "Second Sino-Japanese War"
+        attribution: "Sino-Japanese War"
+        lang: "en"
+        terms: [""]
+      # Югославские партизаны: единственный крупный балканский пласт
+      # на Commons (загрузки znaci.net и музейные)
+      - category: "Partisans of Yugoslavia"
+        attribution: "Yugoslav Partisans"
+        lang: "en"
+        terms: [""]
   # прежний узкий источник: остался ради истории, включать не нужно -
   # Бундесархив теперь один из архивов commons
   bundesarchiv:

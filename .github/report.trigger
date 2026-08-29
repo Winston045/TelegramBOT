@@ -1,1 +1,1 @@
-migrate 2026-08-25T17:32:58Z: net_failed и queued
+sources 2026-08-29T01:31:36Z: проба пяти новых архивов
