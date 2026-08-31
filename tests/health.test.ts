@@ -201,3 +201,46 @@ describe("сбои сети не выдаются за брак подписи",
     expect(texts).not.toContain("пропали без объяснения");
   });
 });
+
+describe("малая партия не сваливается на источники без разбора", () => {
+  const week = Array.from({ length: 5 }, () => ({
+    raw: 100,
+    prefiltered: 60,
+    analyzed: 20,
+    written: 5,
+    sources: { commons: 70, loc: 30 },
+  }));
+
+  it("сито съело партию - так и говорит, источники не обвиняет", () => {
+    // живой /more 31.08: 6 скучных + 1 брак из 8, в резерв 1
+    const run = {
+      raw: 106, prefiltered: 60, analyzed: 8, written: 1,
+      junk: 6, hookless: 0, broken: 1, net_failed: 0, quota_failed: 0,
+      out_of_time: false, queued: 8, sources: { commons: 75, loc: 31 },
+    };
+    const texts = findProblems(run, week).map((p) => p.text).join(" ");
+    expect(texts).toContain("отсеяло сито");
+    expect(texts).not.toContain("какой источник просел");
+  });
+
+  it("сбои Gemini съели партию - называет их, а не источники", () => {
+    const run = {
+      raw: 100, prefiltered: 55, analyzed: 8, written: 1,
+      junk: 1, hookless: 0, broken: 0, net_failed: 6, quota_failed: 0,
+      out_of_time: false, queued: 8, sources: { commons: 70, loc: 30 },
+    };
+    const texts = findProblems(run, week).map((p) => p.text).join(" ");
+    expect(texts).toContain("сбои Gemini или сети");
+    expect(texts).not.toContain("какой источник просел");
+  });
+
+  it("потери не объяснены - прежняя догадка про источники остаётся", () => {
+    const run = {
+      raw: 40, prefiltered: 20, analyzed: 20, written: 2,
+      junk: 1, hookless: 1, broken: 0, net_failed: 0, quota_failed: 0,
+      out_of_time: false, queued: 20, sources: { commons: 30, loc: 10 },
+    };
+    const texts = findProblems(run, week).map((p) => p.text).join(" ");
+    expect(texts).toContain("какой источник просел");
+  });
+});

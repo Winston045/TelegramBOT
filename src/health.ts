@@ -141,11 +141,32 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
   if (prev.length >= 3 && !last.out_of_time) {
     const avg = prev.reduce((s, r) => s + r.written, 0) / prev.length;
     if (last.written > 0 && last.written < avg * DROP_RATIO) {
-      problems.push({
-        text:
-          `Партия вдвое меньше обычной: ${last.written} против ~${Math.round(avg)} ` +
-          "за последние дни. Стоит посмотреть, какой источник просел.",
-      });
+      // прежде чем гадать про источники, смотрим на собственный отсев
+      // прогона. Живой случай 31.08: сито отсеяло 6 скучных из 8, брак
+      // подписи забрал седьмого - а сводка предложила «посмотреть, какой
+      // источник просел», хотя источники отдали полную партию
+      const bySieve = (last.junk ?? 0) + (last.hookless ?? 0) + (last.broken ?? 0);
+      const byNet = (last.net_failed ?? 0) + quotaFailed;
+      if (last.analyzed > 0 && bySieve * 2 >= last.analyzed) {
+        problems.push({
+          text:
+            `Партия мала (${last.written} против ~${Math.round(avg)} за последние дни), но источники ` +
+            `отдали её полной: ${bySieve} из ${last.analyzed} отсеяло сито. Материал попался слабый - ` +
+            "если так повторится подряд, стоит смотреть запросы к архивам.",
+        });
+      } else if (last.analyzed > 0 && byNet * 2 >= last.analyzed) {
+        problems.push({
+          text:
+            `Партия мала (${last.written} против ~${Math.round(avg)} за последние дни): ` +
+            `${byNet} кадров сорвали сбои Gemini или сети. Источники ни при чём.`,
+        });
+      } else {
+        problems.push({
+          text:
+            `Партия вдвое меньше обычной: ${last.written} против ~${Math.round(avg)} ` +
+            "за последние дни. Стоит посмотреть, какой источник просел.",
+        });
+      }
     }
   }
 
