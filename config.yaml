@@ -27,7 +27,10 @@ sources:
       # photograph 1944». Замены по рабочей формуле «театр + год +
       # photograph»; цветной пласт пробуем через имя носителя - в каталоге
       # LOC кодахромы подписаны «transparencies»
-      - "color transparencies 1943"
+      # проба 01.09: «color transparencies 1943» отдаёт кадры без места и
+      # без описания - всё гибнет на префильтре. Цвет надёжно несёт только
+      # формула «war production color»: расширяем её на второй год
+      - "war production color 1943"
       - "guadalcanal 1943 photograph"
       - "war production color 1942"                       # годных 5
       - "pacific 1944 landing"                            # годных 5
@@ -35,9 +38,12 @@ sources:
       - "berlin wall 1961"                                # годных 4
       - "navy pacific 1942"                               # годных 3
       - "tank battle"                                     # годных 3
-      - "korean war combat"                               # годных 3
+      # проба 01.09: «korean war combat» выродился в карточки альбомов
+      # (album_record×3), «cold war missile test» - годный без года.
+      # Замены по рабочей формуле «театр + год + photograph»
+      - "korea 1953 photograph"
       - "world war 1944"                                  # годных 1
-      - "cold war missile test"                           # годных 1
+      - "bikini atoll 1946 photograph"
       # Замены, проверенные пробой: работает формула «театр + год +
       # слово photograph». По ней LOC отдаёт снимки, а не карточки
       # коллекций. «normandy 1944 photograph» и «soldiers training 1942
@@ -47,7 +53,9 @@ sources:
       - "philippines 1945 photograph"
       - "korea 1951 photograph"
       - "vietnam 1967 photograph"
-      - "kodachrome 1943 photograph"   # второй заход в цветной пласт FSA/OWI
+      # был «kodachrome 1943 photograph»: проба 01.09 - кадры без места,
+      # префильтр не пропускает ни одного
+      - "aircraft color 1942"
   # архивы разных стран на Wikimedia Commons - главный источник разнообразия
   commons:
     enabled: true
@@ -174,7 +182,9 @@ sources:
       - category: "Yuri Gagarin"                   # первый человек в космосе
         attribution: "Гагарин"
         lang: "en"
-        terms: ["1961"]
+        # проба 01.09: по слову «1961» нашлось всего 2 файла - листаем
+        # категорию целиком, современные памятники срежет фильтр года
+        terms: [""]
       - category: "Hindenburg disaster"            # катастрофа дирижабля, 1937
         attribution: "Hindenburg"
         lang: "en"
@@ -182,7 +192,10 @@ sources:
       - category: "RMS Titanic"                    # 1912; современные модели срежет год
         attribution: "Titanic"
         lang: "en"
-        terms: ["1912"]
+        # проба 01.09: со словом «1912» поиск пуст (в названиях файлов
+        # года нет) - пробуем без слова; если категория держит файлы
+        # только в подкатегориях, запись убираем
+        terms: [""]
       - category: "1906 San Francisco earthquake"  # великое землетрясение
         attribution: "San Francisco 1906"
         lang: "en"
@@ -195,10 +208,13 @@ sources:
         attribution: "Empire State Building"
         lang: "en"
         terms: [""]
-      - category: "Fall of the Berlin Wall"        # ноябрь 1989
-        attribution: "Fall of the Berlin Wall"
-        lang: "en"
-        terms: [""]
+      # проба 01.09: категории «Fall of the Berlin Wall» с файлами напрямую
+      # нет. Падение Стены берём из Бундесархива прицельными словами -
+      # его съёмка ноября 1989 лежит в общей категории архива
+      - category: "Images from the German Federal Archive"
+        attribution: "Mauerfall 1989"
+        lang: "de"
+        terms: ["Mauerfall", "Grenzöffnung 1989"]
 
   # прежний узкий источник: остался ради истории, включать не нужно -
   # Бундесархив теперь один из архивов commons
