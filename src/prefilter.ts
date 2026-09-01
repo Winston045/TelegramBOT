@@ -9,6 +9,7 @@ export type RejectReason =
   | "too_small"
   | "stereograph"
   | "album_record"
+  | "untitled_record"
   | "studio_portrait"
   | "stop_word";
 
@@ -43,6 +44,12 @@ export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null
   const title = (item.title ?? "").trim();
   if (/\b(collection|photograph album|scrapbook|papers)$/i.test(title)) {
     return "album_record";
+  }
+  // LOC-заглушка «Untitled photo, possibly related to: ...»: сам архив не
+  // знает, что на снимке, - подписи из такого не выйдет, а одинаковый
+  // заголовок идёт дублями (живая очередь 31.08: два слота на один текст)
+  if (/^untitled photo/i.test(title)) {
+    return "untitled_record";
   }
   // студийный портрет: в названии так и сказано. Крючка у такого кадра
   // нет по определению, а анализ он всё равно съедает (сухой прогон

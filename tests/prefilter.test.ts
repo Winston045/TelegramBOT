@@ -91,6 +91,23 @@ describe("карточки альбомов вместо снимков", () => 
       rejectReason({ ...base, title: "Tank of the collection unit moves through Percy" }, cfg),
     ).toBeNull();
   });
+
+  it("LOC-заглушка «Untitled photo, possibly related to...» отсеивается", () => {
+    // живая очередь 31.08: две таких заглушки заняли слоты анализа,
+    // а подписать кадр, о котором архив сам ничего не знает, нельзя
+    expect(
+      rejectReason(
+        { ...base, title: "Untitled photo, possibly related to: Milton Eisenhower" },
+        cfg,
+      ),
+    ).toBe("untitled_record");
+  });
+
+  it("слово untitled в середине названия записи не губит", () => {
+    expect(
+      rejectReason({ ...base, title: "Soldiers view untitled painting in gallery" }, cfg),
+    ).toBeNull();
+  });
 });
 
 describe("студийные портреты", () => {

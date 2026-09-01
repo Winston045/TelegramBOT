@@ -4,7 +4,7 @@ import type { RawItem, SourceAdapter } from "./types.js";
 import { archiveKey } from "../plan.js";
 import { loc } from "./loc.js";
 import { bundesarchiv } from "./bundesarchiv.js";
-import { commons } from "./commons.js";
+import { commons, events } from "./commons.js";
 import { pastvu } from "./pastvu.js";
 import { nara } from "./nara.js";
 import { europeana } from "./europeana.js";
@@ -13,6 +13,7 @@ export const ADAPTERS: Record<string, SourceAdapter> = {
   loc,
   bundesarchiv, // прежнее имя: старые кандидаты в базе ссылаются на него
   commons,
+  events, // знаковые события вне войны: commons-механика, свой пул категорий
   pastvu,
   nara,
   europeana,

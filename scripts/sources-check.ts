@@ -27,9 +27,13 @@ function verdict(count: number | null, error?: string): string {
   return `ok ${count}`;
 }
 
-async function checkCommons(cfg: ReturnType<typeof loadConfig>) {
-  const src = cfg.sources.commons;
-  console.log("\n═══ COMMONS ═══");
+/** Проба commons-подобного источника: и архивов, и пула событий. */
+async function checkCommonsLike(
+  label: string,
+  src: ReturnType<typeof loadConfig>["sources"][string] | undefined,
+  cfg: ReturnType<typeof loadConfig>,
+) {
+  console.log(`\n═══ ${label} ═══`);
   if (!src?.enabled) {
     console.log("источник выключен в config.yaml");
     return [] as RawItem[];
@@ -131,7 +135,11 @@ async function main() {
   console.log(`включены: ${enabled.join(", ") || "нет"}`);
   console.log(`выключены: ${off.join(", ") || "нет"}`);
 
-  const items = [...(await checkCommons(cfg)), ...(await checkLoc(cfg))];
+  const items = [
+    ...(await checkCommonsLike("COMMONS", cfg.sources.commons, cfg)),
+    ...(await checkCommonsLike("СОБЫТИЯ (events)", cfg.sources.events, cfg)),
+    ...(await checkLoc(cfg)),
+  ];
   checkPrefilter(items, cfg);
   console.log("\nпроверка завершена: база не тронута, Gemini не вызывался");
 }

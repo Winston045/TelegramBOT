@@ -21,8 +21,14 @@ sources:
       # «vietnam helicopter 1968»), либо отдавал карточки коллекций с
       # заглушкой вместо фотографии («world war 1939», «cuban missile
       # crisis», «military aviation 1940», «vietnam war patrol»).
-      - "farm security administration color kodachrome"   # годных 2 из 6
-      - "office of war information color 1943"            # годных 1
+      # Три запроса выродились к 31.08 в ноль годных (выдача съехала на
+      # карточки коллекций): «farm security administration color kodachrome»,
+      # «office of war information color 1943», «office of war information
+      # photograph 1944». Замены по рабочей формуле «театр + год +
+      # photograph»; цветной пласт пробуем через имя носителя - в каталоге
+      # LOC кодахромы подписаны «transparencies»
+      - "color transparencies 1943"
+      - "guadalcanal 1943 photograph"
       - "war production color 1942"                       # годных 5
       - "pacific 1944 landing"                            # годных 5
       - "royal air force"                                 # годных 4
@@ -36,7 +42,7 @@ sources:
       # слово photograph». По ней LOC отдаёт снимки, а не карточки
       # коллекций. «normandy 1944 photograph» и «soldiers training 1942
       # photograph» по той же формуле дали ноль и заменены дальше.
-      - "office of war information photograph 1944"
+      - "italy 1944 photograph"
       - "marines pacific 1945 photograph"
       - "philippines 1945 photograph"
       - "korea 1951 photograph"
@@ -97,8 +103,14 @@ sources:
       - category: "Images from Anefo"
         attribution: "Anefo / Nationaal Archief"
         lang: "nl"
+        # листание по голым годам тащило гражданскую хронику Нидерландов:
+        # конгресс фокусников, свалку у дворца, портреты - и всё это жгло
+        # слоты анализа (живая очередь 31.08: 3 из 4 кадров anefo - мимо).
+        # Ищем прицельно военное, как у РИА; протесты 60-х оставляем -
+        # это холодная война с живым действием
         terms:
-          ["1946", "1948", "1953", "1956", "1961", "1968", "1975", "1983"]
+          ["militairen", "leger", "oorlog", "soldaten", "marine",
+           "luchtmacht", "parachutisten", "demonstratie 1968"]
       # 5 тысяч кадров армейской съёмки США 1941-1954 (ВМВ и Корея):
       # противоядие от преобладания немецкой съёмки
       - category: "United States Army Signal Corps photographs"
@@ -143,6 +155,51 @@ sources:
         attribution: "Yugoslav Partisans"
         lang: "en"
         terms: [""]
+  # ---- Знаковые события вне войны (решение 01.09) ----
+  # Мирное берём ТОЛЬКО по событиям, не по местам и годам: урок PastVu -
+  # листание городов приносило соборы и колонны без крючка. Здесь каждая
+  # категория - конкретное событие, кадры сами несут момент, редкость или
+  # человеческую историю; пропаганду и памятники отсеет сито. Долю мирного
+  # в ленте держит планировщик (не чаще одного на окно из четырёх постов),
+  # этот источник лишь поставляет сырьё. Категории проверять пробой
+  # sources-check после каждого изменения списка.
+  events:
+    enabled: true
+    weight: 12
+    archives:
+      - category: "Apollo 11"                      # высадка на Луну, 1969
+        attribution: "Apollo 11"
+        lang: "en"
+        terms: [""]
+      - category: "Yuri Gagarin"                   # первый человек в космосе
+        attribution: "Гагарин"
+        lang: "en"
+        terms: ["1961"]
+      - category: "Hindenburg disaster"            # катастрофа дирижабля, 1937
+        attribution: "Hindenburg"
+        lang: "en"
+        terms: [""]
+      - category: "RMS Titanic"                    # 1912; современные модели срежет год
+        attribution: "Titanic"
+        lang: "en"
+        terms: ["1912"]
+      - category: "1906 San Francisco earthquake"  # великое землетрясение
+        attribution: "San Francisco 1906"
+        lang: "en"
+        terms: [""]
+      - category: "Terra Nova Expedition"          # Скотт к Южному полюсу, съёмка Понтинга
+        attribution: "Terra Nova Expedition"
+        lang: "en"
+        terms: [""]
+      - category: "Construction of the Empire State Building"  # монтажники на балках, 1930-31
+        attribution: "Empire State Building"
+        lang: "en"
+        terms: [""]
+      - category: "Fall of the Berlin Wall"        # ноябрь 1989
+        attribution: "Fall of the Berlin Wall"
+        lang: "en"
+        terms: [""]
+
   # прежний узкий источник: остался ради истории, включать не нужно -
   # Бундесархив теперь один из архивов commons
   bundesarchiv:

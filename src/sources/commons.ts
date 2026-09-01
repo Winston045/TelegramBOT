@@ -83,13 +83,20 @@ export async function searchCategory(
   }
 }
 
-export const commons: SourceAdapter = {
-  name: "commons",
+/**
+ * Фабрика: тот же обход категорий Commons под своим именем и со СВОИМИ
+ * курсорами. Нужна источнику «events» (знаковые события) - если бы он
+ * делил с commons курсор ротации архивов, два источника сбивали бы друг
+ * другу очередь обхода.
+ */
+export function commonsAdapter(name: string): SourceAdapter {
+  return {
+  name,
 
   async fetch(limit, cfg: SourceConfig, cursors: CursorStore): Promise<RawItem[]> {
     const archives = cfg.archives ?? [];
     if (!archives.length) {
-      console.warn("  commons: пул архивов в config пуст");
+      console.warn(`  ${name}: пул архивов в config пуст`);
       return [];
     }
     const sharedTerms = cfg.categories?.length ? cfg.categories : [""];
@@ -100,7 +107,7 @@ export const commons: SourceAdapter = {
     const byArchive: RawItem[][] = [];
     // стартовый архив сдвигается каждый прогон - при малом лимите очередь
     // обходит весь пул за несколько заходов, а не долбит одни и те же
-    const startIdx = await cursors.get("commons", "archive-start");
+    const startIdx = await cursors.get(name, "archive-start");
     const rotated = archives.map(
       (_, i) => archives[(i + startIdx) % archives.length]!,
     );
@@ -109,7 +116,7 @@ export const commons: SourceAdapter = {
     const deadline = Date.now() + COMMONS_TIME_BUDGET_MS;
     for (const archive of rotated) {
       if (Date.now() > deadline) {
-        console.warn(`  commons: бюджет времени исчерпан, архивов пройдено ${requests}`);
+        console.warn(`  ${name}: бюджет времени исчерпан, архивов пройдено ${requests}`);
         break;
       }
       const items: RawItem[] = [];
@@ -118,10 +125,10 @@ export const commons: SourceAdapter = {
       const terms = archive.terms?.length ? archive.terms : sharedTerms;
       // ротация поисковых слов и смещение внутри слова — как в других
       // источниках, чтобы каждый день приходила новая страница выдачи
-      const termIdx = await cursors.get("commons", `term:${archive.category}`);
+      const termIdx = await cursors.get(name, `term:${archive.category}`);
       const term = terms[termIdx % terms.length] ?? "";
       const offKey = `off:${archive.category}:${term}`;
-      const offset = await cursors.get("commons", offKey);
+      const offset = await cursors.get(name, offKey);
 
       let pages: CommonsPage[];
       try {
@@ -130,12 +137,12 @@ export const commons: SourceAdapter = {
         if (requests++) await sleep(POLITE_GAP_MS);
         pages = await searchCategory(archive.category, term, perArchive, offset);
       } catch (err) {
-        console.warn(`  commons: ${archive.attribution} — ${(err as Error).message}`);
+        console.warn(`  ${name}: ${archive.attribution} — ${(err as Error).message}`);
         continue;
       }
       if (pages.length === 0 && offset === 0) {
         console.warn(
-          `  commons: категория "${archive.category}" по "${term}" пуста — проверьте имя`,
+          `  ${name}: категория "${archive.category}" по "${term}" пуста — проверьте имя`,
         );
       }
 
@@ -152,15 +159,15 @@ export const commons: SourceAdapter = {
 
       // смещение внутри слова: когда очередь снова дойдёт до этого года,
       // продолжим с того же места (или с начала, если выдача кончилась)
-      await cursors.set("commons", offKey, pages.length < perArchive ? 0 : offset + pages.length);
+      await cursors.set(name, offKey, pages.length < perArchive ? 0 : offset + pages.length);
       // год меняется КАЖДЫЙ запуск. Раньше - только по исчерпанию выдачи,
       // и на гигантских категориях бот неделями сидел в первом годе списка:
       // живая лента превратилась в сплошную ПМВ
-      await cursors.set("commons", `term:${archive.category}`, termIdx + 1);
+      await cursors.set(name, `term:${archive.category}`, termIdx + 1);
       if (items.length) byArchive.push(items);
     }
 
-    await cursors.set("commons", "archive-start", (startIdx + 1) % archives.length);
+    await cursors.set(name, "archive-start", (startIdx + 1) % archives.length);
     // слияние по кругу: первый кадр каждого архива, потом второй и так
     // далее - срез любой длины остаётся представительным
     const merged: RawItem[] = [];
@@ -198,7 +205,20 @@ export const commons: SourceAdapter = {
       return undefined;
     }
   },
-};
+  };
+}
+
+export const commons = commonsAdapter("commons");
+
+/**
+ * Знаковые события вне войны: та же механика Commons, но пул - точечные
+ * категории конкретных событий, а не архивы-поставщики. Урок PastVu:
+ * мирное нельзя брать «по местам и годам» - листание городов приносило
+ * соборы и колонны без крючка. Событийный кадр («Гинденбург» горит,
+ * монтажник на балке Эмпайр-стейт) сам несёт момент, редкость или
+ * человеческую историю. Долю мирного в ленте держит планировщик.
+ */
+export const events = commonsAdapter("events");
 
 // служебные категории Викисклада, из которых темы не выйдет
 const SERVICE_CATEGORY =

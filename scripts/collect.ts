@@ -20,6 +20,7 @@ import {
 import { reportHealth } from "../src/health.js";
 import { prefilter } from "../src/prefilter.js";
 import { byPromise, promise } from "../src/promise.js";
+import { buildAnalysisQueue } from "../src/queue.js";
 import { hiResLocUrl } from "../src/sources/loc.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { isStereoPair } from "../src/stereo.js";
@@ -181,19 +182,28 @@ async function main() {
   const keepLimit = numArg("--keep") ?? cfg.collect.prefilter_keep;
   // сначала сортируем по «обещанию» (метаданные, без ИИ), потом мешаем по
   // архивам. Перемешивание держит порядок внутри архива, поэтому от
-  // каждого первым берётся самый перспективный кадр, а не случайный
+  // каждого первым берётся самый перспективный кадр, а не случайный.
+  // Последним словом - очередь с потолками: дубли названий и монокультура
+  // ВМВ/одного архива режутся ДО траты квоты
   const ranked = byPromise(kept);
-  const survivors = interleaveBySource(ranked).slice(0, keepLimit);
+  const { queue: survivors, cuts } = buildAnalysisQueue(interleaveBySource(ranked), keepLimit);
   const avg = survivors.length
     ? survivors.reduce((s, it) => s + promise(it), 0) / survivors.length
     : 0;
-  const rest = ranked.slice(keepLimit);
+  const inQueue = new Set(survivors);
+  const rest = ranked.filter((it) => !inQueue.has(it));
   const avgRest = rest.length ? rest.reduce((s, it) => s + promise(it), 0) / rest.length : 0;
   console.log(
     `выжило после префильтра: ${survivors.length} (лимит ${keepLimit}), ` +
       `обещание очереди ${avg.toFixed(1)}` +
       (rest.length ? ` против ${avgRest.toFixed(1)} у отложенных` : ""),
   );
+  if (cuts.duplicates || cuts.archiveCapped || cuts.ww2Capped) {
+    console.log(
+      `потолки очереди: дублей названий ${cuts.duplicates}, ` +
+        `придержано потолком архива ${cuts.archiveCapped}, потолком ВМВ ${cuts.ww2Capped}`,
+    );
+  }
 
   if (dry) {
     for (const item of survivors) {
