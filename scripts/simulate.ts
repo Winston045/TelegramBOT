@@ -13,6 +13,8 @@
 import { loadConfig } from "../src/config.js";
 import { getDb } from "../src/db.js";
 import { collectRaw, interleaveBySource, lastSourceCounts } from "../src/sources/index.js";
+import { byPromise } from "../src/promise.js";
+import { buildAnalysisQueue } from "../src/queue.js";
 import { dbCursorStore } from "../src/cursors.js";
 import { prefilter } from "../src/prefilter.js";
 import { pickBalanced } from "../src/balance.js";
@@ -51,8 +53,21 @@ async function simulateCollect(cfg: ReturnType<typeof loadConfig>) {
   console.log("по архивам:", spread(raw.map((r) => archiveKey(r.attribution) || r.source)));
 
   const { kept } = prefilter(raw, cfg);
-  const queue = interleaveBySource(kept).slice(0, cfg.collect.prefilter_keep);
+  // тот же путь, что у живого сбора: обещание → перемешивание → потолки.
+  // Диагностика 04.09 показала расхождение: симуляция строила очередь
+  // по-старому и рисовала LOC×7 и три дубля названия, которых живой
+  // сбор уже не допускает
+  const { queue, cuts } = buildAnalysisQueue(
+    interleaveBySource(byPromise(kept)),
+    cfg.collect.prefilter_keep,
+  );
   console.log(`\nпосле префильтра: ${kept.length}, на анализ пойдут: ${queue.length}`);
+  if (cuts.duplicates || cuts.archiveCapped || cuts.ww2Capped) {
+    console.log(
+      `потолки очереди: дублей названий ${cuts.duplicates}, ` +
+        `придержано потолком архива ${cuts.archiveCapped}, потолком ВМВ ${cuts.ww2Capped}`,
+    );
+  }
   console.log("очередь на анализ по архивам:");
   queue.forEach((item, i) => {
     console.log(`  ${i + 1}. ${archiveKey(item.attribution) || item.source} - ${item.title?.slice(0, 60) ?? "(без названия)"}`);
