@@ -252,6 +252,7 @@ export function assembleCaptionHtml(
     // цитатой ПОСЛЕ факта, а не строкой тела. Живой случай 07.09 (пост
     // про Гамсуна): модель влепила «Арендал, ... 27 июня 1944 года.»
     // второй строкой тела, и пост слипся - изюминка не была отбита
+    let quoteText = generated.quote;
     let quotePlace = generated.quote_place;
     if (!quotePlace) {
       const lines = body.split("\n");
@@ -261,7 +262,23 @@ export function assembleCaptionHtml(
         quotePlace = last;
       }
     }
-    body += `\n<blockquote expandable>${dash(generated.quote)}</blockquote>`;
+    // две цитаты места подряд - брак оформления (карточка #308, 07.09:
+    // критик заменил слабую изюминку на «Италия, 1944 год», а точный
+    // «Район Скарперии...» остался второй цитатой). Остаётся одна, более
+    // точная строка. Схлопываем только когда первая КОРОЧЕ второй: грубая
+    // замена всегда короче точной строки места, а короткий ФАКТ с годом
+    // («В 1942 году Бенгази стал ареной боёв») длиннее её - эвристика
+    // isBarePlaceDate одна его не отличает
+    if (
+      quotePlace &&
+      isBarePlaceDate(quoteText) &&
+      isBarePlaceDate(quotePlace) &&
+      quoteText.trim().length < quotePlace.trim().length
+    ) {
+      quoteText = quotePlace;
+      quotePlace = undefined;
+    }
+    body += `\n<blockquote expandable>${dash(quoteText)}</blockquote>`;
     // эталонный формат изюминки: место и дата отдельной второй цитатой
     // после факта-справки; короткая, поэтому без expandable
     if (quotePlace) {

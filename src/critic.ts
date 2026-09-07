@@ -111,13 +111,27 @@ export async function reviewQuote(
       // сильной замены не нашлось - цитата убирается, пост выходит коротким
       return { caption: { ...generated, quote: "" }, rewritten: true };
     }
-    // замена «место, год» при дате, уже стоящей в теле поста (изюминка
-    // с датой в caption), дала бы дубль - тогда цитату лучше убрать
+    // замена - голые место и год, значит пост становится ОБЫЧНЫМ, и
+    // цитата места должна остаться ОДНА. Если у изюминки уже стояла своя
+    // строка места (quote_place), она точнее короткой замены («Район
+    // Скарперии, Италия. 25 декабря 1944 года» против «Италия, 1944
+    // год») и побеждает. Живой случай 07.09, карточка #308: буквальное
+    // сравнение duplicatesPlace дубля не увидело, и в карточку уехали
+    // ДВЕ цитаты места подряд
     if (isBarePlaceDate(quote)) {
-      const years = quote.match(/(18|19|20)\d{2}/g) ?? [];
+      const finalQuote =
+        generated.quote_place && isBarePlaceDate(generated.quote_place)
+          ? generated.quote_place
+          : quote;
+      // дата, уже стоящая в теле поста, дала бы дубль - тогда цитату убрать
+      const years = finalQuote.match(/(18|19|20)\d{2}/g) ?? [];
       if (years.some((y) => generated.caption.includes(y))) {
-        return { caption: { ...generated, quote: "" }, rewritten: true };
+        return { caption: { ...generated, quote: "", quote_place: undefined }, rewritten: true };
       }
+      return {
+        caption: { ...generated, quote: finalQuote, quote_place: undefined, quote_kind: "context" },
+        rewritten: true,
+      };
     }
     return {
       caption: {

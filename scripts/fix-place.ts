@@ -30,6 +30,30 @@ export function placeToQuote(captionHtml: string): string | null {
   return `${m[1]}\n<blockquote expandable>${line}</blockquote>\n\n${m[3]}`;
 }
 
+/**
+ * Схлопывает две цитаты места подряд в одну точную. Живой случай 07.09,
+ * карточка #308: критик заменил слабую изюминку на «Италия, 1944 год»,
+ * а точный «Район Скарперии, Италия. 25 декабря 1944 года.» остался
+ * второй цитатой - в карточку уехали ДВЕ цитаты места. Остаётся вторая:
+ * она из quote_place изюминки и всегда точнее короткой замены.
+ * null - чинить нечего.
+ */
+export function collapseDoublePlace(captionHtml: string): string | null {
+  const m = captionHtml.match(
+    /<blockquote expandable>([^<]+)<\/blockquote>\n<blockquote>([^<]+)<\/blockquote>/,
+  );
+  if (!m || !m[1] || !m[2]) return null;
+  const first = m[1].trim();
+  const second = m[2].trim();
+  if (!isBarePlaceDate(first) || !isBarePlaceDate(second)) return null;
+  // только когда первая КОРОЧЕ второй: грубая замена критика всегда
+  // короче точной строки места, а короткий ФАКТ с годом («В 1942 году
+  // Бенгази стал ареной боёв») длиннее её - одна эвристика
+  // isBarePlaceDate настоящую изюминку от места не отличает
+  if (first.length >= second.length) return null;
+  return captionHtml.replace(m[0], `<blockquote expandable>${second}</blockquote>`);
+}
+
 async function main() {
   const db = getDb();
   // два простых запроса надёжнее одного or-фильтра: комбинированный
@@ -50,7 +74,8 @@ async function main() {
   let fixedReserve = 0;
   let fixedChannel = 0;
   for (const c of data ?? []) {
-    const fixed = placeToQuote(c.caption_html ?? "");
+    const fixed =
+      placeToQuote(c.caption_html ?? "") ?? collapseDoublePlace(c.caption_html ?? "");
     // свежий пост канала синхронизируем безусловно - подпись могла
     // разъехаться с базой
     const target = fixed ?? c.caption_html;

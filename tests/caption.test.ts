@@ -196,6 +196,40 @@ describe("placeToQuote (лекарь: дата из тела в цитату)", 
     expect(placeToQuote(plain)).toBeNull();
   });
 
+  it("две цитаты места подряд схлопываются в одну точную", async () => {
+    const { collapseDoublePlace } = await import("../scripts/fix-place.js");
+    // карточка #308, 07.09: критик заменил слабую изюминку на «Италия,
+    // 1944 год», а точный «Район Скарперии...» остался второй цитатой
+    const broken =
+      "Американский и британский связисты празднуют Рождество с местными итальянскими мальчиками у своей праздничной елки.\n" +
+      "<blockquote expandable>Италия, 1944 год.</blockquote>\n" +
+      "<blockquote>Район Скарперии, Италия. 25 декабря 1944 года.</blockquote>\n\n" +
+      '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
+    expect(collapseDoublePlace(broken)).toBe(
+      "Американский и британский связисты празднуют Рождество с местными итальянскими мальчиками у своей праздничной елки.\n" +
+        "<blockquote expandable>Район Скарперии, Италия. 25 декабря 1944 года.</blockquote>\n\n" +
+        '<a href="https://t.me/Story_Teams">STORY | TEAM</a>',
+    );
+  });
+
+  it("настоящую изюминку с цитатой места лекарь двойного места не трогает", async () => {
+    const { collapseDoublePlace } = await import("../scripts/fix-place.js");
+    const gem =
+      "Японский крейсер «Яхаги» под ударами американской авиации.\n" +
+      "<blockquote expandable>Крейсер перевернулся и затонул, унеся жизни 445 моряков.</blockquote>\n" +
+      "<blockquote>Тихий океан, 1945 год.</blockquote>\n\n" +
+      '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
+    expect(collapseDoublePlace(gem)).toBeNull();
+    // короткий ФАКТ с годом эвристика места не отличает - его спасает
+    // правило «первая цитата короче второй»
+    const shortFact =
+      "Британский танк Sherman III в районе Бенгази.\n" +
+      "<blockquote expandable>В 1942 году Бенгази стал ареной ожесточённых боёв.</blockquote>\n" +
+      "<blockquote>Ливия, декабрь 1942 года.</blockquote>\n\n" +
+      '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
+    expect(collapseDoublePlace(shortFact)).toBeNull();
+  });
+
   it("подпись без переносов не трогает", () => {
     expect(placeToQuote('Текст.\n\n<a href="x">X</a>')).toBeNull();
   });
@@ -238,6 +272,25 @@ describe("страховка формата обычного поста", () => 
         "<blockquote expandable>В 1942 году Бенгази стал ареной ожесточённых боёв.</blockquote>\n" +
         "<blockquote>Ливия, декабрь 1942 года.</blockquote>",
     );
+  });
+
+  it("две цитаты места при сборке схлопываются в одну точную", () => {
+    // карточка #308: quote - грубая замена критика, quote_place - точная
+    // строка изюминки; в пост должна уйти одна цитата, точная
+    const html = assembleCaptionHtml(
+      {
+        caption: "Связисты празднуют Рождество с итальянскими мальчиками у ёлки.",
+        quote: "Италия, 1944 год.",
+        quote_place: "Район Скарперии, Италия. 25 декабря 1944 года.",
+        quote_kind: "context",
+      },
+      { license: "PD" },
+      channel,
+    );
+    expect(html).toContain(
+      "<blockquote expandable>Район Скарперии, Италия. 25 декабря 1944 года.</blockquote>",
+    );
+    expect(html).not.toContain("Италия, 1944 год.");
   });
 
   it("изюминку с готовым quote_place страховка не трогает", () => {
