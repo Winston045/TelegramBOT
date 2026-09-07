@@ -35,7 +35,7 @@ ${captionRules(glossary)}
 ${FEW_SHOT}
 
 Верни строго JSON без обёрток и без markdown:
-{${SCORE_FIELDS_SCHEMA}, "caption": "...", "quote": "<обычный пост: место и год короткой строкой; изюминка: факт-справка>", "quote_place": "<место и дата отдельной строкой - только у изюминки, иначе пустая строка>", "quote_kind": "observation" | "context"}`;
+{${SCORE_FIELDS_SCHEMA}, "caption": "...", "quote": "<обычный пост: место и год короткой строкой; изюминка: факт-справка>", "quote_place": "<у изюминки место и дата ВСЕГДА здесь - отдельной второй цитатой после факта; у обычного поста пустая строка>", "quote_kind": "observation" | "context"}`;
 }
 
 export async function analyzeImage(
