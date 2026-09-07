@@ -333,7 +333,9 @@ async function main() {
       }
 
       const captionHtml = assembleCaptionHtml(reviewed.caption, item, cfg.channel);
-      const check = validateCaption(captionHtml, item);
+      // контекст (описание с карточки, вики-справка) - легальный источник
+      // фактов для изюминки, его годы валидатор тоже должен знать
+      const check = validateCaption(captionHtml, { ...item, context: extraContext });
       const { error } = await db.from("candidates").upsert(
         check.ok
           ? {

@@ -13,6 +13,14 @@ export type CaptionMeta = {
   description?: string;
   year?: number;
   place?: string;
+  /**
+   * Дополнительный документальный контекст (полное описание с карточки
+   * архива, справка из Википедии) - тот же легальный источник фактов,
+   * что и метаданные. Без него валидатор браковал изюминки с датой из
+   * справки: промпт разрешал «факты строго из метаданных И контекста»,
+   * а проверка лет знала только метаданные.
+   */
+  context?: string;
 };
 
 export type ValidationResult = { ok: true } | { ok: false; reason: string };
@@ -77,7 +85,7 @@ export function validateHtml(html: string): ValidationResult {
  * метаданных — иначе модель что-то выдумала.
  */
 export function validateYears(html: string, meta: CaptionMeta): ValidationResult {
-  const sourceText = `${meta.title ?? ""} ${meta.description ?? ""} ${meta.year ?? ""} ${meta.place ?? ""}`;
+  const sourceText = `${meta.title ?? ""} ${meta.description ?? ""} ${meta.year ?? ""} ${meta.place ?? ""} ${meta.context ?? ""}`;
   // в метаданных год может быть частью "1930s", "1930-е", "30.12.1939" —
   // сканируем без границ слова (строгие границы остаются для подписи)
   const known = new Set(

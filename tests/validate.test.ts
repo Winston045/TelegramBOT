@@ -58,6 +58,20 @@ describe("validateYears", () => {
     const m2 = { title: "Polen, Lublin 30.12.1939", description: undefined, year: undefined, place: "x" };
     expect(validateYears("<i>Декабрь 1939 года.</i>", m2).ok).toBe(true);
   });
+
+  it("год из документального контекста - легальный, как из метаданных", () => {
+    // промпт разрешает факты «строго из метаданных И контекста», а
+    // валидатор знал только метаданные - и браковал изюминку с датой
+    // из вики-справки (репортаж о визите Гамсуна вышел 3 августа 1944,
+    // хотя снимок датирован июнем)
+    const m = {
+      ...meta,
+      context: "Репортаж о визите вышел в Illustrierter Beobachter 3 августа 1944 года.",
+    };
+    expect(validateYears("<blockquote>Репортаж вышел в 1944 году.</blockquote>", m).ok).toBe(true);
+    // но год, которого нет нигде - по-прежнему брак
+    expect(validateYears("<blockquote>Репортаж вышел в 1947 году.</blockquote>", m).ok).toBe(false);
+  });
 });
 
 describe("validateCaption", () => {
