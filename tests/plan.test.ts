@@ -573,6 +573,30 @@ describe("добор при бедном резерве меняет тему з
     ).map((c) => c.id);
     expect(picked[0]).toBe(1);
   });
+
+  it("смена эпохи не тащит за собой повтор темы, если есть выбор", () => {
+    // контрольная симуляция 15.09: добор сменил застрявшую ВМВ на
+    // cold_war, но поставил вторую aviation подряд - хотя рядом лежал
+    // кадр другой эпохи И другой темы
+    const c = (id: number, score: number, period: string, subject: string): PlanCandidate => ({
+      id,
+      caption_html: `текст ${id}`,
+      score,
+      tags: { subject, period, military: true, action: true },
+    });
+    const pool = [
+      c(1, 90, "WW2", "infantry"),
+      c(2, 80, "cold_war", "aviation"),
+      c(3, 60, "cold_war", "navy"),
+    ];
+    const picked = planAuto(
+      pool,
+      // окно тем блокирует всех, эпоха застряла - работает чистый добор
+      { subjects: ["aviation", "navy", "street", "infantry"], periods: ["WW2", "WW2"], civilian: false },
+      1,
+    ).map((x) => x.id);
+    expect(picked[0]).toBe(3);
+  });
 });
 
 describe("добор при бедном резерве меняет эпоху застрявшей серии", () => {

@@ -414,6 +414,10 @@ export function planAuto(
       const otherArchive = (c: PlanCandidate) =>
         Boolean(lastArchive) && (archiveKey(c.attribution) || (c.source ?? "")) !== lastArchive;
       const prefs = [
+        // смена эпохи, не тащащая за собой повтор темы, - лучший выход:
+        // контрольная симуляция 15.09 показала, как добор честно сменил
+        // эпоху и поставил вторую aviation подряд
+        (c: PlanCandidate) => otherPeriod(c) && otherSubject(c),
         (c: PlanCandidate) => otherPeriod(c) && otherNation(c),
         otherPeriod,
         otherSubject,
