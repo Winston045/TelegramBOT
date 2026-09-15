@@ -18,7 +18,7 @@ import { buildAnalysisQueue } from "../src/queue.js";
 import { dbCursorStore } from "../src/cursors.js";
 import { prefilter } from "../src/prefilter.js";
 import { pickBalanced } from "../src/balance.js";
-import { archiveKey, planAuto, rank, type PlanCandidate } from "../src/plan.js";
+import { archiveKey, planAuto, rank, weekShares, type PlanCandidate } from "../src/plan.js";
 import { passesGate } from "../src/scoring.js";
 
 type Row = PlanCandidate & {
@@ -91,9 +91,27 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 10) {
   console.log(`в резерве: ${reserve.length} готовых`);
   if (!reserve.length) return;
 
+  // недельные доли берём из реально вышедших постов - как публикатор:
+  // без них симуляция не видела перекос тем и эпох, который штрафует ранг
+  const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+  const { data: weekPosts } = await db
+    .from("candidates")
+    .select("attribution, source, tags")
+    .eq("status", "published")
+    .gte("published_at", weekAgo);
+  const shares = weekShares((weekPosts ?? []) as Array<Row>);
+
   // симулируем публикации одну за другой: каждый выбранный пост уходит
   // в «недавние», как это происходит в жизни
-  const recent = { subjects: [] as string[], periods: [] as string[], civilian: false, statics: 0, longs: 0, archives: [] as string[] };
+  const recent = {
+    subjects: [] as string[],
+    periods: [] as string[],
+    civilian: false,
+    statics: 0,
+    longs: 0,
+    archives: [] as string[],
+    ...shares,
+  };
   const pool = [...reserve];
   const feed: Row[] = [];
   for (let i = 0; i < steps && pool.length; i++) {

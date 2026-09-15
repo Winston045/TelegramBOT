@@ -6,6 +6,7 @@ import {
   quoteLength,
   rank,
   upcomingSlots,
+  weekShares,
   type PlanCandidate,
 } from "../src/plan.js";
 
@@ -482,6 +483,95 @@ describe("недельный перекос эпохи", () => {
     expect(rank(p(1, 90, "WW2", "armor"), undefined, share)).toBeGreaterThan(
       rank(p(2, 55, "korea", "navy"), undefined, share),
     );
+  });
+});
+
+describe("недельный перекос темы", () => {
+  const s = (id: number, score: number, subject: string): PlanCandidate => ({
+    id,
+    caption_html: `текст ${id}`,
+    score,
+    tags: { subject, period: "WW2", military: true, action: true },
+  });
+
+  it("тема сверх пятой части недели уступает при равном качестве", () => {
+    // живой замер 15.09: infantry заняла 30% ленты за десять дней
+    const share = { infantry: 0.3 };
+    expect(rank(s(1, 70, "aviation"), undefined, undefined, share)).toBeGreaterThan(
+      rank(s(2, 70, "infantry"), undefined, undefined, share),
+    );
+  });
+
+  it("до пятой части недели штрафа нет", () => {
+    const share = { infantry: 0.15 };
+    expect(rank(s(1, 70, "infantry"), undefined, undefined, share)).toBe(70);
+  });
+
+  it("сильный кадр доминирующей темы всё равно выигрывает у слабого", () => {
+    const share = { infantry: 0.4 };
+    expect(rank(s(1, 90, "infantry"), undefined, undefined, share)).toBeGreaterThan(
+      rank(s(2, 60, "aviation"), undefined, undefined, share),
+    );
+  });
+
+  it("planAuto с недельной долей отодвигает доминирующую тему", () => {
+    const picked = planAuto(
+      [s(1, 72, "infantry"), s(2, 70, "aviation")],
+      { subjects: [], civilian: false, subjectShare: { infantry: 0.35 } },
+      1,
+    );
+    expect(picked[0]?.id).toBe(2);
+  });
+});
+
+describe("weekShares", () => {
+  it("считает доли архивов, эпох и тем одной выборкой", () => {
+    const rows = [
+      { attribution: "Bundesarchiv, Koch / CC", tags: { period: "WW2", subject: "infantry" } },
+      { attribution: "IWM / PD", tags: { period: "WW2", subject: "navy" } },
+      { attribution: null, source: "loc", tags: { period: "korea", subject: "infantry" } },
+      { attribution: null, source: null, tags: null },
+    ];
+    const { archiveShare, periodShare, subjectShare } = weekShares(rows);
+    expect(archiveShare).toEqual({ bundesarchiv: 0.25, iwm: 0.25, loc: 0.25 });
+    expect(periodShare).toEqual({ WW2: 0.5, korea: 0.25 });
+    expect(subjectShare).toEqual({ infantry: 0.5, navy: 0.25 });
+  });
+
+  it("пустая неделя - пустые доли", () => {
+    expect(weekShares([])).toEqual({ archiveShare: {}, periodShare: {}, subjectShare: {} });
+  });
+});
+
+describe("добор при бедном резерве меняет тему застрявшей серии", () => {
+  const s = (id: number, score: number, subject: string): PlanCandidate => ({
+    id,
+    caption_html: `текст ${id}`,
+    // одна эпоха у всех - смена эпохи в цепочке предпочтений недоступна
+    score,
+    tags: { subject, period: "WW2", military: true, action: true },
+  });
+
+  it("после infantry×2 берёт другую тему, а не третью infantry", () => {
+    // живой замер 15.09, посты 28-30: infantry×3 - все кандидаты валились
+    // об окно темы либо застрявшую эпоху, и добор брал лучшего по рангу
+    const pool = [s(1, 90, "infantry"), s(2, 88, "infantry"), s(3, 60, "aviation")];
+    const picked = planAuto(
+      pool,
+      { subjects: ["infantry", "infantry"], periods: ["WW2", "WW2"], civilian: false },
+      1,
+    ).map((c) => c.id);
+    expect(picked[0]).toBe(3);
+  });
+
+  it("когда другой темы в резерве нет, берёт лучшего - слот дороже", () => {
+    const pool = [s(1, 90, "infantry"), s(2, 88, "infantry")];
+    const picked = planAuto(
+      pool,
+      { subjects: ["infantry", "infantry"], periods: ["WW2", "WW2"], civilian: false },
+      1,
+    ).map((c) => c.id);
+    expect(picked[0]).toBe(1);
   });
 });
 

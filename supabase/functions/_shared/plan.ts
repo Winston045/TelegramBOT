@@ -179,6 +179,7 @@ export function rank(
   c: PlanCandidate,
   archiveShare?: Record<string, number>,
   periodShare?: Record<string, number>,
+  subjectShare?: Record<string, number>,
 ): number {
   const quote = quoteLength(c.caption_html ?? null) >= LONG_QUOTE ? QUOTE_BONUS : 0;
   const staticShot = c.tags?.action === false ? STATIC_PENALTY : 0;
@@ -195,9 +196,52 @@ export function rank(
   const pShare = c.tags?.period ? (periodShare?.[c.tags.period] ?? 0) : 0;
   const periodOver =
     pShare > PERIOD_SHARE_SOFT ? (pShare - PERIOD_SHARE_SOFT) * PERIOD_SHARE_PENALTY : 0;
+  // и тема: пехота на 30% ленты - те же «одни немцы», только по сюжету
+  const sShare = c.tags?.subject ? (subjectShare?.[c.tags.subject] ?? 0) : 0;
+  const subjectOver =
+    sShare > SUBJECT_SHARE_SOFT ? (sShare - SUBJECT_SHARE_SOFT) * SUBJECT_SHARE_PENALTY : 0;
   return (
-    (c.score ?? 0) + quote + color - staticShot - oldEra - civilian - leader - overshare - periodOver
+    (c.score ?? 0) +
+    quote +
+    color -
+    staticShot -
+    oldEra -
+    civilian -
+    leader -
+    overshare -
+    periodOver -
+    subjectOver
   );
+}
+
+/**
+ * Недельные доли осей разнообразия по выборке вышедших постов - общий
+ * счётчик для публикатора и симуляции, чтобы предпросмотр не расходился
+ * с боевым отбором (диагностика 04.09 поймала именно такое расхождение
+ * на очереди анализа).
+ */
+export function weekShares(
+  rows: Array<{ attribution?: string | null; source?: string | null; tags?: PlanTags }>,
+): {
+  archiveShare: Record<string, number>;
+  periodShare: Record<string, number>;
+  subjectShare: Record<string, number>;
+} {
+  const archiveShare: Record<string, number> = {};
+  const periodShare: Record<string, number> = {};
+  const subjectShare: Record<string, number> = {};
+  for (const p of rows) {
+    const key = archiveKey(p.attribution) || (p.source ?? "");
+    if (key) archiveShare[key] = (archiveShare[key] ?? 0) + 1;
+    if (p.tags?.period) periodShare[p.tags.period] = (periodShare[p.tags.period] ?? 0) + 1;
+    if (p.tags?.subject) subjectShare[p.tags.subject] = (subjectShare[p.tags.subject] ?? 0) + 1;
+  }
+  for (const share of [archiveShare, periodShare, subjectShare]) {
+    for (const key of Object.keys(share)) {
+      share[key] = (share[key] ?? 0) / Math.max(1, rows.length);
+    }
+  }
+  return { archiveShare, periodShare, subjectShare };
 }
 
 export type RecentContext = {
@@ -222,6 +266,8 @@ export type RecentContext = {
   archiveShare?: Record<string, number>;
   /** Доли эпох за неделю: {"WW2": 0.7}. Работает как archiveShare. */
   periodShare?: Record<string, number>;
+  /** Доли тем за неделю: {"infantry": 0.3}. Работает как archiveShare. */
+  subjectShare?: Record<string, number>;
 };
 
 /**
@@ -244,6 +290,15 @@ export const ARCHIVE_SHARE_PENALTY = 60;
 export const PERIOD_SHARE_SOFT = 0.5;
 export const PERIOD_SHARE_PENALTY = 40;
 
+/**
+ * И для тем. Замер 15.09: infantry заняла 30% ленты за десять дней и
+ * пошла тройкой подряд - у архива и эпохи недельные доли были, а тема
+ * жила одним окном из четырёх постов, у которого нет памяти о неделе.
+ * Пятая часть недели на одну тему - честный потолок при десятке живых.
+ */
+export const SUBJECT_SHARE_SOFT = 0.2;
+export const SUBJECT_SHARE_PENALTY = 40;
+
 /** Сколько постов одной эпохи подряд допускаем, прежде чем сменить её. */
 export const MAX_SAME_PERIOD_STREAK = 2;
 
@@ -262,8 +317,8 @@ export function planAuto(
 ): PlanCandidate[] {
   const pool = [...reserve].sort(
     (a, b) =>
-      rank(b, recent.archiveShare, recent.periodShare) -
-        rank(a, recent.archiveShare, recent.periodShare) || a.id - b.id,
+      rank(b, recent.archiveShare, recent.periodShare, recent.subjectShare) -
+        rank(a, recent.archiveShare, recent.periodShare, recent.subjectShare) || a.id - b.id,
   );
   const chosen: PlanCandidate[] = [];
   const subjects = [...recent.subjects];
@@ -341,11 +396,17 @@ export function planAuto(
       // но по цепочке предпочтений, а не слепо: слепой добор давал
       // «Бундесархив, Бундесархив, Бундесархив» и девять ВМВ подряд
       // (живой замер 24.08, посты 15-23). Сначала пробуем сменить эпоху
-      // застрявшей серии, потом страну архива, потом хотя бы сам архив.
+      // застрявшей серии, потом тему последнего поста, потом страну
+      // архива, потом хотя бы сам архив. Тему добавил замер 15.09:
+      // без неё бедный резерв дал infantry×3 подряд - цепочка меняла
+      // что угодно, кроме сюжета.
       const lastNation = nations[0];
       const lastArchive = archives[0];
+      const lastSubject = subjects[0];
       const otherPeriod = (c: PlanCandidate) =>
         Boolean(stuckPeriod) && Boolean(c.tags?.period) && c.tags?.period !== stuckPeriod;
+      const otherSubject = (c: PlanCandidate) =>
+        Boolean(lastSubject) && Boolean(c.tags?.subject) && c.tags?.subject !== lastSubject;
       const otherNation = (c: PlanCandidate) => {
         const n = archiveNation(c.attribution, c.source);
         return Boolean(lastNation) && n !== "" && n !== lastNation;
@@ -355,6 +416,7 @@ export function planAuto(
       const prefs = [
         (c: PlanCandidate) => otherPeriod(c) && otherNation(c),
         otherPeriod,
+        otherSubject,
         otherNation,
         otherArchive,
       ];

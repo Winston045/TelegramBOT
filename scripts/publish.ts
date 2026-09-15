@@ -13,7 +13,14 @@ import { channelSlug } from "../src/tme.js";
 import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/schedule.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { isDuplicate } from "../src/dhash.js";
-import { LONG_QUOTE, RECENT_WINDOW, archiveKey, planAuto, quoteLength } from "../src/plan.js";
+import {
+  LONG_QUOTE,
+  RECENT_WINDOW,
+  archiveKey,
+  planAuto,
+  quoteLength,
+  weekShares,
+} from "../src/plan.js";
 import { isDeadImageError, sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { cleanupChat, rememberEphemeral } from "../src/tidy.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
@@ -43,24 +50,15 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
     .select("attribution, source, tags")
     .eq("status", "published")
     .gte("published_at", weekAgo);
-  const week = weekPosts ?? [];
-  const archiveShare: Record<string, number> = {};
-  // и доли эпох: замер 24.08 - ВМВ заняла 70% ленты и шла девятками
-  const periodShare: Record<string, number> = {};
-  for (const p of week) {
-    const key =
-      archiveKey((p as { attribution?: string | null }).attribution) ||
-      ((p as { source?: string | null }).source ?? "");
-    if (key) archiveShare[key] = (archiveShare[key] ?? 0) + 1;
-    const period = (p as { tags?: { period?: string } | null }).tags?.period;
-    if (period) periodShare[period] = (periodShare[period] ?? 0) + 1;
-  }
-  for (const key of Object.keys(archiveShare)) {
-    archiveShare[key] = (archiveShare[key] ?? 0) / Math.max(1, week.length);
-  }
-  for (const key of Object.keys(periodShare)) {
-    periodShare[key] = (periodShare[key] ?? 0) / Math.max(1, week.length);
-  }
+  // доли эпох (замер 24.08: ВМВ 70% и девятки подряд) и тем (замер
+  // 15.09: infantry 30% и тройка подряд) считаются тем же счётчиком
+  const shares = weekShares(
+    (weekPosts ?? []) as Array<{
+      attribution?: string | null;
+      source?: string | null;
+      tags?: { period?: string; subject?: string } | null;
+    }>,
+  );
 
   return {
     subjects: posts
@@ -77,8 +75,7 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
         archiveKey((p as { attribution?: string | null }).attribution) ||
         ((p as { source?: string | null }).source ?? ""),
     ),
-    archiveShare,
-    periodShare,
+    ...shares,
   };
 }
 
