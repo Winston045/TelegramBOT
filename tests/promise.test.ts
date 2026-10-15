@@ -43,6 +43,38 @@ describe("обещание кадра", () => {
   it("протокол уходит в минус - но не выбрасывается", () => {
     expect(promise(frame("Portrait of the commanding officer"))).toBeLessThan(0);
   });
+
+  /**
+   * Сито знало только английский, немецкий и русский, а половину пула
+   * сейчас дают Anefo (nl), NAC (pl) и SA-kuva (fi). Полный сбор 15.10:
+   * из 11 кадров, отсеянных «без крючка», пять - протокол на этих языках,
+   * и каждый успел сжечь слот анализа и запрос к Gemini.
+   */
+  it("протокол узнаётся на языках пула, а не только на английском", () => {
+    const dull = [
+      "Beediging van officieren der Koninklijke Marine", // присяга, nl
+      "Koninklijke Marine Jachtclub Den Helder receptie", // приём, nl
+      "Bezoek van koningin Juliana aan de luchtmacht", // визит, nl
+      "Uroczystość wręczenia odznaczeń w Warszawie", // церемония, pl
+      "Defilada wojskowa na Polu Mokotowskim", // парад, pl
+      "Przysięga żołnierzy przed wyjazdem na front", // присяга, pl
+      "Paraati Helsingissä", // парад, fi
+      "Vierailu rintamalla", // визит, fi
+    ];
+    for (const title of dull) {
+      expect(promise(frame(title)), title).toBeLessThan(0);
+    }
+  });
+
+  it("боевой кадр на тех же языках протоколом не считается", () => {
+    // сито не должно глушить сам пул: ищем слова протокола, а не язык
+    expect(promise(frame("Uitgebrande Duitse tank langs de weg", "A".repeat(100)))).toBeGreaterThan(
+      0,
+    );
+    expect(promise(frame("Zniszczony czołg niemiecki pod Warszawą", "A".repeat(100)))).toBeGreaterThan(
+      0,
+    );
+  });
 });
 
 describe("сортировка очереди", () => {

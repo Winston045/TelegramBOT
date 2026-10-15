@@ -24,9 +24,33 @@ const COLOR_WORDS = /\b(kodachrome|autochrome|agfacolor|colou?r photograph|farbf
 /**
  * Слова протокола: церемонии, портреты, совещания. Такой кадр почти
  * наверняка не получит крючка, и тратить на него слот жалко.
+ *
+ * Языки сита должны совпадать с языками пула, иначе оно слепо. Полный
+ * сбор 15.10 отдал 11 кадров из 23 в отсев «без крючка», и половина из
+ * них - протокол на голландском и польском: приведение офицеров к
+ * присяге дважды (beëdiging), приём в яхт-клубе (receptie), делегация,
+ * светский портрет, парадный марш кавалерии. Anefo и Narodowe Archiwum
+ * Cyfrowe сейчас по пять постов в ленте за месяц - столько же, сколько
+ * IWM, - а их церемонии шли в анализ беспрепятственно. Финский добавлен
+ * заодно: SA-kuva того же калибра поставщик.
  */
 const DULL_WORDS =
-  /\b(portrait|ceremony|ceremonial|conference|meeting|delegation|inspection|parade|posing|poses|group photo|award\w*|visit\w* of|besuch|feier|porträt)\b|портрет|церемони\w*|совещан\w*|делегац\w*|парад\w*|вручен\w*/i;
+  /\b(portrait|ceremony|ceremonial|conference|meeting|delegation|inspection|parade|posing|poses|group photo|award\w*|visit\w* of|besuch|feier|porträt)\b/i;
+
+/** Протокол по-русски. */
+const DULL_RU = /портрет|церемони\w*|совещан\w*|делегац\w*|парад\w*|вручен\w*|присяг\w*/i;
+
+/** Протокол по-голландски (Anefo) и по-польски (NAC). */
+const DULL_NL_PL =
+  /\b(be[eë]dig\w*|ceremonie|receptie|bezoek|defil[eé]\w*|onderscheiding|huldiging|portret|vergadering|delegatie|inspectie|uroczysto\w*|defilada|przysi[eę]g\w*|wizyta|odznaczeni\w*|obchody|akademia|po[sś]wi[eę]ceni\w*)\b/i;
+
+/** Протокол по-фински (SA-kuva). */
+const DULL_FI = /\b(paraati\w*|vierailu\w*|juhla\w*|seppeleenlasku|kunniamerkk\w*)\b/i;
+
+/** Протокольный ли кадр по метаданным - на любом из языков пула. */
+function isDull(text: string): boolean {
+  return DULL_WORDS.test(text) || DULL_RU.test(text) || DULL_NL_PL.test(text) || DULL_FI.test(text);
+}
 
 /**
  * Балл обещания. Чем выше, тем раньше кадр попадёт на анализ.
@@ -43,7 +67,7 @@ export function promise(item: RawItem): number {
 
   if (HOOK_WORDS.test(text)) score += 4;
   if (COLOR_WORDS.test(text)) score += 3;
-  if (DULL_WORDS.test(text)) score -= 4;
+  if (isDull(text)) score -= 4;
   // известное место - меньше шансов, что подпись выйдет безликой
   if (item.place) score += 1;
 
