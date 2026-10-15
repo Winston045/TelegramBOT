@@ -22,23 +22,47 @@ export function memoryCursorStore(): CursorStore {
   };
 }
 
+/**
+ * Курсор - удобство, а не данные: он только помнит, на какой странице
+ * выдачи мы остановились. Сбой базы на этом чтении НЕ должен стоить целого
+ * источника, но раньше стоил: 15.10 единственный ответ Supabase
+ * «Project not specified.» на курсоре events/term:1906 San Francisco
+ * earthquake вылетел из адаптера наружу - и весь трек знаковых событий
+ * отдал в партию ноль кадров, хотя Commons и LOC в том же прогоне
+ * работали. Потерянный курсор означает «начнём со первой страницы»: это
+ * дешевле молчащего источника. Ошибку печатаем - по логу видно, что база
+ * икнула, а не что всё в порядке.
+ */
 export function dbCursorStore(): CursorStore {
   return {
     async get(source, query) {
-      const { data, error } = await getDb()
-        .from("source_cursors")
-        .select("cursor")
-        .eq("source", source)
-        .eq("query", query)
-        .maybeSingle();
-      if (error) throw new Error(`чтение курсора ${source}/${query}: ${error.message}`);
-      return data?.cursor ?? 0;
+      try {
+        const { data, error } = await getDb()
+          .from("source_cursors")
+          .select("cursor")
+          .eq("source", source)
+          .eq("query", query)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        return data?.cursor ?? 0;
+      } catch (err) {
+        console.warn(
+          `  курсор ${source}/${query} не прочитан (${(err as Error).message}) - начинаю с первой страницы`,
+        );
+        return 0;
+      }
     },
     async set(source, query, cursor) {
-      const { error } = await getDb()
-        .from("source_cursors")
-        .upsert({ source, query, cursor, updated_at: new Date().toISOString() });
-      if (error) throw new Error(`запись курсора ${source}/${query}: ${error.message}`);
+      try {
+        const { error } = await getDb()
+          .from("source_cursors")
+          .upsert({ source, query, cursor, updated_at: new Date().toISOString() });
+        if (error) throw new Error(error.message);
+      } catch (err) {
+        console.warn(
+          `  курсор ${source}/${query} не сохранён (${(err as Error).message}) - следующий прогон повторит страницу`,
+        );
+      }
     },
   };
 }

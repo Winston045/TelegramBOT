@@ -4,6 +4,8 @@ import { DAYS_OF_BUFFER, MIN_BATCH, planFromCounts, quotaDay } from "../src/rese
 const PREFILTER_KEEP = 30;
 const plan = (available: number, slots = 5) =>
   planFromCounts(available, slots, PREFILTER_KEEP);
+/** Запас, который считает сам планировщик - чтобы тесты не врали о числах. */
+const target = (slots = 5) => Math.max(MIN_BATCH, slots * DAYS_OF_BUFFER);
 
 describe("planFromCounts", () => {
   it("держит запас на несколько дней публикаций", () => {
@@ -12,18 +14,18 @@ describe("planFromCounts", () => {
   });
 
   it("резерв полон - сбор не нужен", () => {
-    expect(plan(15).keep).toBe(0);
-    expect(plan(40).keep).toBe(0);
+    expect(plan(target()).keep).toBe(0);
+    expect(plan(target() * 2).keep).toBe(0);
   });
 
   it("резерв пуст - берём партию с запасом на выбраковку", () => {
-    // не хватает 15, до резерва доходит около трети - упираемся в потолок
+    // до резерва доходит около трети партии - упираемся в потолок префильтра
     expect(plan(0).keep).toBe(30);
   });
 
   it("мелкий недобор всё равно даёт партию не меньше минимальной", () => {
-    expect(plan(14).keep).toBe(MIN_BATCH);
-    expect(plan(13).keep).toBe(MIN_BATCH);
+    expect(plan(target() - 1).keep).toBe(MIN_BATCH);
+    expect(plan(target() - 2).keep).toBe(MIN_BATCH);
   });
 
   it("партия не превышает лимит префильтра", () => {
@@ -57,14 +59,17 @@ describe("добор покрывает суточный расход", () => {
 
   it("при трёх слотах партия закрывает дневной расход, а не половину его", () => {
     const slots = 3;
-    // резерв просел на дневной расход: было 9 (норма), стало 6
-    const { target, keep } = planFromCounts(6, slots, PREFILTER_KEEP);
-    expect(target).toBe(9);
+    const norm = slots * DAYS_OF_BUFFER;
+    // резерв просел на дневной расход
+    const available = norm - slots;
+    const { target: want, keep } = planFromCounts(available, slots, PREFILTER_KEEP);
+    expect(want).toBe(norm);
     // просим столько, чтобы дошедших хватило закрыть недостачу
-    expect(Math.round(keep * YIELD)).toBeGreaterThanOrEqual(target - 6);
+    expect(Math.round(keep * YIELD)).toBeGreaterThanOrEqual(want - available);
   });
 
   it("минимальная партия не мельче порога окупаемости", () => {
-    expect(planFromCounts(8, 3, PREFILTER_KEEP).keep).toBe(MIN_BATCH);
+    // не хватает одного поста - партию мельче минимальной не собираем
+    expect(planFromCounts(3 * DAYS_OF_BUFFER - 1, 3, PREFILTER_KEEP).keep).toBe(MIN_BATCH);
   });
 });

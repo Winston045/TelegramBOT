@@ -258,7 +258,18 @@ async function main() {
 
   let outOfTime = false;
   let analyzed = 0;
-  for (const item of hashed) {
+  // спасённые вторым подходом: 503 и таймаут - это состояние сервиса, а не
+  // свойство снимка, и терять из-за них кадр насовсем незачем. Утро 15.10:
+  // четыре кадра из шести умерли так, и партия пришла пустой при живой
+  // квоте. Теперь сорванный кадр встаёт в КОНЕЦ очереди и получает второй
+  // подход - к тому времени перегруженная модель уже вычеркнута, и разбор
+  // обычно проходит. Второй раз подряд не пробуем: упрямый кадр дороже
+  // остальной партии.
+  let recovered = 0;
+  const queue = [...hashed];
+  const secondTry = new Set<HashedItem>();
+  for (let qi = 0; qi < queue.length; qi++) {
+    const item = queue[qi]!;
     if (Date.now() - runStartedAt > RUN_BUDGET_MS) {
       outOfTime = true;
       console.warn(
@@ -266,7 +277,8 @@ async function main() {
       );
       break;
     }
-    analyzed++;
+    // повторный подход тем же кадром заново «разобранным» не считаем
+    if (!secondTry.has(item)) analyzed++;
     // умные цитаты: полное описание со страницы архива как доп. контекст
     let extraContext: string | undefined;
     try {
@@ -352,6 +364,13 @@ async function main() {
 
       if (check.ok) {
         written++;
+        if (secondTry.has(item)) {
+          // сбой был зачтён при первом падении - снимаем его, иначе
+          // воронка покажет кадр и сорванным, и записанным
+          netFailed--;
+          recovered++;
+          console.log(`  спасён вторым подходом: [${item.source}] ${item.sourceId}`);
+        }
       } else {
         failed++;
         console.warn(`  брак подписи: [${item.source}] ${item.sourceId} — ${check.reason}`);
@@ -360,8 +379,17 @@ async function main() {
       // сорванный лимитом кадр - не брак подписи: подписи у него не было
       // вовсе. Считаем отдельно, иначе диагноз врёт («брака подписи 4»
       // при четырёх отказах по квоте - живой случай 13.08)
-      if (err instanceof GeminiQuotaError) quotaFailed++;
-      else netFailed++;
+      if (err instanceof GeminiQuotaError) {
+        quotaFailed++;
+      } else {
+        netFailed++;
+        // перегрузка и таймаут лечатся повтором, брак кадра - нет:
+        // в конец очереди кадр уходит ровно один раз
+        if (!secondTry.has(item)) {
+          secondTry.add(item);
+          queue.push(item);
+        }
+      }
       console.warn(`  анализ упал: [${item.source}] ${item.sourceId} — ${(err as Error).message}`);
       if (err instanceof GeminiQuotaError && quotaTripped()) {
         console.error("❌ дневная квота Gemini исчерпана — прекращаю до следующего запуска");
@@ -387,7 +415,8 @@ async function main() {
   console.log(
     `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), без крючка ${skippedHookless} (слабее ${hooklessMinScore}), ` +
       `брака подписи ${failed}, сорвано квотой ${quotaFailed}, сбоев сети/сервиса ${netFailed}, ` +
-      `цитат переписано ${rewritten}, тело длиннее предложения ${longBody}`,
+      `цитат переписано ${rewritten}, тело длиннее предложения ${longBody}` +
+      (recovered ? `, спасено вторым подходом ${recovered}` : ""),
   );
 
   // та же воронка в базу: по ней бот сам замечает, что что-то сломалось
