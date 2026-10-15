@@ -57,45 +57,92 @@ function rotateKey(): boolean {
 
 type ModelInfo = { name: string; supportedGenerationMethods?: string[] };
 
-let resolvedModel: string | undefined;
+/**
+ * Перегрузка временна, исчезновение - нет. Это два разных состояния, и
+ * раньше они жили в одном списке «мёртвых» до конца прогона.
+ *
+ * Контрольный сбор 15.10 показал, чего это стоит: модели честно
+ * отвечали 503 по минуте-другой, но каждая вычёркивалась навсегда, и за
+ * три минуты бот спустился по всей лестнице до gemini-flash-lite-latest.
+ * Облегчённая модель разобрала 15 кадров из 23 - и это видно по
+ * результату: 10 из 11 отказов «без крючка» её, включая «морпехов с
+ * трофейным флагом» (трофей - крючок по определению), а фронтовой
+ * рисунок она пустила в резерв с оценкой 65, тогда как такой же рисунок
+ * минутой позже оценила в 15 как «не фотографию».
+ *
+ * Поэтому: 404 - модель исчезла, вычёркиваем до конца прогона;
+ * 503 - модель отдыхает на скамейке OVERLOAD_BENCH_MS и потом
+ * возвращается, а бот поднимается обратно к лучшей свободной.
+ */
 const deadModels = new Set<string>();
+const benchedUntil = new Map<string, number>();
+export const OVERLOAD_BENCH_MS = 120_000;
 
 /**
- * Сколько 503 подряд считаем приговором модели, а не случайностью.
- *
- * Было 3, и столько же кадров уходило на выяснение, что модель лежит:
- * каждый 503 съедает бюджет вызова, а кадр при этом теряется целиком.
- * Утренний сбор 15.10 прошёл по цепочке latest → 3.8 → 3.7 → 3.6 → 3.5
- * и потерял четыре кадра из шести - вся партия в ноль. Двух перегрузок
- * достаточно: случайный одиночный 503 модель не казнит, а лежачую мы
- * покидаем вдвое быстрее.
+ * Сколько 503 подряд отправляют модель на скамейку. Двух достаточно:
+ * случайный одиночный 503 модель не трогает, а лежачую мы покидаем
+ * быстро - теперь это дёшево, потому что скамейка не пожизненная.
  */
 const OVERLOAD_TRIP_AFTER = 2;
 let overloadStreak = 0;
+let currentModel: string | undefined;
+let modelNames: string[] | undefined;
 
-function pickModel(models: ModelInfo[]): string | undefined {
-  const usable = models
-    .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
-    .map((m) => m.name.replace(/^models\//, ""))
-    .filter((name) => !deadModels.has(name));
+const NOT_TEXT = /image|tts|audio|embed|live|native/;
 
-  const latestAlias = usable.filter((n) => /^gemini-flash-latest$/.test(n));
-  if (latestAlias.length) return latestAlias[0];
-
-  // стабильные gemini-N[.M]-flash, самая свежая версия
-  const stable = usable
-    .map((n) => ({ n, m: n.match(/^gemini-(\d+(?:\.\d+)?)-flash$/) }))
-    .filter((x): x is { n: string; m: RegExpMatchArray } => x.m !== null)
-    .sort((a, b) => Number(b.m[1]) - Number(a.m[1]));
-  if (stable.length) return stable[0]!.n;
-
-  // хоть какой-нибудь flash без картинко-генерации и tts
-  return usable.find((n) => n.includes("flash") && !/image|tts|audio|embed/.test(n));
+/**
+ * Модели в порядке предпочтения: алиас flash-latest, затем стабильные
+ * gemini-N-flash от свежей к старой, затем прочие полноценные flash.
+ *
+ * Облегчённые (*-lite) в лестницу не входят, пока есть хоть одна
+ * полноценная - даже отдыхающая: лучше подождать её возвращения, чем
+ * отдать подпись и оценку слабой модели, а пост потом уйдёт в канал
+ * автопостингом без человеческих глаз. Lite остаётся только на случай,
+ * когда полноценных у ключа нет вовсе.
+ */
+export function rankModels(names: string[]): string[] {
+  const flash = names.filter((n) => n.includes("flash") && !NOT_TEXT.test(n));
+  const full = flash.filter((n) => !/lite/.test(n));
+  const stableVersion = (n: string) => Number(n.match(/^gemini-(\d+(?:\.\d+)?)-flash$/)?.[1]);
+  const latest: string[] = full.filter((n) => n === "gemini-flash-latest");
+  const stable = full
+    .filter((n) => Number.isFinite(stableVersion(n)))
+    .sort((a, b) => stableVersion(b) - stableVersion(a));
+  const other = full.filter((n) => !latest.includes(n) && !stable.includes(n)).sort();
+  const ladder = [...latest, ...stable, ...other];
+  return ladder.length ? ladder : flash.sort();
 }
 
-async function resolveModel(): Promise<string> {
-  if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;
-  if (resolvedModel) return resolvedModel;
+export type ModelChoice = { model: string } | { waitMs: number } | { none: true };
+
+/**
+ * Лучшая модель, свободная прямо сейчас. Если все полноценные на
+ * скамейке - сколько ждать до ближайшей; если нет ни одной - none.
+ */
+export function chooseModel(
+  names: string[],
+  dead: ReadonlySet<string>,
+  benched: ReadonlyMap<string, number>,
+  now: number,
+): ModelChoice {
+  const ladder = rankModels(names.filter((n) => !dead.has(n)));
+  if (!ladder.length) return { none: true };
+  const free = ladder.find((n) => (benched.get(n) ?? 0) <= now);
+  if (free) return { model: free };
+  const earliest = Math.min(...ladder.map((n) => benched.get(n) ?? now));
+  return { waitMs: Math.max(0, earliest - now) };
+}
+
+function benchModel(model: string) {
+  benchedUntil.set(model, Date.now() + OVERLOAD_BENCH_MS);
+  overloadStreak = 0;
+  console.warn(
+    `gemini: ${model} перегружена - отдыхает ${Math.round(OVERLOAD_BENCH_MS / 1000)} с, беру следующую`,
+  );
+}
+
+async function loadModelNames(): Promise<string[]> {
+  if (modelNames) return modelNames;
   try {
     const res = await fetch(`${BASE}?pageSize=1000`, {
       headers: { "x-goog-api-key": currentKey() },
@@ -103,17 +150,43 @@ async function resolveModel(): Promise<string> {
     });
     if (!res.ok) throw new Error(`ListModels HTTP ${res.status}`);
     const body = (await res.json()) as { models?: ModelInfo[] };
-    const picked = pickModel(body.models ?? []);
-    if (picked) {
-      resolvedModel = picked;
-      console.log(`gemini: выбрана модель ${picked}`);
-      return picked;
-    }
+    modelNames = (body.models ?? [])
+      .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m) => m.name.replace(/^models\//, ""));
   } catch (err) {
-    console.warn(`gemini: не смог выбрать модель (${(err as Error).message}), беру ${FALLBACK_MODEL}`);
+    console.warn(`gemini: не смог получить список моделей (${(err as Error).message}), беру ${FALLBACK_MODEL}`);
+    modelNames = [FALLBACK_MODEL];
   }
-  resolvedModel = FALLBACK_MODEL;
-  return FALLBACK_MODEL;
+  return modelNames;
+}
+
+/**
+ * Модель для очередной попытки. Пересчитывается каждый раз (без сети -
+ * список моделей читается один раз за прогон), поэтому, как только
+ * лучшая модель отдохнула, бот к ней и возвращается.
+ */
+async function resolveModel(deadline: number): Promise<string> {
+  if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;
+  const names = await loadModelNames();
+  for (;;) {
+    const choice = chooseModel(names, deadModels, benchedUntil, Date.now());
+    if ("model" in choice) {
+      if (choice.model !== currentModel) {
+        console.log(`gemini: выбрана модель ${choice.model}`);
+        currentModel = choice.model;
+        overloadStreak = 0;
+      }
+      return choice.model;
+    }
+    if ("none" in choice) return FALLBACK_MODEL;
+    if (Date.now() + choice.waitMs > deadline) {
+      throw new Error(
+        `gemini: все модели перегружены, ближайшая освободится через ${Math.ceil(choice.waitMs / 1000)} с`,
+      );
+    }
+    console.warn(`gemini: все модели перегружены - жду ${Math.ceil(choice.waitMs / 1000)} с`);
+    await sleep(choice.waitMs);
+  }
 }
 
 // бесплатный тариф: 10 запросов/мин — держим паузу между вызовами
@@ -189,7 +262,7 @@ export async function geminiJson<T>(
           `gemini: вызов не уложился в ${Math.round(CALL_BUDGET_MS / 1000)} с (${lastError?.message ?? "без ответа"})`,
         );
       }
-      const model = opts.model ?? (await resolveModel());
+      const model = opts.model ?? (await resolveModel(callDeadline));
       const url = `${BASE}/${model}:generateContent`;
 
       const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
@@ -211,12 +284,20 @@ export async function geminiJson<T>(
               temperature: opts.temperature ?? 0.3,
             },
           }),
-          // зависший запрос не должен вешать весь суточный сбор
-          signal: AbortSignal.timeout(90_000),
+          // зависший запрос не должен вешать весь сбор. Было 90 с, и при
+          // бюджете вызова в 150 с одно зависание съедало его почти
+          // целиком - на вторую модель времени уже не оставалось (утро
+          // 15.10: два кадра умерли именно так). Здоровый разбор кадра
+          // укладывается в десятки секунд
+          signal: AbortSignal.timeout(60_000),
         });
       } catch (err) {
         lastError = new Error(`gemini: сеть/таймаут — ${(err as Error).message}`);
-        await sleep(2000 * attempt);
+        // зависание у Gemini - та же перегрузка, только молчаливая: без
+        // этого зачёта зависшая модель не уходила на скамейку, и бот
+        // снова и снова ждал её по минуте
+        if (!opts.model && ++overloadStreak >= OVERLOAD_TRIP_AFTER) benchModel(model);
+        else await sleep(2000 * attempt);
         continue;
       }
 
@@ -256,14 +337,10 @@ export async function geminiJson<T>(
         lastError = new Error(`gemini: HTTP ${res.status}`);
         // Алиас *-flash-latest ведёт на самую свежую модель, а она же и
         // самая загруженная: ежедневный сбор 19.08 потерял на 503 шесть
-        // кадров из семнадцати - больше, чем на квоте. Три перегрузки
-        // подряд - вычёркиваем модель и берём стабильную версию до конца
-        // прогона; ждать тут нечего, отвечает другая машина.
-        if (!opts.model && ++overloadStreak >= OVERLOAD_TRIP_AFTER && resolvedModel) {
-          console.warn(`gemini: ${resolvedModel} перегружена - перехожу на другую модель`);
-          deadModels.add(resolvedModel);
-          resolvedModel = undefined;
-          overloadStreak = 0;
+        // кадров из семнадцати - больше, чем на квоте. Перегруженная
+        // модель уходит на скамейку, а вызов сразу пробует следующую
+        if (!opts.model && ++overloadStreak >= OVERLOAD_TRIP_AFTER) {
+          benchModel(model);
           continue;
         }
         // пауза короче прежней (была 5-10-20 с): при бюджете вызова в
@@ -275,7 +352,7 @@ export async function geminiJson<T>(
       // модель протухла — вычёркиваем и на следующей попытке выбираем заново
       if (res.status === 404 && !opts.model) {
         deadModels.add(model);
-        resolvedModel = undefined;
+        console.warn(`gemini: модель ${model} недоступна (404) - вычёркиваю до конца прогона`);
         lastError = new Error(`gemini: модель ${model} недоступна (404)`);
         continue;
       }

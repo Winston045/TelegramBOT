@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  APPROVED_PRIORITY,
   archiveNation,
   buildPlan,
   planAuto,
@@ -275,6 +276,26 @@ describe("buildPlan", () => {
       3,
     );
     expect(plan.map((e) => e.when)).toEqual(["сегодня 12:00", "сегодня 18:00", "завтра 09:00"]);
+  });
+
+  it("одобренный, дающий повтор темы, уступает слот резерву - и выходит следом", () => {
+    // отчёт 15.10: в очереди 7 одобренных, 4 из них - пехота, и резерв с
+    // другими темами не рассматривался, пока очередь не опустеет
+    const plan = buildPlan(
+      {
+        ...base,
+        recent: { subjects: ["infantry"], civilian: false },
+        scheduled: [],
+        approved: [cand(20, 52, "infantry")],
+        reserve: [cand(30, 72, "aviation")],
+        autoPublish: true,
+      },
+      2,
+    );
+    expect(plan.map((e) => [e.candidate.id, e.kind])).toEqual([
+      [30, "auto"],
+      [20, "approved"],
+    ]);
   });
 
   it("план не длиннее запрошенного", () => {
@@ -627,6 +648,37 @@ describe("добор при бедном резерве меняет эпоху 
       1,
     ).map((c) => c.id);
     expect(picked[0]).toBe(1);
+  });
+});
+
+describe("одобренные и резерв - один пул", () => {
+  const approved = (id: number, score: number, subject: string): PlanCandidate => ({
+    ...cand(id, score, subject),
+    priority: APPROVED_PRIORITY,
+  });
+
+  it("одобренный, подходящий под правила, обходит даже сильный кадр резерва", () => {
+    // редактор решает, ЧТО достойно канала: слабый одобренный впереди
+    // отличного резервного, пока не ломает чередование
+    const picked = planAuto([cand(30, 98, "aviation"), approved(20, 45, "navy")], noRecent, 1);
+    expect(picked[0]?.id).toBe(20);
+  });
+
+  it("недельные штрафы не перебивают одобрения", () => {
+    const share = { navy: 1 };
+    expect(rank(approved(20, 45, "navy"), undefined, undefined, share)).toBeGreaterThan(
+      rank(cand(30, 98, "aviation"), undefined, undefined, share),
+    );
+  });
+
+  it("когда повтор неизбежен, аварийный добор всё равно предпочитает одобренный", () => {
+    // и в резерве, и в очереди только пехота: правило темы валит всех
+    const picked = planAuto(
+      [cand(30, 90, "infantry"), approved(20, 50, "infantry")],
+      { subjects: ["infantry"], civilian: false },
+      1,
+    );
+    expect(picked[0]?.id).toBe(20);
   });
 });
 

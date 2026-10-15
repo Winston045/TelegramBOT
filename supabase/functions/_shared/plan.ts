@@ -30,7 +30,26 @@ export type PlanCandidate = {
   /** Источник («commons», «loc», «pastvu») - запасной ключ чередования
    *  для старых кандидатов, собранных без архива. */
   source?: string | null;
+  /** Надбавка к рангу вне качества кадра: одобренным - APPROVED_PRIORITY. */
+  priority?: number;
 };
+
+/**
+ * Одобренный редактором пост выходит раньше любого из резерва - но только
+ * если он не ломает правила разнообразия.
+ *
+ * Раньше одобренная очередь вытесняла резерв целиком: пока в ней лежал
+ * хоть один пост, резерв не рассматривался вовсе. Отчёт 15.10: в очереди 7
+ * одобренных, четыре из них - американская пехота, два ждут с 7 и 12
+ * сентября. Все правила чередования работали на пуле из семи кадров, и
+ * когда ни один не подходил, срабатывал аварийный добор - отсюда infantry
+ * 33% месячной ленты и пары подряд, при живом резерве с другими темами.
+ *
+ * Теперь пул общий. Надбавка больше любого разрыва в оценках, поэтому
+ * среди подходящих под правила одобренный побеждает всегда; резервный
+ * пост выходит только тогда, когда одобренный дал бы повтор.
+ */
+export const APPROVED_PRIORITY = 100;
 
 /** Откуда пост попал в план - это видно редактору в /queue. */
 export type PlanKind = "scheduled" | "approved" | "auto";
@@ -202,6 +221,7 @@ export function rank(
     sShare > SUBJECT_SHARE_SOFT ? (sShare - SUBJECT_SHARE_SOFT) * SUBJECT_SHARE_PENALTY : 0;
   return (
     (c.score ?? 0) +
+    (c.priority ?? 0) +
     quote +
     color -
     staticShot -
@@ -544,21 +564,23 @@ export function buildPlan(input: PlanInput, count: number): PlanEntry[] {
   // ленты. Раньше одобренные шли строго по id, и все правила чередования
   // работали только в автопостинге: 12.08 подряд вышли два кадра
   // Бундесархива, хотя в очереди ждал британский.
+  //
+  // И один общий пул с резервом (см. APPROVED_PRIORITY): так же решает
+  // публикатор, иначе предпросмотр врал бы о порядке
+  const approvedIds = new Set(input.approved.map((c) => c.id));
+  const pool: PlanCandidate[] = [
+    ...input.approved.map((c) => ({ ...c, priority: (c.priority ?? 0) + APPROVED_PRIORITY })),
+    ...(input.autoPublish ? input.reserve : []),
+  ];
+  const want = Math.max(input.approved.length, count - entries.length);
   const bySlot: Array<{ candidate: PlanCandidate; kind: PlanKind }> = planAuto(
-    input.approved,
+    pool,
     input.recent,
-    input.approved.length,
+    want,
   ).map((c) => ({
     candidate: c,
-    kind: "approved" as const,
+    kind: approvedIds.has(c.id) ? ("approved" as const) : ("auto" as const),
   }));
-
-  const slotsLeft = Math.max(0, count - entries.length - bySlot.length);
-  if (input.autoPublish && slotsLeft > 0) {
-    for (const c of planAuto(input.reserve, input.recent, slotsLeft)) {
-      bySlot.push({ candidate: c, kind: "auto" });
-    }
-  }
 
   const slots = upcomingSlots(input, bySlot.length);
   bySlot.forEach((item, i) => {

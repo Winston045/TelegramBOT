@@ -41,6 +41,7 @@ import {
   buildPlan,
   headline,
   quoteLength,
+  weekShares,
   type PlanEntry,
   type PlanTags,
 } from "../_shared/plan.ts";
@@ -899,16 +900,19 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
   const autoPublish = await getAutoPublish();
   const times = await getPublishTimes();
 
-  const [scheduledRes, approvedRes, reserveRes, recentRes, todayRes] = await Promise.all([
+  const [scheduledRes, approvedRes, reserveRes, recentRes, todayRes, weekRes] = await Promise.all([
     db
       .from("candidates")
       .select("id, caption_html, scheduled_at")
       .eq("status", "approved")
       .not("scheduled_at", "is", null)
       .order("scheduled_at", { ascending: true }),
+    // одобренные и резерв планируются одним пулом - без оценки и тегов
+    // одобренный для правил разнообразия «невидим», и превью разошлось
+    // бы с тем, что реально выберет публикатор
     db
       .from("candidates")
-      .select("id, caption_html")
+      .select("id, caption_html, score, tags, attribution, source")
       .eq("status", "approved")
       .is("scheduled_at", null)
       .order("id", { ascending: true }),
@@ -932,6 +936,12 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       .select("published_at")
       .eq("status", "published")
       .gte("published_at", new Date(Date.now() - 48 * 3600 * 1000).toISOString()),
+    // недельные доли архивов, эпох и тем - как у публикатора
+    db
+      .from("candidates")
+      .select("attribution, source, tags")
+      .eq("status", "published")
+      .gte("published_at", new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()),
   ]);
 
   const todayMsk = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(
@@ -969,6 +979,13 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
         statics: recentRows.filter((p) => p.tags?.action === false).length,
         longs: recentRows.filter((p) => quoteLength(p.caption_html ?? null) >= LONG_QUOTE).length,
         archives: recentRows.map((p) => archiveKey(p.attribution) || (p.source ?? "")),
+        ...weekShares(
+          (weekRes.data ?? []) as Array<{
+            attribution?: string | null;
+            source?: string | null;
+            tags?: PlanTags;
+          }>,
+        ),
       },
       autoPublish,
       formatScheduled: moscowTime,

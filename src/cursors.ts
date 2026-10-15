@@ -34,6 +34,12 @@ export function memoryCursorStore(): CursorStore {
  * икнула, а не что всё в порядке.
  */
 export function dbCursorStore(): CursorStore {
+  // курсоры, которые в этом прогоне не прочитались. Писать в них нельзя:
+  // мы шли от нуля, а не от сохранённой позиции, и запись затёрла бы
+  // настоящий курсор - источник откатился бы к началу выдачи и неделями
+  // перечитывал уже виденные страницы
+  const unread = new Set<string>();
+  const keyOf = (source: string, query: string) => `${source}\u0000${query}`;
   return {
     async get(source, query) {
       try {
@@ -44,8 +50,10 @@ export function dbCursorStore(): CursorStore {
           .eq("query", query)
           .maybeSingle();
         if (error) throw new Error(error.message);
+        unread.delete(keyOf(source, query));
         return data?.cursor ?? 0;
       } catch (err) {
+        unread.add(keyOf(source, query));
         console.warn(
           `  курсор ${source}/${query} не прочитан (${(err as Error).message}) - начинаю с первой страницы`,
         );
@@ -53,6 +61,10 @@ export function dbCursorStore(): CursorStore {
       }
     },
     async set(source, query, cursor) {
+      if (unread.has(keyOf(source, query))) {
+        console.warn(`  курсор ${source}/${query} не трогаю: в этом прогоне он не прочитался`);
+        return;
+      }
       try {
         const { error } = await getDb()
           .from("source_cursors")

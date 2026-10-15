@@ -18,8 +18,18 @@ import type { RawItem } from "./sources/types.js";
 const HOOK_WORDS =
   /\b(captur\w*|erbeut\w*|trophy|wreck\w*|destroy\w*|zerst\w*|burn\w*|brenn\w*|abandon\w*|knocked[- ]out|ausgebrannt|sink\w*|sunk|crash\w*|attack\w*|angriff|assault|advanc\w*|storm\w*|firing|fires|explos\w*|hyökkäys|tuho\w*)|захвач\w*|трофе\w*|подбит\w*|обломк\w*|горящ\w*|разруш\w*|атак\w*|штурм/i;
 
-/** Подлинный цвет эпохи - редкость, за которую канал любят. */
-const COLOR_WORDS = /\b(kodachrome|autochrome|agfacolor|colou?r photograph|farbfoto|farbaufnahme)\b/i;
+/**
+ * Подлинный цвет эпохи - редкость, за которую канал любят.
+ *
+ * Архивы пишут о цвете не словами, а форматом носителя: у LOC это
+ * «1 transparency : color» и «1 slide : color». Раньше сито знало только
+ * имена плёнок, и цветной кадр не получал форы в очереди: LOC отдаёт за
+ * прогон три десятка записей, а до анализа доходят пять - цвет проигрывал
+ * их чёрно-белым соседям вслепую. Итог по базе 15.10: десять цветных
+ * постов за всё время, и ни одного нового цветного кадра после 18.09.
+ */
+const COLOR_WORDS =
+  /\b(kodachrome|autochrome|agfacolor|ektachrome|colou?r photograph|colou?r (transparenc(y|ies)|slides?)|farbfoto|farbaufnahme|farbdia)\b|\b\d+\s+(transparenc(y|ies)|slides?)\s*:\s*colou?r/i;
 
 /**
  * Слова протокола: церемонии, портреты, совещания. Такой кадр почти

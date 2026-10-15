@@ -1,5 +1,69 @@
 import { describe, expect, it } from "vitest";
-import { classify429, quotaLabel } from "../src/gemini.js";
+import { chooseModel, classify429, quotaLabel, rankModels } from "../src/gemini.js";
+
+/** Список моделей ключа - как его отдавал ListModels в прогоне 15.10. */
+const MODELS = [
+  "gemini-flash-latest",
+  "gemini-3.5-flash",
+  "gemini-3.8-flash",
+  "gemini-3.6-flash",
+  "gemini-3.7-flash",
+  "gemini-2.5-flash",
+  "gemini-flash-lite-latest",
+  "gemini-2.5-flash-image",
+  "gemini-2.5-flash-preview-tts",
+];
+
+describe("лестница моделей", () => {
+  it("алиас latest, затем стабильные от свежей к старой; lite и не-текстовые вне лестницы", () => {
+    expect(rankModels(MODELS)).toEqual([
+      "gemini-flash-latest",
+      "gemini-3.8-flash",
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+      "gemini-2.5-flash",
+    ]);
+  });
+
+  it("lite берётся, только когда полноценных у ключа нет вовсе", () => {
+    expect(rankModels(["gemini-flash-lite-latest", "gemini-2.5-flash-image"])).toEqual([
+      "gemini-flash-lite-latest",
+    ]);
+  });
+});
+
+describe("выбор модели: перегрузка временна, исчезновение - нет", () => {
+  const T = 1_000_000;
+
+  it("отдыхающую модель пропускает, исчезнувшую - тоже", () => {
+    const benched = new Map([["gemini-flash-latest", T + 60_000]]);
+    const dead = new Set(["gemini-3.8-flash"]);
+    expect(chooseModel(MODELS, dead, benched, T)).toEqual({ model: "gemini-3.7-flash" });
+  });
+
+  it("отдохнувшая модель возвращается наверх лестницы", () => {
+    // контрольный сбор 15.10 съехал до lite и остался там до конца прогона
+    const benched = new Map([["gemini-flash-latest", T - 1]]);
+    expect(chooseModel(MODELS, new Set(), benched, T)).toEqual({ model: "gemini-flash-latest" });
+  });
+
+  it("все полноценные отдыхают - ждём ближайшую, а не спускаемся до lite", () => {
+    const benched = new Map(
+      rankModels(MODELS).map((m, i) => [m, T + 30_000 + i * 10_000] as [string, number]),
+    );
+    expect(chooseModel(MODELS, new Set(), benched, T)).toEqual({ waitMs: 30_000 });
+  });
+
+  it("все полноценные исчезли - тогда уж lite", () => {
+    const dead = new Set(rankModels(MODELS));
+    expect(chooseModel(MODELS, dead, new Map(), T)).toEqual({ model: "gemini-flash-lite-latest" });
+  });
+
+  it("пустой список - честное «нет»", () => {
+    expect(chooseModel([], new Set(), new Map(), T)).toEqual({ none: true });
+  });
+});
 
 /**
  * Ответы Gemini на 429 - в том виде, в каком их отдаёт API. Разница между

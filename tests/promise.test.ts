@@ -27,6 +27,21 @@ describe("обещание кадра", () => {
     expect(color).toBeGreaterThan(plain);
   });
 
+  it("цвет узнаётся и по формату носителя, как его пишет LOC", () => {
+    // так описаны цветные кадры Vilter, вышедшие в сентябре: имени плёнки
+    // в метаданных нет, есть только носитель
+    const transparency = promise(
+      frame("War production worker at the Vilter Company", "1 transparency : color ; 4 x 5 in."),
+    );
+    const print = promise(
+      frame("War production worker at the Vilter Company", "1 photographic print ; 4 x 5 in."),
+    );
+    expect(transparency).toBeGreaterThan(print);
+    expect(promise(frame("Bomber crew", "1 slide : color."))).toBeGreaterThan(
+      promise(frame("Bomber crew", "1 slide : b&w.")),
+    );
+  });
+
   it("слова-крючки узнаются и по-русски, и по-немецки", () => {
     expect(promise(frame("Подбитый советский танк на обочине"))).toBeGreaterThan(0);
     expect(promise(frame("Erbeuteter sowjetischer Panzer"))).toBeGreaterThan(0);

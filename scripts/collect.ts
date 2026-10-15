@@ -277,8 +277,14 @@ async function main() {
       );
       break;
     }
-    // повторный подход тем же кадром заново «разобранным» не считаем
-    if (!secondTry.has(item)) analyzed++;
+    // повторный подход тем же кадром заново «разобранным» не считаем, а
+    // сбой первого подхода снимаем: дальше кадр получит РОВНО один исход -
+    // запись, отсев или новый сбой. Иначе кадр, спасённый от 503 и потом
+    // честно отсеянный как скучный, числился и сбоем, и мусором (живой
+    // случай 15.10: воронка показала «сбоев 1», а настоящих было ноль)
+    const retrying = secondTry.has(item);
+    if (retrying) netFailed--;
+    else analyzed++;
     // умные цитаты: полное описание со страницы архива как доп. контекст
     let extraContext: string | undefined;
     try {
@@ -289,6 +295,12 @@ async function main() {
 
     try {
       const a = await analyzeImage(item, cfg, item.imageBuffer, extraContext);
+      // спасён - значит, Gemini наконец ответила; дальше кадр судят по
+      // существу, как любой другой
+      if (retrying) {
+        recovered++;
+        console.log(`  спасён вторым подходом: [${item.source}] ${item.sourceId}`);
+      }
       // цензуры нет: unsafe — только пометка в логе, решают редакторы
       if (a.unsafe) console.log(`  пометка unsafe: [${item.source}] ${item.sourceId}`);
       const hook = a.tags.hook ?? "none";
@@ -364,13 +376,6 @@ async function main() {
 
       if (check.ok) {
         written++;
-        if (secondTry.has(item)) {
-          // сбой был зачтён при первом падении - снимаем его, иначе
-          // воронка покажет кадр и сорванным, и записанным
-          netFailed--;
-          recovered++;
-          console.log(`  спасён вторым подходом: [${item.source}] ${item.sourceId}`);
-        }
       } else {
         failed++;
         console.warn(`  брак подписи: [${item.source}] ${item.sourceId} — ${check.reason}`);
@@ -385,7 +390,7 @@ async function main() {
         netFailed++;
         // перегрузка и таймаут лечатся повтором, брак кадра - нет:
         // в конец очереди кадр уходит ровно один раз
-        if (!secondTry.has(item)) {
+        if (!retrying) {
           secondTry.add(item);
           queue.push(item);
         }

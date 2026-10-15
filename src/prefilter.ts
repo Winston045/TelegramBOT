@@ -11,7 +11,26 @@ export type RejectReason =
   | "album_record"
   | "untitled_record"
   | "studio_portrait"
+  | "not_photo"
   | "stop_word";
+
+/**
+ * Рисунок, плакат, гравюра - не фотография, а канал - фотоархив.
+ *
+ * Отличать их по картинке поручали Gemini, и это ненадёжно: 15.10
+ * облегчённая модель поставила фронтовому рисунку Говарда Броди 65 баллов
+ * и пустила его в резерв с подписью «Боец на ночном дежурстве в окопе»,
+ * а такой же рисунок той же серии минутой позже оценила в 15 как «не
+ * фотографию». Архив же говорит об этом прямо, в физическом описании:
+ * «1 drawing : crayon, graphite, and ink» и «Drawing shows ...». Фото там
+ * - «1 photographic print», «1 negative», «1 transparency : color».
+ */
+const NON_PHOTO =
+  /\b\d+\s+(drawings?|paintings?|posters?|watercolou?rs?|sketch(es)?|cartoons?|prints?\s*:\s*(lithograph|woodcut|etching|engraving|screenprint|serigraph)\w*)\b|\b(drawing|poster|painting|cartoon|sketch|lithograph|print) shows\b/i;
+
+export function isNonPhotoRecord(title?: string | null, description?: string | null): boolean {
+  return NON_PHOTO.test(`${title ?? ""} | ${description ?? ""}`);
+}
 
 /** Дешёвый префильтр до vision-скоринга. Возвращает причину брака или null. */
 export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null {
@@ -57,6 +76,7 @@ export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null
   if (/\bportrait\b/i.test(title) && !/\b(tank|aircraft|ship|gun|wreck)\b/i.test(title)) {
     return "studio_portrait";
   }
+  if (isNonPhotoRecord(item.title, item.description)) return "not_photo";
   for (const word of cfg.filters.stop_words) {
     if (haystack.includes(word.toLowerCase())) return "stop_word";
   }

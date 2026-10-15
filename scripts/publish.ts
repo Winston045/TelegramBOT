@@ -14,6 +14,7 @@ import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/sched
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { isDuplicate } from "../src/dhash.js";
 import {
+  APPROVED_PRIORITY,
   LONG_QUOTE,
   RECENT_WINDOW,
   archiveKey,
@@ -119,6 +120,8 @@ async function main() {
   if (dueErr) throw new Error(`чтение запланированных: ${dueErr.message}`);
 
   let queue = due;
+  const autoPublish = await loadBoolSetting("auto_publish", cfg.publish.auto_publish);
+  let autoPicked = false;
 
   if (!queue?.length) {
     if (!shouldPublishNow(now, times, tz, publishedToday)) {
@@ -143,62 +146,65 @@ async function main() {
       .limit(20);
     if (res.error) throw new Error(`чтение очереди: ${res.error.message}`);
     const approved = res.data ?? [];
-    if (approved.length) {
+
+    // полная автоматизация (тумблер /auto в боте): резерв собранных без
+    // аппрува кадров. Раньше он рассматривался, только когда одобренная
+    // очередь пуста, - и правила разнообразия работали на пуле из
+    // нескольких одобренных (см. APPROVED_PRIORITY). Теперь пул общий:
+    // одобренный выходит первым, пока не даёт повтора
+    let reserve: typeof approved = [];
+    if (autoPublish) {
+      const rres = await db
+        .from("candidates")
+        .select("id, image_url, image_hash, caption_html, score, tags, attribution, source")
+        .in("status", ["new", "shown"])
+        .not("caption_html", "is", null)
+        // срок годности резерва: у старых кадров чаще мертвеет ссылка
+        // архива, а оформление отстаёт от текущих правил
+        .gte("created_at", new Date(now.getTime() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString())
+        .order("score", { ascending: false })
+        .limit(20);
+      if (rres.error) throw new Error(`чтение кандидатов автопостинга: ${rres.error.message}`);
+      // без глаз редактора хэш сверяем ещё раз прямо перед публикацией:
+      // в резерве могут лежать кадры, собранные до пополнения базы дедупа
+      const { data: seen, error: seenErr } = await db.from("seen_hashes").select("image_hash");
+      if (seenErr) throw new Error(`чтение seen_hashes: ${seenErr.message}`);
+      const seenHashes = (seen ?? []).map((r) => r.image_hash as string);
+      // битые кадры выкидываем до планировщика: он решает только «что интереснее»
+      for (const cand of rres.data ?? []) {
+        if (seenHashes.some((h) => isDuplicate(h, cand.image_hash))) {
+          await db.from("candidates").update({ status: "rejected" }).eq("id", cand.id);
+          console.log(`автопостинг: #${cand.id} - дубликат уже вышедшего, отклонён`);
+          continue;
+        }
+        reserve.push(cand);
+      }
+    }
+
+    if (approved.length || reserve.length) {
+      // темы последних постов: три парома «Зибель» подряд формально разные
+      // кадры, а в ленте выглядят одним и тем же - такие темы придерживаем
       const recent = await recentContext(db, now);
-      const [pick] = planAuto(approved, recent, 1);
-      const chosen = pick ? approved.find((c) => c.id === pick.id) : approved[0];
+      const approvedIds = new Set(approved.map((c) => c.id));
+      const pool = [
+        ...approved.map((c) => ({ ...c, priority: APPROVED_PRIORITY })),
+        ...reserve,
+      ];
+      // тот же планировщик, что показывает /queue - предпросмотр не врёт
+      const [pick] = planAuto(pool, recent, 1);
+      const chosen = pick ? [...approved, ...reserve].find((c) => c.id === pick.id) : undefined;
       queue = chosen ? [chosen] : [];
-      if (chosen && approved.length > 1) {
-        console.log(`очередь одобренных: выбран #${chosen.id} из ${approved.length}`);
+      if (chosen) {
+        autoPicked = !approvedIds.has(chosen.id);
+        console.log(
+          autoPicked
+            ? `автопостинг: выбран #${chosen.id} (тема "${chosen.tags?.subject ?? "-"}")` +
+                (approved.length ? ` - одобренные дали бы повтор, их ${approved.length}` : "")
+            : `очередь одобренных: выбран #${chosen.id} из ${approved.length}`,
+        );
       }
     } else {
       queue = [];
-    }
-  }
-
-  // полная автоматизация (тумблер /auto в боте): очередь одобренных пуста -
-  // берём лучший неопубликованный кандидат без аппрува админов
-  const autoPublish = await loadBoolSetting("auto_publish", cfg.publish.auto_publish);
-  let autoPicked = false;
-  if (!queue?.length && autoPublish) {
-    const res = await db
-      .from("candidates")
-      .select("id, image_url, image_hash, caption_html, score, tags, attribution, source")
-      .in("status", ["new", "shown"])
-      .not("caption_html", "is", null)
-      // срок годности резерва: у старых кадров чаще мертвеет ссылка
-      // архива, а оформление отстаёт от текущих правил
-      .gte("created_at", new Date(now.getTime() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString())
-      .order("score", { ascending: false })
-      .limit(20);
-    if (res.error) throw new Error(`чтение кандидатов автопостинга: ${res.error.message}`);
-    // без глаз редактора хэш сверяем ещё раз прямо перед публикацией:
-    // в резерве могут лежать кадры, собранные до пополнения базы дедупа
-    const { data: seen, error: seenErr } = await db.from("seen_hashes").select("image_hash");
-    if (seenErr) throw new Error(`чтение seen_hashes: ${seenErr.message}`);
-    const seenHashes = (seen ?? []).map((r) => r.image_hash as string);
-
-    // темы последних постов: три парома «Зибель» подряд формально разные
-    // кадры, а в ленте выглядят одним и тем же - такие темы придерживаем
-    const recent = await recentContext(db, now);
-
-    // битые кадры выкидываем до планировщика: он решает только «что интереснее»
-    const alive: typeof res.data = [];
-    for (const cand of res.data ?? []) {
-      if (seenHashes.some((h) => isDuplicate(h, cand.image_hash))) {
-        await db.from("candidates").update({ status: "rejected" }).eq("id", cand.id);
-        console.log(`автопостинг: #${cand.id} - дубликат уже вышедшего, отклонён`);
-        continue;
-      }
-      alive.push(cand);
-    }
-
-    // тот же планировщик, что показывает /queue - предпросмотр не врёт
-    const [pick] = planAuto(alive, recent, 1);
-    if (pick) {
-      queue = alive.filter((c) => c.id === pick.id);
-      autoPicked = true;
-      console.log(`автопостинг: выбран #${pick.id} (тема "${pick.tags?.subject ?? "-"}")`);
     }
   }
 

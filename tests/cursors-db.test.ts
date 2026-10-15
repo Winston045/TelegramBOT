@@ -10,16 +10,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  */
 const dbError = { message: "Project not specified." };
 
-const failingDb = {
-  from: () => ({
-    select: () => ({
-      eq: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: null, error: dbError }) }),
-      }),
+const table = {
+  select: () => ({
+    eq: () => ({
+      eq: () => ({ maybeSingle: async () => ({ data: null, error: dbError }) }),
     }),
-    upsert: async () => ({ error: dbError }),
   }),
+  upsert: async (_row: unknown) => ({ error: dbError }),
 };
+const failingDb = { from: () => table };
 
 vi.mock("../src/db.js", () => ({ getDb: () => failingDb }));
 
@@ -41,5 +40,16 @@ describe("dbCursorStore: сбой базы не стоит источника", 
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await expect(dbCursorStore().set("events", "term:Apollo 11", 50)).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalled();
+  });
+
+  it("непрочитанный курсор не затирается: шли от нуля, а не от сохранённого места", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const upsert = vi.spyOn(table, "upsert");
+    const store = dbCursorStore();
+    await store.get("events", "off:Apollo 11:");
+    // адаптер после чтения пишет новую позицию - она посчитана от нуля и
+    // откатила бы источник к началу выдачи
+    await store.set("events", "off:Apollo 11:", 5);
+    expect(upsert).not.toHaveBeenCalled();
   });
 });

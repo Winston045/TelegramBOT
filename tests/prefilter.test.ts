@@ -47,6 +47,41 @@ describe("rejectReason", () => {
       rejectReason({ ...good, description: "near the Mass Grave" }, cfg),
     ).toBe("stop_word");
   });
+
+  /**
+   * Живой случай 15.10, #408: облегчённая модель пустила в резерв рисунок
+   * Говарда Броди с подписью «Боец на ночном дежурстве в окопе». Метаданные
+   * взяты из базы дословно - архив сам называет носитель.
+   */
+  it("рисунок по описанию архива - не фотография", () => {
+    const brodie = {
+      ...good,
+      title: "[Scene in a Guadalcanal foxhole near the front at midnight]",
+      description:
+        "1 drawing : crayon, graphite, and ink. | Drawing shows a soldier on patrol in a foxhole",
+    };
+    expect(rejectReason(brodie, cfg)).toBe("not_photo");
+    expect(rejectReason({ ...good, description: "1 print : lithograph, color." }, cfg)).toBe(
+      "not_photo",
+    );
+    expect(rejectReason({ ...good, description: "Poster shows a soldier" }, cfg)).toBe("not_photo");
+  });
+
+  it("фотографию с похожими словами не трогает", () => {
+    // соседи по тому же резерву 15.10 - настоящие снимки
+    expect(
+      rejectReason(
+        { ...good, description: "1 photographic print. | Bird's-eye view of U.S. Marines and tanks." },
+        cfg,
+      ),
+    ).toBeNull();
+    expect(rejectReason({ ...good, description: "1 transparency : color ; 4 x 5 in." }, cfg)).toBeNull();
+    expect(rejectReason({ ...good, description: "1 negative : glass" }, cfg)).toBeNull();
+    // «print» без художественной техники - это и есть фотоотпечаток
+    expect(rejectReason({ ...good, description: "1 print : photomechanical" }, cfg)).toBeNull();
+    // рисунок упомянут в сюжете, а не как носитель
+    expect(rejectReason({ ...good, title: "Soldiers drawing water from a well" }, cfg)).toBeNull();
+  });
 });
 
 describe("prefilter", () => {
