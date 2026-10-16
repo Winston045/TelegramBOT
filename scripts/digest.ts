@@ -128,7 +128,7 @@ async function main() {
       ? `За неделю (${weekRows.length} постов):\nархивы - ${archivesLine || "нет данных"}\nэпохи - ${periodsLine || "нет данных"}`
       : "За неделю постов не было",
     "",
-    `<i>v${botVersion()} (beta)</i>`,
+    `<i>v${botVersion()}</i>`,
   ];
 
   await sendMessageHtml(env.editorsChatId, lines.join("\n"));
