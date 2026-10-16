@@ -25,7 +25,7 @@ import { hiResLocUrl } from "../src/sources/loc.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { isStereoPair } from "../src/stereo.js";
 import { getDb } from "../src/db.js";
-import { GeminiQuotaError, quotaTripped } from "../src/gemini.js";
+import { GeminiQuotaError, lastUsedModel, quotaTripped } from "../src/gemini.js";
 import { analyzeImage } from "../src/analyze.js";
 import { passesGate } from "../src/scoring.js";
 import { reviewQuote } from "../src/critic.js";
@@ -295,6 +295,10 @@ async function main() {
 
     try {
       const a = await analyzeImage(item, cfg, item.imageBuffer, extraContext);
+      // какая модель оценила и подписала кадр - при перегрузке это может
+      // быть облегчённая; храним рядом с тегами, чтобы потом сверить её
+      // посты с остальными по живым данным, а не по догадкам
+      const model = lastUsedModel();
       // спасён - значит, Gemini наконец ответила; дальше кадр судят по
       // существу, как любой другой
       if (retrying) {
@@ -319,7 +323,7 @@ async function main() {
         continue;
       }
       // обоснование балла видно в логе сбора: по нему ловим завышения
-      if (a.score_why) console.log(`  score ${a.score} [${hook}]: ${a.score_why}`);
+      if (a.score_why) console.log(`  score ${a.score} [${hook}] (${model ?? "?"}): ${a.score_why}`);
 
       const row = {
         source: item.source,
@@ -334,7 +338,7 @@ async function main() {
         place: item.place ?? null,
         // обоснование храним рядом с тегами: отдельной колонки ради одной
         // строки заводить не стоит, а в отчёте по подписям оно нужно
-        tags: a.score_why ? { ...a.tags, why: a.score_why } : a.tags,
+        tags: { ...a.tags, ...(a.score_why ? { why: a.score_why } : {}), ...(model ? { model } : {}) },
         score: a.score,
         license: item.license,
         attribution: item.attribution ?? null,

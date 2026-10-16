@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseModel, classify429, quotaLabel, rankModels } from "../src/gemini.js";
+import { chooseModel, classify429, liteModels, quotaLabel, rankModels } from "../src/gemini.js";
 
 /** Список моделей ключа - как его отдавал ListModels в прогоне 15.10. */
 const MODELS = [
@@ -26,10 +26,10 @@ describe("лестница моделей", () => {
     ]);
   });
 
-  it("lite берётся, только когда полноценных у ключа нет вовсе", () => {
-    expect(rankModels(["gemini-flash-lite-latest", "gemini-2.5-flash-image"])).toEqual([
-      "gemini-flash-lite-latest",
-    ]);
+  it("облегчённые - отдельный запасной список, алиас latest первым", () => {
+    expect(
+      liteModels(["gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.8-flash"]),
+    ).toEqual(["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-2.5-flash-lite"]);
   });
 });
 
@@ -48,10 +48,26 @@ describe("выбор модели: перегрузка временна, исч
     expect(chooseModel(MODELS, new Set(), benched, T)).toEqual({ model: "gemini-flash-latest" });
   });
 
-  it("все полноценные отдыхают - ждём ближайшую, а не спускаемся до lite", () => {
+  it("все полноценные отдыхают - запасной выход в облегчённую, а не потерянный кадр", () => {
+    // сбор 16.10: полноценные лежали весь прогон, бот ждал их и потерял
+    // 12 кадров из 19 - в резерв ноль
     const benched = new Map(
       rankModels(MODELS).map((m, i) => [m, T + 30_000 + i * 10_000] as [string, number]),
     );
+    expect(chooseModel(MODELS, new Set(), benched, T)).toEqual({ model: "gemini-flash-lite-latest" });
+  });
+
+  it("полноценная вернулась со скамейки - уходим с облегчённой", () => {
+    const benched = new Map(
+      rankModels(MODELS).map((m) => [m, T + 60_000] as [string, number]),
+    );
+    benched.set("gemini-3.6-flash", T - 1);
+    expect(chooseModel(MODELS, new Set(), benched, T)).toEqual({ model: "gemini-3.6-flash" });
+  });
+
+  it("отдыхают все, включая облегчённую - ждём ближайшую", () => {
+    const all = [...rankModels(MODELS), ...liteModels(MODELS)];
+    const benched = new Map(all.map((m, i) => [m, T + 30_000 + i * 10_000] as [string, number]));
     expect(chooseModel(MODELS, new Set(), benched, T)).toEqual({ waitMs: 30_000 });
   });
 
@@ -107,6 +123,25 @@ describe("разбор 429 от Gemini", () => {
 
   it("слишком долгую паузу обрезаем минутой", () => {
     expect(classify429('per minute, "retryDelay": "600s"').waitMs).toBe(60_000);
+  });
+
+  it("суточное нарушение рядом с минутным - это суточная квота", () => {
+    // так ответила gemini-omni-1.1-flash 16.10: у модели без бесплатной
+    // квоты Google перечисляет все квоты сразу, и бот дважды ждал минуту
+    const both = JSON.stringify({
+      error: {
+        details: [
+          {
+            violations: [
+              { quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" },
+              { quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" },
+            ],
+          },
+          { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "60s" },
+        ],
+      },
+    });
+    expect(classify429(both).perMinute).toBe(false);
   });
 
   it("пустое тело - считаем суточной квотой, это безопаснее", () => {

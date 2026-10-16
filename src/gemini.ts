@@ -22,7 +22,14 @@ export type GeminiPart =
   | { text: string }
   | { inline_data: { mime_type: string; data: string } };
 
-const MAX_ATTEMPTS = 4;
+/**
+ * Попыток на один ключ в одном вызове. Было 4: при сплошной перегрузке
+ * (две 503 на модель - и она отдыхает) кадр успевал попробовать только
+ * две модели и умирал, не дойдя до той, что отвечала. Сбор 16.10: 12
+ * кадров из 19 погибли так, в резерв - ноль. Восьми хватает пройти всю
+ * лестницу; настоящий потолок - бюджет вызова CALL_BUDGET_MS.
+ */
+const MAX_ATTEMPTS = 8;
 
 /**
  * Предохранитель по дневной квоте: если несколько вызовов подряд умерли
@@ -73,10 +80,42 @@ type ModelInfo = { name: string; supportedGenerationMethods?: string[] };
  * Поэтому: 404 - модель исчезла, вычёркиваем до конца прогона;
  * 503 - модель отдыхает на скамейке OVERLOAD_BENCH_MS и потом
  * возвращается, а бот поднимается обратно к лучшей свободной.
+ *
+ * Но и полный запрет облегчённой модели оказался перегибом. Сбор 16.10:
+ * все полноценные модели лежали весь прогон, бот ждал их и потерял 12
+ * кадров из 19 - в резерв ноль. Облегчённая модель теперь запасной
+ * выход: берётся, только пока ВСЕ полноценные отдыхают, и бот уходит с
+ * неё, как только любая из них вернулась со скамейки. Худшую её ошибку -
+ * рисунок под видом фото - префильтр теперь ловит по описанию архива.
  */
 const deadModels = new Set<string>();
 const benchedUntil = new Map<string, number>();
 export const OVERLOAD_BENCH_MS = 120_000;
+
+/**
+ * Суточная квота бесплатного тарифа у Google - на МОДЕЛЬ в проекте
+ * (GenerateRequestsPerDayPerProjectPerModel), а не на ключ целиком.
+ * Кончилась у модели - на этом ключе берём другую модель; ключ меняем,
+ * только когда квоты нет ни у одной. Раньше любой суточный 429 крутил
+ * ключ и копил счётчик предохранителя: модель без бесплатной квоты
+ * вовсе (gemini-omni-1.1-flash, 16.10) могла бы остановить весь сбор,
+ * хотя у остальных моделей запас был.
+ */
+const exhaustedByKey = new Map<number, Set<string>>();
+function exhaustedHere(): Set<string> {
+  let set = exhaustedByKey.get(keyIdx);
+  if (!set) exhaustedByKey.set(keyIdx, (set = new Set()));
+  return set;
+}
+function unavailableHere(): Set<string> {
+  return new Set([...deadModels, ...exhaustedHere()]);
+}
+
+let lastModel: string | undefined;
+/** Какая модель ответила на последний успешный вызов - для журнала. */
+export function lastUsedModel(): string | undefined {
+  return lastModel;
+}
 
 /**
  * Сколько 503 подряд отправляют модель на скамейку. Двух достаточно:
@@ -90,34 +129,42 @@ let modelNames: string[] | undefined;
 
 const NOT_TEXT = /image|tts|audio|embed|live|native/;
 
+/** Версия из имени gemini-N[.M]-flash[-lite]: для сортировки от свежей. */
+function flashVersion(n: string): number {
+  return Number(n.match(/^gemini-(\d+(?:\.\d+)?)-flash(?:-lite)?$/)?.[1]);
+}
+
+/** Алиас *-latest первым, затем версии от свежей к старой, затем прочие. */
+function byPreference(names: string[], latestAlias: string): string[] {
+  const latest = names.filter((n) => n === latestAlias);
+  const versioned = names
+    .filter((n) => n !== latestAlias && Number.isFinite(flashVersion(n)))
+    .sort((a, b) => flashVersion(b) - flashVersion(a));
+  const other = names.filter((n) => !latest.includes(n) && !versioned.includes(n)).sort();
+  return [...latest, ...versioned, ...other];
+}
+
 /**
- * Модели в порядке предпочтения: алиас flash-latest, затем стабильные
- * gemini-N-flash от свежей к старой, затем прочие полноценные flash.
- *
- * Облегчённые (*-lite) в лестницу не входят, пока есть хоть одна
- * полноценная - даже отдыхающая: лучше подождать её возвращения, чем
- * отдать подпись и оценку слабой модели, а пост потом уйдёт в канал
- * автопостингом без человеческих глаз. Lite остаётся только на случай,
- * когда полноценных у ключа нет вовсе.
+ * Полноценные модели в порядке предпочтения: алиас flash-latest, затем
+ * стабильные gemini-N-flash от свежей к старой, затем прочие flash.
  */
 export function rankModels(names: string[]): string[] {
-  const flash = names.filter((n) => n.includes("flash") && !NOT_TEXT.test(n));
-  const full = flash.filter((n) => !/lite/.test(n));
-  const stableVersion = (n: string) => Number(n.match(/^gemini-(\d+(?:\.\d+)?)-flash$/)?.[1]);
-  const latest: string[] = full.filter((n) => n === "gemini-flash-latest");
-  const stable = full
-    .filter((n) => Number.isFinite(stableVersion(n)))
-    .sort((a, b) => stableVersion(b) - stableVersion(a));
-  const other = full.filter((n) => !latest.includes(n) && !stable.includes(n)).sort();
-  const ladder = [...latest, ...stable, ...other];
-  return ladder.length ? ladder : flash.sort();
+  const full = names.filter((n) => n.includes("flash") && !NOT_TEXT.test(n) && !/lite/.test(n));
+  return byPreference(full, "gemini-flash-latest");
+}
+
+/** Облегчённые модели - запасной выход, в том же порядке предпочтения. */
+export function liteModels(names: string[]): string[] {
+  const lite = names.filter((n) => n.includes("flash") && !NOT_TEXT.test(n) && /lite/.test(n));
+  return byPreference(lite, "gemini-flash-lite-latest");
 }
 
 export type ModelChoice = { model: string } | { waitMs: number } | { none: true };
 
 /**
- * Лучшая модель, свободная прямо сейчас. Если все полноценные на
- * скамейке - сколько ждать до ближайшей; если нет ни одной - none.
+ * Лучшая модель, свободная прямо сейчас: сначала полноценная; если все
+ * полноценные отдыхают - облегчённая; если отдыхают и они - сколько ждать
+ * до ближайшей; если моделей нет вовсе - none.
  */
 export function chooseModel(
   names: string[],
@@ -125,7 +172,8 @@ export function chooseModel(
   benched: ReadonlyMap<string, number>,
   now: number,
 ): ModelChoice {
-  const ladder = rankModels(names.filter((n) => !dead.has(n)));
+  const alive = names.filter((n) => !dead.has(n));
+  const ladder = [...rankModels(alive), ...liteModels(alive)];
   if (!ladder.length) return { none: true };
   const free = ladder.find((n) => (benched.get(n) ?? 0) <= now);
   if (free) return { model: free };
@@ -169,7 +217,7 @@ async function resolveModel(deadline: number): Promise<string> {
   if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;
   const names = await loadModelNames();
   for (;;) {
-    const choice = chooseModel(names, deadModels, benchedUntil, Date.now());
+    const choice = chooseModel(names, unavailableHere(), benchedUntil, Date.now());
     if ("model" in choice) {
       if (choice.model !== currentModel) {
         console.log(`gemini: выбрана модель ${choice.model}`);
@@ -206,7 +254,12 @@ function sleep(ms: number) {
  * ключом; суточный - только сбросом в 10:00 МСК и сменой ключа.
  */
 export function classify429(body: string): { perMinute: boolean; waitMs: number } {
-  const perMinute = /per[\s-]?minute/i.test(body);
+  // в одном ответе Google перечисляет ВСЕ нарушенные квоты, и у модели
+  // без бесплатной квоты там стоят и минутная, и суточная. Суточная
+  // строже - ожидание минуты её не лечит (16.10: gemini-omni-1.1-flash
+  // дважды «ждал 60 с» впустую)
+  const perDay = /per[\s-]?day/i.test(body);
+  const perMinute = !perDay && /per[\s-]?minute/i.test(body);
   const seconds = Number(body.match(/"?retryDelay"?:\s*"?(\d+)s/i)?.[1]);
   const waitMs = Math.min(60_000, (Number.isFinite(seconds) && seconds > 0 ? seconds : 30) * 1000);
   return { perMinute, waitMs };
@@ -297,7 +350,7 @@ export async function geminiJson<T>(
         // этого зачёта зависшая модель не уходила на скамейку, и бот
         // снова и снова ждал её по минуте
         if (!opts.model && ++overloadStreak >= OVERLOAD_TRIP_AFTER) benchModel(model);
-        else await sleep(2000 * attempt);
+        else await sleep(2000);
         continue;
       }
 
@@ -321,8 +374,23 @@ export async function geminiJson<T>(
           await sleep(waitMs);
           continue;
         }
-        quotaFailure = true;
         lastError = new Error("gemini: HTTP 429 (суточная квота)");
+        // квота кончилась у МОДЕЛИ на этом ключе: берём другую модель того
+        // же ключа, а ключ меняем, только когда квоты нет ни у одной
+        if (!opts.model && !process.env.GEMINI_MODEL) {
+          exhaustedHere().add(model);
+          const names = await loadModelNames();
+          const left = chooseModel(names, unavailableHere(), new Map(), Date.now());
+          if (!("none" in left)) {
+            console.warn(
+              `gemini: суточная квота ${model} на ключе #${keyIdx + 1} кончилась - беру другую модель`,
+            );
+            continue;
+          }
+          quotaFailure = true;
+          break;
+        }
+        quotaFailure = true;
         // есть запасные ключи — не ждём минутные окна, после второй
         // неудачи сразу переключаемся; единственный ключ — ждём долго
         if (totalKeys > 1 && attempt >= 2) break;
@@ -343,10 +411,10 @@ export async function geminiJson<T>(
           benchModel(model);
           continue;
         }
-        // пауза короче прежней (была 5-10-20 с): при бюджете вызова в
-        // 150 с длинные сны не давали дожить до смены модели - кадр
-        // умирал по таймауту вызова, так и не попробовав живую модель
-        await sleep(3000 * 2 ** (attempt - 1));
+        // одна короткая пауза перед вторым ударом: второй 503 всё равно
+        // отправит модель отдыхать. Растущая от номера попытки пауза
+        // (3-6-12-24 с) при восьми попытках съела бы бюджет вызова
+        await sleep(3000);
         continue;
       }
       // модель протухла — вычёркиваем и на следующей попытке выбираем заново
@@ -367,6 +435,7 @@ export async function geminiJson<T>(
       if (!text) throw new Error("gemini: пустой ответ");
       consecutiveQuotaFails = 0;
       overloadStreak = 0;
+      lastModel = model;
       return JSON.parse(text) as T;
     }
 
