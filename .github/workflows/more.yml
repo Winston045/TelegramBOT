@@ -8,8 +8,9 @@ on:
   repository_dispatch:
     types: [more-candidates]
 
+# одна очередь с автодобором - см. topup.yml
 concurrency:
-  group: more-candidates
+  group: collector
   cancel-in-progress: false
 
 jobs:
@@ -27,15 +28,19 @@ jobs:
       NARA_API_KEY: ${{ secrets.NARA_API_KEY }}
       EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci || npm install
       # сначала резерв: готовые кандидаты в базе не тратят квоту Gemini
+      # shell: bash включает pipefail: без него «|| exit 1» проверял код
+      # tee, а не send-candidates, и сбой рассылки выглядел как пустой
+      # резерв - каждая /more запускала лишний сбор на 16 запросов Gemini
       - name: Карточки из резерва
         id: reserve
+        shell: bash
         run: |
           out=$(npm run send-candidates -- --limit 2 | tee /dev/stderr) || exit 1
           sent=$(echo "$out" | grep -oP 'отправлено карточек: \K\d+' || echo 0)

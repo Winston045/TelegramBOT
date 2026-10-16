@@ -26,8 +26,11 @@ export function replaceQuote(captionHtml: string, newQuote: string): string {
   const { body, footer } = splitFooter(captionHtml);
   const quoteHtml = `<blockquote expandable>${escape(newQuote.trim())}</blockquote>`;
 
+  // замена функцией, а не строкой: в строке-замене JS толкует «$&», «$`»
+  // и «$'» как вставки исходного текста, и цитата редактора с таким
+  // текстом вкладывала старый blockquote в новый
   const replaced = /<blockquote[^>]*>[\s\S]*?<\/blockquote>/.test(body)
-    ? body.replace(/<blockquote[^>]*>[\s\S]*?<\/blockquote>/, quoteHtml)
+    ? body.replace(/<blockquote[^>]*>[\s\S]*?<\/blockquote>/, () => quoteHtml)
     : `${body}\n${quoteHtml}`;
 
   return footer ? `${replaced}\n\n${footer}` : replaced;

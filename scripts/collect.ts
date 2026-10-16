@@ -24,7 +24,7 @@ import { buildAnalysisQueue } from "../src/queue.js";
 import { hiResLocUrl } from "../src/sources/loc.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { isStereoPair } from "../src/stereo.js";
-import { getDb } from "../src/db.js";
+import { getDb, loadKnownHashes, selectAll } from "../src/db.js";
 import { GeminiQuotaError, lastUsedModel, quotaTripped } from "../src/gemini.js";
 import { analyzeImage } from "../src/analyze.js";
 import { passesGate } from "../src/scoring.js";
@@ -44,7 +44,7 @@ async function notifyQuotaExhausted() {
     await sendMessageHtml(
       env.editorsChatId,
       "Дневная квота Gemini исчерпана - сбор остановлен, карточек не будет. " +
-        "Квота сбрасывается в 10:00 МСК.",
+        "Квота сбрасывается в полночь по Калифорнии: 10:00 МСК летом, 11:00 зимой.",
     );
   } catch {
     // чата может не быть в dry-запусках или при неполных секретах
@@ -60,8 +60,13 @@ const dry = process.argv.includes("--dry");
  * Теперь анализ останавливается сам, не доходя до потолка, - партия
  * выходит неполной, зато прогон завершается штатно: пишет воронку,
  * ставит отметку и отдаёт то, что успел.
+ *
+ * 19 минут, а не 22: бюджет проверяется перед кадром, а один кадр - это
+ * два вызова Gemini по 150 с плюс справка. Начатый на 21-й минуте кадр
+ * вместе с подготовкой job, карточками и сводкой выводил за 30 минут, и
+ * job убивали уже после сбора, на рассылке.
  */
-const RUN_BUDGET_MS = 22 * 60_000;
+const RUN_BUDGET_MS = 19 * 60_000;
 const runStartedAt = Date.now();
 
 function numArg(name: string): number | undefined {
@@ -76,15 +81,20 @@ function numArg(name: string): number | undefined {
 
 type HashedItem = CollectedItem & { imageHash: string; imageBuffer: Buffer };
 
-async function loadKnownHashes(): Promise<string[]> {
-  const db = getDb();
-  const [seen, cands] = await Promise.all([
-    db.from("seen_hashes").select("image_hash"),
-    db.from("candidates").select("image_hash"),
-  ]);
-  if (seen.error) throw new Error(`чтение seen_hashes: ${seen.error.message}`);
-  if (cands.error) throw new Error(`чтение candidates: ${cands.error.message}`);
-  return [...seen.data, ...cands.data].map((r) => r.image_hash as string);
+/** Осталось ли время прогона: и на скачивание, и на анализ. */
+function timeLeftMs(): number {
+  return RUN_BUDGET_MS - (Date.now() - runStartedAt);
+}
+
+/**
+ * Сбой Gemini, который лечится повтором: перегрузка, таймаут, обрыв сети.
+ * Пустой ответ (кадр завернула защита), 400 или ошибка базы на повторе
+ * не пройдут - второй подход тратил бы на них квоту впустую.
+ */
+function isTransientFailure(message: string): boolean {
+  return /HTTP 5\d\d|таймаут|timeout|aborted|не уложился|перегружен|fetch failed|ECONNRESET|socket/i.test(
+    message,
+  );
 }
 
 /**
@@ -131,12 +141,20 @@ async function hashAndDedup(items: CollectedItem[], known: string[]): Promise<Ha
   const out: HashedItem[] = [];
   const batchHashes: string[] = [];
   for (const item of items) {
+    // скачивание тоже ест бюджет прогона: архив с ретраями 2+20+45 с на
+    // файл мог оставить на анализ меньше, чем стоит один кадр
+    if (timeLeftMs() < 8 * 60_000) {
+      console.warn(`  скачивание остановлено бюджетом: обработано ${out.length} из ${items.length}`);
+      break;
+    }
     try {
       // у LOC сначала пробуем крупный рендер: поиск отдаёт служебную копию
       // ~1024, и в ленте она заметно мылит рядом с коммонсовскими 1600
       const hiRes = item.source === "loc" ? hiResLocUrl(item.imageUrl) : undefined;
       let imageUrl = item.imageUrl;
-      let res = hiRes ? await fetchImage(hiRes) : null;
+      // сбой крупного рендера (IIIF не успел за 60 с) - не повод терять
+      // кадр: обычная копия обычно на месте
+      let res = hiRes ? await fetchImage(hiRes).catch(() => null) : null;
       if (res && hiRes) imageUrl = hiRes;
       // IIIF может не знать этот файл - тогда работаем по-старому
       if (!res) res = await fetchImage(item.imageUrl);
@@ -185,7 +203,25 @@ async function main() {
   // каждого первым берётся самый перспективный кадр, а не случайный.
   // Последним словом - очередь с потолками: дубли названий и монокультура
   // ВМВ/одного архива режутся ДО траты квоты
-  const ranked = byPromise(kept);
+  //
+  // Уже разобранные кадры отсекаем ДО очереди: раньше они занимали в ней
+  // места и выбывали только потом, и партия мельчала, хотя в запасе
+  // ждали новые кадры. Ключи читаются целиком, постранично
+  const db = dry ? undefined : getDb();
+  const existingKeys = db
+    ? new Set(
+        (
+          await selectAll<{ source: string; source_id: string }>((from, to) =>
+            db.from("candidates").select("source, source_id").order("id").range(from, to),
+          )
+        ).map((r) => `${r.source}:${r.source_id}`),
+      )
+    : new Set<string>();
+  const unseen = kept.filter((i) => !existingKeys.has(`${i.source}:${i.sourceId}`));
+  if (unseen.length < kept.length) {
+    console.log(`уже разобраны раньше: ${kept.length - unseen.length}`);
+  }
+  const ranked = byPromise(unseen);
   const { queue: survivors, cuts } = buildAnalysisQueue(interleaveBySource(ranked), keepLimit);
   const avg = survivors.length
     ? survivors.reduce((s, it) => s + promise(it), 0) / survivors.length
@@ -217,18 +253,13 @@ async function main() {
     return;
   }
 
-  const db = getDb();
-
-  // существующие (source, source_id) не трогаем и не скорим повторно
-  const { data: existing, error: exErr } = await db
-    .from("candidates")
-    .select("source, source_id");
-  if (exErr) throw new Error(`чтение candidates: ${exErr.message}`);
-  const existingKeys = new Set(existing.map((r) => `${r.source}:${r.source_id}`));
-  const fresh = survivors.filter((i) => !existingKeys.has(`${i.source}:${i.sourceId}`));
+  if (!db) return;
+  const fresh = survivors;
 
   console.log("дедуп по dHash...");
-  const known = await loadKnownHashes();
+  // вся история канала и все кандидаты, постранично: одним запросом
+  // Supabase отдавал лишь первую тысячу хэшей
+  const known = await loadKnownHashes(db, { candidates: true });
   const hashed = await hashAndDedup(fresh, known);
   console.log(`уникальных: ${hashed.length}`);
 
@@ -345,8 +376,13 @@ async function main() {
       };
 
       // второй заход: редактор выбраковывает пустые цитаты. Стоит один
-      // запрос на кандидата, но только на тех, кто прошёл порог оценки
-      const reviewed = await reviewQuote(item, cfg, a, extraContext);
+      // запрос на кандидата, но только на тех, кто прошёл порог оценки.
+      // На исходе бюджета пропускаем: кадр с цитатой как есть лучше, чем
+      // job, убитый таймаутом воркфлоу посреди записи
+      const reviewed =
+        timeLeftMs() > 3 * 60_000
+          ? await reviewQuote(item, cfg, a, extraContext)
+          : { caption: a, rewritten: false };
       if (reviewed.rewritten) {
         console.log(`  цитата переписана редактором: [${item.source}] ${item.sourceId}`);
         rewritten++;
@@ -394,7 +430,7 @@ async function main() {
         netFailed++;
         // перегрузка и таймаут лечатся повтором, брак кадра - нет:
         // в конец очереди кадр уходит ровно один раз
-        if (!retrying) {
+        if (!retrying && isTransientFailure((err as Error).message)) {
           secondTry.add(item);
           queue.push(item);
         }

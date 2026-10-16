@@ -50,12 +50,17 @@ const DULL_WORDS =
 /** Протокол по-русски. */
 const DULL_RU = /портрет|церемони\w*|совещан\w*|делегац\w*|парад\w*|вручен\w*|присяг\w*/i;
 
-/** Протокол по-голландски (Anefo) и по-польски (NAC). */
+/**
+ * Протокол по-голландски (Anefo) и по-польски (NAC). Границу слова
+ * задаём через \p{L}, а не \b: в JS \b не видит букв с диакритикой, и
+ * «Defilé» после «é» границы не находил - кадр проходил мимо сита.
+ * Основы сравниваются по началу слова: «bezoek» ловит и «bezoeken».
+ */
 const DULL_NL_PL =
-  /\b(be[eë]dig\w*|ceremonie|receptie|bezoek|defil[eé]\w*|onderscheiding|huldiging|portret|vergadering|delegatie|inspectie|uroczysto\w*|defilada|przysi[eę]g\w*|wizyta|odznaczeni\w*|obchody|akademia|po[sś]wi[eę]ceni\w*)\b/i;
+  /(?<!\p{L})(?:be[eë]dig|ceremonie|receptie|bezoek|defil[eé]|onderscheiding|huldiging|portret|vergadering|delegatie|inspectie|uroczysto|defilada|przysi[eę]g|wizyta|odznacze|obchody|akademi|po[sś]wi[eę]ceni)/iu;
 
 /** Протокол по-фински (SA-kuva). */
-const DULL_FI = /\b(paraati\w*|vierailu\w*|juhla\w*|seppeleenlasku|kunniamerkk\w*)\b/i;
+const DULL_FI = /(?<!\p{L})(?:paraati|vierailu|juhla|seppeleenlasku|kunniamerkk)/iu;
 
 /** Протокольный ли кадр по метаданным - на любом из языков пула. */
 function isDull(text: string): boolean {

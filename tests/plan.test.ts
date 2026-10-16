@@ -664,11 +664,32 @@ describe("одобренные и резерв - один пул", () => {
     expect(picked[0]?.id).toBe(20);
   });
 
-  it("недельные штрафы не перебивают одобрения", () => {
-    const share = { navy: 1 };
-    expect(rank(approved(20, 45, "navy"), undefined, undefined, share)).toBeGreaterThan(
-      rank(cand(30, 98, "aviation"), undefined, undefined, share),
+  it("недельные штрафы не перебивают одобрения, даже когда их больше сотни", () => {
+    // разбор ревизии 16.10: неделя 60% одного архива, 80% ВМВ и 60% одной
+    // темы плюс статика - при надбавке +100 сильный резервный кадр обходил
+    // подходящий одобренный
+    const a: PlanCandidate = {
+      ...approved(20, 45, "infantry"),
+      attribution: "Bundesarchiv",
+      tags: { subject: "infantry", period: "WW2", action: false, military: true },
+    };
+    const r: PlanCandidate = {
+      ...cand(30, 90, "aviation"),
+      caption_html: cap("Пост 30", LONG),
+      tags: { subject: "aviation", period: "korea", color: true, military: true },
+    };
+    const picked = planAuto(
+      [r, a],
+      {
+        subjects: [],
+        civilian: false,
+        archiveShare: { bundesarchiv: 0.6 },
+        periodShare: { WW2: 0.8 },
+        subjectShare: { infantry: 0.6 },
+      },
+      1,
     );
+    expect(picked[0]?.id).toBe(20);
   });
 
   it("когда повтор неизбежен, аварийный добор всё равно предпочитает одобренный", () => {

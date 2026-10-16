@@ -25,11 +25,25 @@ export type RejectReason =
  * «1 drawing : crayon, graphite, and ink» и «Drawing shows ...». Фото там
  * - «1 photographic print», «1 negative», «1 transparency : color».
  */
-const NON_PHOTO =
-  /\b\d+\s+(drawings?|paintings?|posters?|watercolou?rs?|sketch(es)?|cartoons?|prints?\s*:\s*(lithograph|woodcut|etching|engraving|screenprint|serigraph)\w*)\b|\b(drawing|poster|painting|cartoon|sketch|lithograph|print) shows\b/i;
+/*
+ * Носитель стоит в начале описания или поля («... | 1 drawing : ...»),
+ * поэтому «3 posters» посреди сюжета («Soldiers putting up 3 posters»)
+ * не в счёт. «Print shows» не в счёт тоже: у LOC это и фотоотпечатки
+ * («Photographic print shows Marines landing») - ревизия 16.10 поймала,
+ * что прежнее правило выбрасывало настоящие снимки.
+ */
+const NON_PHOTO_CARRIER =
+  /(?:^|\|)\s*\d+\s+(?:drawings?|paintings?|posters?|watercolou?rs?|sketch(?:es)?|cartoons?|prints?\s*:\s*(?:lithograph|woodcut|etching|engraving|screenprint|serigraph)\w*)\b/i;
+const NON_PHOTO_SHOWS = /\b(?:drawing|poster|painting|cartoon|sketch|lithograph) shows\b/i;
 
 export function isNonPhotoRecord(title?: string | null, description?: string | null): boolean {
-  return NON_PHOTO.test(`${title ?? ""} | ${description ?? ""}`);
+  const desc = description ?? "";
+  // заголовок и каждое поле описания проверяются как отдельное начало
+  const fields = [title ?? "", ...desc.split("|")];
+  return (
+    fields.some((f) => NON_PHOTO_CARRIER.test(f.trimStart())) ||
+    NON_PHOTO_SHOWS.test(`${title ?? ""} ${desc}`)
+  );
 }
 
 /** Дешёвый префильтр до vision-скоринга. Возвращает причину брака или null. */

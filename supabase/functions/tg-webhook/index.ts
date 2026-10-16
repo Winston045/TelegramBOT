@@ -37,6 +37,7 @@ import { CAPTION_LIMIT, validateHtml, visibleLength } from "../_shared/validate.
 import {
   LONG_QUOTE,
   RECENT_WINDOW,
+  RESERVE_TTL_DAYS,
   archiveKey,
   buildPlan,
   headline,
@@ -339,13 +340,9 @@ function ageWords(iso: string, now: Date): string {
   return `${days} ${plural(days, "день", "дня", "дней")}`;
 }
 
-/**
- * Срок годности резерва - тот же, что отмерил публикатор
- * (RESERVE_TTL_DAYS в scripts/publish.ts). Карточку старше автопостинг
- * не возьмёт, и в списке её надо помечать: иначе редактор ждёт от неё
- * выхода зря.
- */
-const RESERVE_TTL_DAYS = 10;
+// Срок годности резерва (RESERVE_TTL_DAYS) - общий с публикатором, из
+// _shared/plan.ts: карточку старше автопостинг не возьмёт, и в списке её
+// надо помечать, иначе редактор ждёт от неё выхода зря.
 
 function doneKeyboard(label: string) {
   return { inline_keyboard: [[{ text: label, callback_data: "noop" }]] };
@@ -359,30 +356,88 @@ async function countByStatus(status: string): Promise<number> {
   return count ?? 0;
 }
 
-/** Публикует кандидата в канал, помечает в базе, возвращает ссылку. */
-async function publishCandidate(c: {
-  id: number;
-  image_url: string;
-  image_hash: string;
-  caption_html: string;
-}): Promise<string> {
-  const msg = await bot.api.sendPhoto(CHANNEL_ID, c.image_url, {
-    caption: c.caption_html,
-    parse_mode: "HTML",
-  });
-  await db
+/** Статусы, из которых пост можно отправить в канал. */
+const PUBLISHABLE = ["new", "shown", "approved"];
+
+/**
+ * Удаляет пост из канала. Пост, который админ уже снёс руками, - не
+ * ошибка: раньше «message to delete not found» вылетал до смены статуса,
+ * и /undo с кнопкой «Удалить» навсегда застревали на этом посте.
+ */
+async function deleteChannelPost(msgId: number): Promise<void> {
+  try {
+    await bot.api.deleteMessage(CHANNEL_ID, msgId);
+  } catch (err) {
+    if (!/message to delete not found/i.test((err as Error).message)) throw err;
+  }
+}
+
+/**
+ * Публикует кандидата в канал и возвращает ссылку; null - пост уже не
+ * публикуемый (его опубликовал, отклонил или забрал кто-то другой).
+ *
+ * Сначала строка ЗАХВАТЫВАЕТСЯ условным обновлением в published, и только
+ * потом уходит фото. Раньше кнопка «Сейчас» читала строку и слала фото
+ * без захвата: двойное нажатие или публикатор по расписанию в ту же
+ * секунду давали пост дважды, а старая карточка могла выпустить уже
+ * отклонённый пост. Отправка сорвалась - статус возвращается как был.
+ */
+async function publishCandidate(id: number): Promise<string | null> {
+  const { data: row, error } = await db
     .from("candidates")
-    .update({
-      status: "published",
-      published_at: new Date().toISOString(),
-      channel_msg_id: msg.message_id,
-    })
-    .eq("id", c.id);
-  await db.from("seen_hashes").upsert(
-    { image_hash: c.image_hash, origin: "published" },
+    .select("id, image_url, image_hash, caption_html, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!row || !row.caption_html || !PUBLISHABLE.includes(row.status)) return null;
+
+  const { data: claimed, error: claimErr } = await db
+    .from("candidates")
+    .update({ status: "published", published_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("status", row.status)
+    .select("id");
+  if (claimErr) throw new Error(claimErr.message);
+  if (!claimed?.length) return null;
+
+  let msgId: number;
+  try {
+    const msg = await bot.api.sendPhoto(CHANNEL_ID, row.image_url, {
+      caption: row.caption_html,
+      parse_mode: "HTML",
+    });
+    msgId = msg.message_id;
+  } catch (err) {
+    await db
+      .from("candidates")
+      .update({ status: row.status, published_at: null })
+      .eq("id", id)
+      .eq("status", "published")
+      .is("channel_msg_id", null);
+    throw err;
+  }
+
+  // пост уже в канале: номер сообщения обязан дойти до базы, иначе /undo
+  // и «Удалить из канала» его не найдут. Сбой сети - повторяем
+  for (let attempt = 1; ; attempt++) {
+    const { error: updErr } = await db
+      .from("candidates")
+      .update({ channel_msg_id: msgId })
+      .eq("id", id);
+    if (!updErr) break;
+    if (attempt >= 3) {
+      throw new Error(
+        `пост #${id} ушёл в канал (сообщение ${msgId}), но номер не записан: ${updErr.message}`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 1000 * attempt));
+  }
+  const { error: hashErr } = await db.from("seen_hashes").upsert(
+    { image_hash: row.image_hash, origin: "published" },
     { onConflict: "image_hash", ignoreDuplicates: true },
   );
-  return `https://t.me/${CHANNEL_SLUG}/${msg.message_id}`;
+  if (hashErr) console.error(`seen_hashes для #${id}: ${hashErr.message}`);
+  return `https://t.me/${CHANNEL_SLUG}/${msgId}`;
 }
 
 /** Одобрение кандидата (кнопка или /ok). Возвращает текст результата. */
@@ -392,14 +447,14 @@ async function approve(id: number): Promise<string | null> {
     .update({ status: "approved" })
     .eq("id", id)
     .in("status", ["new", "shown", "rejected"])
-    .select("id, image_url, image_hash, caption_html");
+    .select("id, caption_html");
   if (error) throw new Error(error.message);
   const c = data[0];
   if (!c) return null;
 
   if (INSTANT_PUBLISH && c.caption_html) {
-    const url = await publishCandidate(c as Parameters<typeof publishCandidate>[0]);
-    return `Пост #${id} опубликован: ${url}`;
+    const url = await publishCandidate(id);
+    if (url) return `Пост #${id} опубликован: ${url}`;
   }
   const queued = await countByStatus("approved");
   return `Пост #${id} в очереди публикации. Всего в очереди: ${queued}.`;
@@ -483,11 +538,22 @@ bot.on("callback_query:data", async (ctx) => {
       case "sl": {
         const isoShort = ctx.callbackQuery.data.split(":").slice(2).join(":");
         const scheduledAt = new Date(`${isoShort}:00${TZ_OFFSET}`).toISOString();
+        // кнопки слотов рисуются заранее: прошедшее время публикатор
+        // выпустил бы ближайшим заходом, мимо любого слота
+        if (new Date(scheduledAt).getTime() <= Date.now()) {
+          await ctx.answerCallbackQuery({
+            text: "Это время уже прошло - нажмите «Перенести» ещё раз",
+            show_alert: true,
+          });
+          return;
+        }
+        // в /queue «Перенести» есть и у постов автовыбора (резерв): время
+        // им назначает редактор - значит, это и одобрение
         const { data } = await db
           .from("candidates")
-          .update({ scheduled_at: scheduledAt })
+          .update({ scheduled_at: scheduledAt, status: "approved" })
           .eq("id", id)
-          .eq("status", "approved")
+          .in("status", ["approved", "new", "shown"])
           .select("id");
         if (!data?.length) {
           await ctx.answerCallbackQuery({ text: "Пост уже не в очереди" });
@@ -548,17 +614,11 @@ bot.on("callback_query:data", async (ctx) => {
         return;
       }
       case "now": {
-        const { data, error } = await db
-          .from("candidates")
-          .select("id, image_url, image_hash, caption_html, status")
-          .eq("id", id)
-          .maybeSingle();
-        if (error) throw new Error(error.message);
-        if (!data || data.status === "published" || !data.caption_html) {
+        const url = await publishCandidate(id);
+        if (!url) {
           await ctx.answerCallbackQuery({ text: "Уже обработано" });
           return;
         }
-        const url = await publishCandidate(data);
         await ctx.editMessageReplyMarkup({
           reply_markup: doneKeyboard(`Опубликовано - ${who}`),
         });
@@ -595,11 +655,19 @@ bot.on("callback_query:data", async (ctx) => {
           await ctx.answerCallbackQuery({ text: "Черновика уже нет" });
           return;
         }
-        const { error: updErr } = await db
+        // вышедший пост правкой в базе не изменить: канал и база разошлись
+        // бы, а редактор получил бы «Подпись заменена»
+        const { data: applied, error: updErr } = await db
           .from("candidates")
           .update({ caption_html: data.caption_draft, caption_draft: null })
-          .eq("id", id);
+          .eq("id", id)
+          .in("status", ["new", "shown", "approved"])
+          .select("id");
         if (updErr) throw new Error(updErr.message);
+        if (!applied?.length) {
+          await ctx.answerCallbackQuery({ text: "Пост уже вышел или снят - правка не применена", show_alert: true });
+          return;
+        }
         await ctx.editMessageReplyMarkup({
           reply_markup: doneKeyboard(`Подпись заменена - ${who}`),
         });
@@ -625,7 +693,7 @@ bot.on("callback_query:data", async (ctx) => {
           await ctx.answerCallbackQuery({ text: "Пост уже удалён" });
           return;
         }
-        await ctx.api.deleteMessage(CHANNEL_ID, Number(data.channel_msg_id));
+        await deleteChannelPost(Number(data.channel_msg_id));
         await db.from("candidates").update({ status: "rejected" }).eq("id", id);
         await ctx.editMessageReplyMarkup({
           reply_markup: doneKeyboard(`Удалено из канала - ${who}`),
@@ -849,7 +917,7 @@ bot.command("status", async (ctx) => {
   // молчание блока само по себе значит «здесь порядок».
   const alerts: string[] = [];
   if (run && (run.quota_failed ?? 0) > 0) {
-    alerts.push(`Партию оборвал лимит Gemini: ${run.quota_failed} кадров. Сброс в 10:00 МСК`);
+    alerts.push(`Партию оборвал лимит Gemini: ${run.quota_failed} кадров. Сброс в полночь по Калифорнии (10:00 МСК летом, 11:00 зимой)`);
   }
   if (passed > publishedToday) {
     alerts.push(`Слот прошёл, а пост не вышел: ${publishedToday} из ${passed}`);
@@ -914,16 +982,24 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       .from("candidates")
       .select("id, caption_html, score, tags, attribution, source")
       .eq("status", "approved")
+      .not("caption_html", "is", null)
       .is("scheduled_at", null)
-      .order("id", { ascending: true }),
+      .order("id", { ascending: true })
+      .limit(20),
     autoPublish
       ? db
           .from("candidates")
           .select("id, caption_html, score, tags, attribution, source")
           .in("status", ["new", "shown"])
           .not("caption_html", "is", null)
+          // ровно как публикатор: свежий резерв, та же двадцатка - иначе
+          // превью показывало «ближайшим» пост, который он уже не возьмёт
+          .gte(
+            "created_at",
+            new Date(Date.now() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString(),
+          )
           .order("score", { ascending: false })
-          .limit(40)
+          .limit(20)
       : Promise.resolve({ data: [], error: null }),
     db
       .from("candidates")
@@ -1231,13 +1307,14 @@ bot.command("ok", async (ctx) => {
 bot.command("skip", async (ctx) => {
   const id = repliedCandidateId(ctx);
   if (!id) return;
-  const { error } = await db
+  const { data, error } = await db
     .from("candidates")
     .update({ status: "rejected" })
     .eq("id", id)
-    .in("status", ["new", "shown", "approved"]);
+    .in("status", ["new", "shown", "approved"])
+    .select("id");
   if (error) throw new Error(error.message);
-  await ctx.reply(`Пост #${id} пропущен.`);
+  await ctx.reply(data?.length ? `Пост #${id} пропущен.` : `#${id}: уже в другом статусе, не тронул.`);
 });
 
 bot.command("quote", async (ctx) => {
@@ -1246,13 +1323,22 @@ bot.command("quote", async (ctx) => {
   if (!id || !newQuote) return;
   const { data: candidate, error } = await db
     .from("candidates")
-    .select("caption_html")
+    .select("caption_html, status")
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!candidate?.caption_html) return;
+  if (!["new", "shown", "approved"].includes(candidate.status)) {
+    await ctx.reply(`#${id}: пост уже вышел или снят - цитату не трогаю.`);
+    return;
+  }
 
   const updated = replaceQuote(candidate.caption_html, newQuote);
+  const htmlCheck = validateHtml(updated);
+  if (!htmlCheck.ok) {
+    await ctx.reply(`Не приняла: ${htmlCheck.reason}.`);
+    return;
+  }
   if (visibleLength(updated) > CAPTION_LIMIT) {
     await ctx.reply(`С такой цитатой подпись длиннее ${CAPTION_LIMIT} символов.`);
     return;
@@ -1260,7 +1346,8 @@ bot.command("quote", async (ctx) => {
   const { error: updErr } = await db
     .from("candidates")
     .update({ caption_html: updated })
-    .eq("id", id);
+    .eq("id", id)
+    .in("status", ["new", "shown", "approved"]);
   if (updErr) throw new Error(updErr.message);
   await ctx.reply(`Пост #${id}: цитата заменена.`);
 });
@@ -1278,7 +1365,7 @@ bot.command("undo", async (ctx) => {
     await ctx.reply("Опубликованных постов нет - удалять нечего.");
     return;
   }
-  await ctx.api.deleteMessage(CHANNEL_ID, Number(last.channel_msg_id));
+  await deleteChannelPost(Number(last.channel_msg_id));
   const { error: updErr } = await db
     .from("candidates")
     .update({ status: "rejected" })
@@ -1345,8 +1432,11 @@ bot.on("message:text", async (ctx) => {
   });
 });
 
+// секрет обязателен: без него grammY не проверяет заголовок, и любой, кто
+// знает адрес функции (она без JWT), подделает апдейт от имени редактора -
+// например, /undo снесёт последний пост канала
 const handler = webhookCallback(bot, "std/http", {
-  secretToken: Deno.env.get("TG_WEBHOOK_SECRET")?.trim() || undefined,
+  secretToken: requireEnv("TG_WEBHOOK_SECRET").trim(),
 });
 
 Deno.serve(async (req) => {

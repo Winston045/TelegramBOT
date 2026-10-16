@@ -30,9 +30,18 @@ export type PlanCandidate = {
   /** Источник («commons», «loc», «pastvu») - запасной ключ чередования
    *  для старых кандидатов, собранных без архива. */
   source?: string | null;
-  /** Надбавка к рангу вне качества кадра: одобренным - APPROVED_PRIORITY. */
+  /** Ярус очереди: одобренным - APPROVED_PRIORITY, резерву - 0. */
   priority?: number;
 };
+
+/**
+ * Сколько дней кадр из резерва годен к автопубликации: у старых чаще
+ * мертвеет ссылка архива, а оформление отстаёт от текущих правил. Общая
+ * константа для публикатора, превью /queue и сторожа сбора - раньше
+ * каждый жил со своим представлением о резерве, и превью показывало
+ * посты, которые публикатор уже не возьмёт.
+ */
+export const RESERVE_TTL_DAYS = 10;
 
 /**
  * Одобренный редактором пост выходит раньше любого из резерва - но только
@@ -45,11 +54,14 @@ export type PlanCandidate = {
  * когда ни один не подходил, срабатывал аварийный добор - отсюда infantry
  * 33% месячной ленты и пары подряд, при живом резерве с другими темами.
  *
- * Теперь пул общий. Надбавка больше любого разрыва в оценках, поэтому
- * среди подходящих под правила одобренный побеждает всегда; резервный
- * пост выходит только тогда, когда одобренный дал бы повтор.
+ * Теперь пул общий, а одобрение - отдельный ЯРУС сортировки, не надбавка
+ * к рангу: среди подходящих под правила одобренный побеждает всегда;
+ * резервный пост выходит только тогда, когда одобренный дал бы повтор.
+ * Надбавкой (было +100) это не держалось: недельные доли архива, эпохи и
+ * темы вместе со штрафами за статику и эпоху набирают больше сотни, и
+ * сильный резервный кадр мог обойти подходящий одобренный.
  */
-export const APPROVED_PRIORITY = 100;
+export const APPROVED_PRIORITY = 1;
 
 /** Откуда пост попал в план - это видно редактору в /queue. */
 export type PlanKind = "scheduled" | "approved" | "auto";
@@ -221,7 +233,6 @@ export function rank(
     sShare > SUBJECT_SHARE_SOFT ? (sShare - SUBJECT_SHARE_SOFT) * SUBJECT_SHARE_PENALTY : 0;
   return (
     (c.score ?? 0) +
-    (c.priority ?? 0) +
     quote +
     color -
     staticShot -
@@ -337,8 +348,10 @@ export function planAuto(
 ): PlanCandidate[] {
   const pool = [...reserve].sort(
     (a, b) =>
+      (b.priority ?? 0) - (a.priority ?? 0) ||
       rank(b, recent.archiveShare, recent.periodShare, recent.subjectShare) -
-        rank(a, recent.archiveShare, recent.periodShare, recent.subjectShare) || a.id - b.id,
+        rank(a, recent.archiveShare, recent.periodShare, recent.subjectShare) ||
+      a.id - b.id,
   );
   const chosen: PlanCandidate[] = [];
   const subjects = [...recent.subjects];

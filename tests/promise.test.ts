@@ -75,6 +75,8 @@ describe("обещание кадра", () => {
       "Przysięga żołnierzy przed wyjazdem na front", // присяга, pl
       "Paraati Helsingissä", // парад, fi
       "Vierailu rintamalla", // визит, fi
+      "Defilé van militairen op de Dam", // парад, nl - диакритика в конце основы
+      "Uroczystość wręczenia odznaczeń", // награждение, pl - «odznaczeń»
     ];
     for (const title of dull) {
       expect(promise(frame(title)), title).toBeLessThan(0);

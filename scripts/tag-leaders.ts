@@ -34,12 +34,25 @@ const LEADERS = [
   "паулюс",
 ];
 
+/** Несклоняемые имена: сравниваем целым словом, без падежных хвостов. */
+const INDECLINABLE = new Set(["франко", "тито"]);
+
+/**
+ * Имя как слово, а не подстрока: «тито» сидит в «аппетитом» и «Титове»,
+ * «франко» - во «Франконии», «жуков» - в «Жуковском», и такие кадры
+ * планировщик придерживал как «вождей». Падежный хвост - до трёх букв
+ * («Сталиным», «Черчилля»), поэтому «Сталинград» вождём не считается.
+ */
+const LEADER_PATTERNS = LEADERS.map(
+  (name) => new RegExp(`(?<!\\p{L})${name}${INDECLINABLE.has(name) ? "" : "\\p{L}{0,3}"}(?!\\p{L})`, "u"),
+);
+
 export function looksLikeLeader(captionHtml: string | null): boolean {
   if (!captionHtml) return false;
   // смотрим только тело поста: в цитате-справке имя может быть
   // упомянуто вскользь, а героем кадра будет что-то другое
   const body = captionHtml.split("<blockquote")[0]?.replace(/<[^>]+>/g, " ").toLowerCase() ?? "";
-  return LEADERS.some((name) => body.includes(name));
+  return LEADER_PATTERNS.some((re) => re.test(body));
 }
 
 async function main() {

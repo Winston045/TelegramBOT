@@ -9,6 +9,7 @@
 import type { AppConfig } from "./config.js";
 import { getDb } from "./db.js";
 import { loadPublishTimes } from "./settings.js";
+import { RESERVE_TTL_DAYS } from "./plan.js";
 
 /**
  * На сколько дней публикаций держим готовые посты.
@@ -57,27 +58,44 @@ export function planFromCounts(
 }
 
 /**
- * Ключ квотного окна Gemini. Бесплатная квота сбрасывается в 10:00 МСК,
- * поэтому «сутки» для счётчика доборов начинаются не в полночь, а в момент
- * сброса: заходы, сгоревшие на выжатой квоте до 10:00, не должны съедать
+ * Ключ квотного окна Gemini. Бесплатная квота сбрасывается в полночь по
+ * Калифорнии, поэтому «сутки» для счётчика доборов начинаются в момент
+ * сброса, а не в московскую полночь: заходы на выжатой квоте не должны съедать
  * лимит свежего окна (живой случай: два ночных добора впустую - и
  * предохранитель заблокировал первый сбор на свежей квоте).
  */
 export function quotaDay(now: Date): string {
-  const shifted = new Date(now.getTime() - 10 * 3600 * 1000);
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(shifted);
+  // суточная квота Google сбрасывается в полночь по ТИХООКЕАНСКОМУ
+  // времени: летом это 10:00 МСК, а с ноября, когда в США кончается
+  // летнее время, - 11:00. Сдвиг «минус 10 часов от Москвы» был верен
+  // только летом: зимой окно открывалось на час раньше настоящего сброса
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
 }
 
-/** Сколько готовых постов лежит в базе: резерв плюс одобренная очередь. */
-export async function countAvailable(): Promise<number> {
+/**
+ * Сколько готовых постов лежит в базе: свежий резерв плюс одобренная
+ * очередь - ровно то, что публикатор реально может взять.
+ *
+ * Раньше в счёт шёл весь резерв, включая кадры старше RESERVE_TTL_DAYS,
+ * которые публикатор уже не берёт. Дюжина таких «вечных» остатков
+ * держала счётчик выше запаса: сбор решал, что всего хватает, а
+ * публикатор видел два свежих кадра - и через два слота лента вставала.
+ */
+export async function countAvailable(now = new Date()): Promise<number> {
   const db = getDb();
+  const freshSince = new Date(now.getTime() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString();
   const [reserve, approved] = await Promise.all([
     db
       .from("candidates")
       .select("id", { count: "exact", head: true })
       .in("status", ["new", "shown"])
+      .not("caption_html", "is", null)
+      .gte("created_at", freshSince),
+    db
+      .from("candidates")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "approved")
       .not("caption_html", "is", null),
-    db.from("candidates").select("id", { count: "exact", head: true }).eq("status", "approved"),
   ]);
   if (reserve.error) throw new Error(`чтение резерва: ${reserve.error.message}`);
   if (approved.error) throw new Error(`чтение очереди: ${approved.error.message}`);

@@ -8,6 +8,8 @@ name: verify
 on:
   workflow_dispatch: {}
   push:
+    # маркер с другой ветки не должен гонять её непроверенный код по боевой базе
+    branches: [claude/starting-work-tpehs7]
     paths:
       - ".github/verify.trigger"
 
@@ -40,8 +42,8 @@ jobs:
             echo "::error::не настроены секреты:$missing (Settings → Secrets and variables → Actions)"
             exit 1
           fi
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm

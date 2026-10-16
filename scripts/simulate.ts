@@ -15,7 +15,7 @@ import { getDb } from "../src/db.js";
 import { collectRaw, interleaveBySource, lastSourceCounts } from "../src/sources/index.js";
 import { byPromise } from "../src/promise.js";
 import { buildAnalysisQueue } from "../src/queue.js";
-import { dbCursorStore } from "../src/cursors.js";
+import { memoryCursorStore } from "../src/cursors.js";
 import { prefilter } from "../src/prefilter.js";
 import { pickBalanced } from "../src/balance.js";
 import { archiveKey, planAuto, rank, weekShares, type PlanCandidate } from "../src/plan.js";
@@ -46,7 +46,10 @@ function hasRuns(values: string[]): string[] {
 
 async function simulateCollect(cfg: ReturnType<typeof loadConfig>) {
   console.log("═══ 1. СБОР: кто сколько отдаёт и что доходит до анализа ═══\n");
-  const cursors = dbCursorStore();
+  // курсоры в памяти: симуляция ничего не публикует и не должна двигать
+  // боевые страницы выдачи. С курсорами из базы каждый прогон симуляции
+  // молча пролистывал ~150 кадров, и настоящий сбор их уже не видел
+  const cursors = memoryCursorStore();
   const raw = await collectRaw(cfg, cfg.collect.raw_limit, cursors);
   console.log("\nпо источникам:", JSON.stringify(lastSourceCounts));
   console.log(`сырых записей: ${raw.length}`);

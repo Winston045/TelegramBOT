@@ -5,6 +5,8 @@ on:
     - cron: "*/15 * * * *"
   workflow_dispatch: {}
   push:
+    # маркер с другой ветки не должен гонять её непроверенный код по боевой базе
+    branches: [claude/starting-work-tpehs7]
     paths:
       - ".github/publish.trigger"
 
@@ -34,9 +36,9 @@ jobs:
             echo "ok=false" >> "$GITHUB_OUTPUT"
             echo "секреты не настроены — запуск пропущен"
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.guard.outputs.ok == 'true'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.guard.outputs.ok == 'true'
         with:
           node-version: 22

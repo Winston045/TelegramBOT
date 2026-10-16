@@ -82,6 +82,15 @@ describe("validateCaption", () => {
     const long = "<b>Т</b>" + "х".repeat(1030);
     expect(validateCaption(long, meta).ok).toBe(false);
   });
+  it("пост без текста - только цитата и ссылка - брак", () => {
+    // слабая модель однажды может забыть подпись: такой пост раньше
+    // проходил валидацию целиком
+    const bare =
+      "<blockquote expandable>Италия, 1944 год.</blockquote>\n\n" +
+      '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';
+    expect(validateCaption(bare, meta).ok).toBe(false);
+  });
+
   it("теги не считаются в длину", () => {
     const okLen = "<b>" + "х".repeat(1000) + "</b>";
     expect(visibleLength(okLen)).toBe(1000);

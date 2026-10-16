@@ -82,6 +82,17 @@ describe("rejectReason", () => {
     // рисунок упомянут в сюжете, а не как носитель
     expect(rejectReason({ ...good, title: "Soldiers drawing water from a well" }, cfg)).toBeNull();
   });
+
+  it("фотоотпечаток с «print shows» и плакаты в сюжете остаются фотографиями", () => {
+    // ревизия 16.10: прежнее правило выбрасывало эти настоящие снимки
+    expect(
+      rejectReason({ ...good, description: "Photographic print shows Marines landing" }, cfg),
+    ).toBeNull();
+    expect(
+      rejectReason({ ...good, description: "1 print : photomechanical. | Print shows soldiers" }, cfg),
+    ).toBeNull();
+    expect(rejectReason({ ...good, title: "Soldiers putting up 3 posters in Paris" }, cfg)).toBeNull();
+  });
 });
 
 describe("prefilter", () => {

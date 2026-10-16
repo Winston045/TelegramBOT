@@ -7,16 +7,20 @@ name: topup
 on:
   schedule:
     # Дважды в сутки вместо каждых трёх часов (15.08: экономия минут
-    # Actions). Оба захода - на свежей квоте Gemini, которая сбрасывается
-    # в 10:00 МСК. Реальную нужду по-прежнему решает сторож.
-    - cron: "5 8,14 * * *"
+    # Actions). Утренний заход - после ежедневного сбора (08:20 UTC, не
+    # дольше 30 минут), чтобы два сбора не шли одновременно по одним и тем
+    # же страницам архивов. Реальную нужду по-прежнему решает сторож.
+    - cron: "5 9,15 * * *"
   workflow_dispatch: {}
   push:
+    branches: [claude/starting-work-tpehs7]
     paths:
       - ".github/topup.trigger"
 
+# одна очередь с /more: два сбора разом читали одни курсоры, дважды
+# разбирали одни кадры и слали редакторам одинаковые карточки
 concurrency:
-  group: topup
+  group: collector
   cancel-in-progress: false
 
 jobs:
@@ -44,9 +48,9 @@ jobs:
             echo "ok=false" >> "$GITHUB_OUTPUT"
             echo "секреты не настроены — запуск пропущен"
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.guard.outputs.ok == 'true'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.guard.outputs.ok == 'true'
         with:
           node-version: 22
@@ -73,5 +77,5 @@ jobs:
         if: steps.need.outputs.need == 'true'
         run: npm run collect -- --keep ${{ steps.need.outputs.keep }}
       - name: Карточки редакторам
-        if: steps.need.outputs.need == 'true'
+        if: always() && steps.need.outputs.need == 'true'
         run: npm run send-candidates -- --limit 3

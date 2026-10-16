@@ -2,7 +2,10 @@ name: daily-collect
 
 on:
   schedule:
-    # 07:20 UTC = 10:20 МСК: сразу ПОСЛЕ сброса квоты Gemini в 10:00.
+    # 08:20 UTC: после сброса квоты Gemini в ЛЮБОЙ сезон. Квота
+    # сбрасывается в полночь по Калифорнии - летом это 07:00 UTC, а с
+    # ноября, когда в США кончается летнее время, 08:00 UTC. На прежних
+    # 07:20 зимний сбор сорок минут жёг бы вчерашнюю, выжатую квоту.
     #
     # До 13.08 сбор стоял на 07:20 МСК и каждый день заходил на выжатых
     # остатках вчерашнего окна. Расчёт «~40 запросов из 250, всегда
@@ -13,7 +16,7 @@ on:
     #
     # Файл трогали 03.08, чтобы GitHub перерегистрировал расписание:
     # планировщик застрял на старом времени 05:30 UTC.
-    - cron: "20 7 * * *"
+    - cron: "20 8 * * *"
   workflow_dispatch: {}
 
 concurrency:
@@ -45,9 +48,9 @@ jobs:
             echo "ok=false" >> "$GITHUB_OUTPUT"
             echo "секреты не настроены — запуск пропущен"
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.guard.outputs.ok == 'true'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.guard.outputs.ok == 'true'
         with:
           node-version: 22
@@ -63,9 +66,12 @@ jobs:
       - name: Сбор кандидатов (источники → скоринг → подписи)
         if: steps.plan.outputs.need == 'true'
         run: npm run collect -- --keep ${{ steps.plan.outputs.keep }}
+      # always(): упавший сбор не должен лишать редакторов карточек из
+      # уже готового резерва и утренней сводки - иначе неявный success()
+      # глушил оба шага ровно тогда, когда сводка нужнее всего
       - name: Отправка карточек редакторам
-        if: steps.guard.outputs.ok == 'true'
+        if: always() && steps.guard.outputs.ok == 'true'
         run: npm run send-candidates
       - name: Утренняя сводка
-        if: steps.guard.outputs.ok == 'true'
+        if: always() && steps.guard.outputs.ok == 'true'
         run: npx tsx scripts/digest.ts

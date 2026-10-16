@@ -109,6 +109,26 @@ export function isDeadImageError(message: string): boolean {
   );
 }
 
+/** Текст для HTML-сообщения: ответы API и чужие ошибки могут содержать < > &. */
+export function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Ошибка, которая не пройдёт на повторе с ЭТИМ постом: 400 Bad Request
+ * (фото не обработалось, подпись не разобралась) или мёртвая ссылка.
+ * Раньше браком помечались только мёртвые ссылки, а любой другой 400
+ * (например IMAGE_PROCESS_FAILED на CMYK-скане) оставлял пост в очереди:
+ * планировщик детерминирован и брал его снова каждые 15 минут, и канал
+ * стоял, пока кто-то не вмешается. 401/403 - беда бота или канала, а не
+ * поста: такие ошибки не делают брак, иначе за день сгорела бы вся очередь.
+ */
+export function isPermanentSendError(err: unknown): boolean {
+  const code = (err as { error_code?: unknown } | null)?.error_code;
+  if (code === 400) return true;
+  return isDeadImageError((err as Error | null)?.message ?? "");
+}
+
 /**
  * Удаление сообщения без исключений: старше 48 часов Телеграм не отдаёт,
  * чужие без прав не удалить - для автоочистки это не ошибка.

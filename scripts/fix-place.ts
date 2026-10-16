@@ -76,10 +76,11 @@ async function main() {
   for (const c of data ?? []) {
     const fixed =
       placeToQuote(c.caption_html ?? "") ?? collapseDoublePlace(c.caption_html ?? "");
-    // свежий пост канала синхронизируем безусловно - подпись могла
-    // разъехаться с базой
-    const target = fixed ?? c.caption_html;
-    if (!target) continue;
+    // правим ТОЛЬКО то, что лекарь реально исправил. Безусловная
+    // «синхронизация» всех постов с 01.08 перезаписывала ручные правки
+    // редакторов в канале версией из базы и не влезала в таймаут отчёта
+    if (!fixed) continue;
+    const target = fixed;
 
     if (c.status === "published" && c.channel_msg_id) {
       try {

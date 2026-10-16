@@ -93,6 +93,15 @@ describe("replaceQuote", () => {
     expect(updated).toContain('<a href="https://t.me/Story_Teams">STORY | TEAM</a>');
   });
 
+  it("символы $& и $` в цитате редактора - просто текст, а не вставка старой подписи", () => {
+    const updated = replaceQuote(CAPTION, "Цена $& и $` и $' - 5 долларов.");
+    expect(updated).toContain(
+      "<blockquote expandable>Цена $&amp; и $` и $' - 5 долларов.</blockquote>",
+    );
+    expect(updated).not.toContain("Старая цитата");
+    expect(updated.match(/<blockquote/g)).toHaveLength(1);
+  });
+
   it("добавляет цитату, если её не было", () => {
     const noQuote =
       "<b>Т</b> у танка.\n\n" + '<a href="https://t.me/Story_Teams">STORY | TEAM</a>';

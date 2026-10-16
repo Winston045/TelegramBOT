@@ -103,10 +103,14 @@ async function main() {
       continue;
     }
 
+    // только из new: пока карточка отправлялась (до 45 с на фото), этот же
+    // кадр мог уйти в канал автопостингом - без условия пометка вернула
+    // бы опубликованный пост в резерв, и он вышел бы второй раз
     const { error: updErr } = await db
       .from("candidates")
       .update({ status: "shown", shown_at: new Date().toISOString() })
-      .eq("id", c.id);
+      .eq("id", c.id)
+      .eq("status", "new");
     if (updErr) throw new Error(`пометка shown #${c.id}: ${updErr.message}`);
 
     sent++;

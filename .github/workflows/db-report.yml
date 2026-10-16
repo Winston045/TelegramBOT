@@ -6,6 +6,8 @@ name: db-report
 on:
   workflow_dispatch: {}
   push:
+    # маркер с другой ветки не должен гонять её непроверенный код по боевой базе
+    branches: [claude/starting-work-tpehs7]
     paths:
       - ".github/report.trigger"
 
@@ -24,57 +26,60 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci || npm install
       # "style" в триггер-файле - выгрузить тексты постов канала вместо
       # отчёта; "before:5000" - нырнуть в архив старше поста #5000
+      # Режим - ПЕРВОЕ слово маркера («diversity:40 …» → diversity), а не
+      # любое слово где-то в тексте: grep по всему файлу давал первое
+      # совпадение по цепочке. Ручной «Run workflow» маркер не читает и
+      # гонит безопасный отчёт - раньше он молча повторял последний режим,
+      # в том числе пишущие в базу purgenonphoto, fixplace и migrate.
       - name: Отчёт
         run: |
-          if grep -q purgenonphoto .github/report.trigger 2>/dev/null; then
-            # рисунки и плакаты из резерва и очереди - по описанию архива
-            npx tsx scripts/purge-nonphoto.ts
-          elif grep -q resettopup .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/reset-topup.ts
-          elif grep -q migrate .github/report.trigger 2>/dev/null; then
-            npm run migrate
-          elif grep -q tagleaders .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/tag-leaders.ts
-          elif grep -q simulate .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/simulate.ts
-          elif grep -q fixplace .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/fix-place.ts
-          elif grep -q ctxprobe .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/probe-context.ts 6
-          elif grep -q reserve .github/report.trigger 2>/dev/null; then
-            npx tsx scripts/reserve-report.ts
-          elif grep -q cards .github/report.trigger 2>/dev/null; then
-            # выслать карточки из уже готового резерва: Gemini не тратим,
-            # сбор не запускаем - только показываем то, что уже разобрано
-            n=$(grep -oP 'cards:\K\d+' .github/report.trigger || true)
-            npm run send-candidates -- --limit ${n:-3}
-          elif grep -q keys .github/report.trigger 2>/dev/null; then
-            # пул ключей Gemini: сколько видит бот и живой ли каждый
-            npx tsx scripts/keys-check.ts
-          elif grep -q sources .github/report.trigger 2>/dev/null; then
-            # проверка источников: каждый архив и запрос по отдельности
-            npx tsx scripts/sources-check.ts
-          elif grep -q diversity .github/report.trigger 2>/dev/null; then
-            # разбор вышедших постов: архивы, эпохи, темы, серии подряд
-            n=$(grep -oP 'diversity:\K\d+' .github/report.trigger || true)
-            npx tsx scripts/diversity.ts ${n:-60}
-          elif grep -q handwork .github/report.trigger 2>/dev/null; then
-            # ручная редактура канала: чем жили посты до бота
-            from=$(grep -oP 'from:\K\d{4}-\d{2}' .github/report.trigger || true)
-            to=$(grep -oP 'to:\K\d{4}-\d{2}' .github/report.trigger || true)
-            npx tsx scripts/channel-posts.ts --from "$from" --to "$to" --brief
-          elif grep -q style .github/report.trigger 2>/dev/null; then
-            before=$(grep -oP 'before:\K\d+' .github/report.trigger || true)
-            month=$(grep -oP 'month:\K\d{4}-\d{2}' .github/report.trigger || true)
-            npx tsx scripts/channel-posts.ts 30 ${before:+--before $before} ${month:+--month $month}
-          else
-            npm run review-captions -- 15
+          mode=""
+          if [ "${{ github.event_name }}" = "push" ]; then
+            mode=$(head -n1 .github/report.trigger | awk '{print $1}' | cut -d: -f1)
           fi
+          echo "режим: ${mode:-по умолчанию}"
+          case "$mode" in
+            purgenonphoto)
+              # рисунки и плакаты из резерва и очереди - по описанию архива
+              npx tsx scripts/purge-nonphoto.ts ;;
+            resettopup) npx tsx scripts/reset-topup.ts ;;
+            migrate) npm run migrate ;;
+            tagleaders) npx tsx scripts/tag-leaders.ts ;;
+            simulate) npx tsx scripts/simulate.ts ;;
+            fixplace) npx tsx scripts/fix-place.ts ;;
+            ctxprobe) npx tsx scripts/probe-context.ts 6 ;;
+            reserve) npx tsx scripts/reserve-report.ts ;;
+            cards)
+              # выслать карточки из уже готового резерва: Gemini не тратим,
+              # сбор не запускаем - только показываем то, что уже разобрано
+              n=$(grep -oP 'cards:\K\d+' .github/report.trigger || true)
+              npm run send-candidates -- --limit ${n:-3} ;;
+            keys)
+              # пул ключей Gemini: сколько видит бот и живой ли каждый
+              npx tsx scripts/keys-check.ts ;;
+            sources)
+              # проверка источников: каждый архив и запрос по отдельности
+              npx tsx scripts/sources-check.ts ;;
+            diversity)
+              # разбор вышедших постов: архивы, эпохи, темы, серии подряд
+              n=$(grep -oP 'diversity:\K\d+' .github/report.trigger || true)
+              npx tsx scripts/diversity.ts ${n:-60} ;;
+            handwork)
+              # ручная редактура канала: чем жили посты до бота
+              from=$(grep -oP 'from:\K\d{4}-\d{2}' .github/report.trigger || true)
+              to=$(grep -oP 'to:\K\d{4}-\d{2}' .github/report.trigger || true)
+              npx tsx scripts/channel-posts.ts --from "$from" --to "$to" --brief ;;
+            style)
+              before=$(grep -oP 'before:\K\d+' .github/report.trigger || true)
+              month=$(grep -oP 'month:\K\d{4}-\d{2}' .github/report.trigger || true)
+              npx tsx scripts/channel-posts.ts 30 ${before:+--before $before} ${month:+--month $month} ;;
+            *) npm run review-captions -- 15 ;;
+          esac

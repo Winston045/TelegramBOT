@@ -12,6 +12,52 @@ export function getDb(): SupabaseClient {
   return client;
 }
 
+/** Размер страницы: потолок ответа PostgREST у Supabase по умолчанию. */
+export const PAGE_SIZE = 1000;
+
+/**
+ * Читает выборку ЦЕЛИКОМ, страницами по PAGE_SIZE.
+ *
+ * Supabase отдаёт на один запрос не больше 1000 строк и молча обрезает
+ * остальное - без ошибки. Проверка дублей грузила seen_hashes одним
+ * запросом, а там ~4400 хэшей истории канала плюс всё, что вышло при
+ * боте: сверка шла лишь с первой тысячей, и повтор старого поста мог
+ * выйти в канал. `page(from, to)` строит запрос с .range(from, to) и
+ * обязательной сортировкой по уникальному ключу - без неё страницы
+ * между запросами могут перекрываться и терять строки.
+ */
+export async function selectAll<T>(
+  page: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) return out;
+  }
+}
+
+/** Все известные хэши: история канала, вышедшие посты, кандидаты. */
+export async function loadKnownHashes(
+  db: SupabaseClient,
+  opts: { candidates?: boolean } = {},
+): Promise<string[]> {
+  const seen = await selectAll<{ image_hash: string }>((from, to) =>
+    db.from("seen_hashes").select("image_hash").order("image_hash").range(from, to),
+  );
+  const cands = opts.candidates
+    ? await selectAll<{ image_hash: string }>((from, to) =>
+        db.from("candidates").select("image_hash").order("id").range(from, to),
+      )
+    : [];
+  return [...seen, ...cands].map((r) => r.image_hash);
+}
+
 export type CandidateStatus =
   | "new"
   | "shown"

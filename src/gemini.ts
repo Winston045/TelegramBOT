@@ -50,16 +50,26 @@ export function quotaTripped(): boolean {
  * когда квоту сожгли ВСЕ ключи.
  */
 let keyIdx = 0;
+/**
+ * Недействительные ключи (отозван, истёк, нет доступа): раньше 400/403
+ * на ключе бросали ошибку на каждом кадре, ключ не менялся, и прогон
+ * выдавал ноль при живом втором ключе.
+ */
+const deadKeys = new Set<number>();
 function currentKey(): string {
   const keys = env.geminiApiKeys;
   return keys[keyIdx % keys.length]!;
 }
-function rotateKey(): boolean {
+function rotateKey(reason = "квота ключа кончилась"): boolean {
   const keys = env.geminiApiKeys;
-  if (keys.length < 2) return false;
-  keyIdx = (keyIdx + 1) % keys.length;
-  console.log(`gemini: квота ключа кончилась, переключаюсь на ключ #${keyIdx + 1} из ${keys.length}`);
-  return true;
+  for (let step = 1; step < keys.length; step++) {
+    const next = (keyIdx + step) % keys.length;
+    if (deadKeys.has(next)) continue;
+    keyIdx = next;
+    console.log(`gemini: ${reason}, переключаюсь на ключ #${keyIdx + 1} из ${keys.length}`);
+    return true;
+  }
+  return false;
 }
 
 type ModelInfo = { name: string; supportedGenerationMethods?: string[] };
@@ -90,7 +100,21 @@ type ModelInfo = { name: string; supportedGenerationMethods?: string[] };
  */
 const deadModels = new Set<string>();
 const benchedUntil = new Map<string, number>();
+/** Сколько раз модель уже отдыхала в этом прогоне. */
+const benchCount = new Map<string, number>();
 export const OVERLOAD_BENCH_MS = 120_000;
+const MAX_BENCH_MS = 10 * 60_000;
+
+/**
+ * Срок отдыха растёт с каждым разом: 2, 4, 8 минут, потолок 10. С
+ * постоянными двумя минутами ревизия 16.10 нашла петлю: зависшая модель
+ * выясняется дольше, чем отдыхает, и пока бот проверяет следующую,
+ * первая уже «вернулась» - бот гонял полноценные модели по кругу и до
+ * облегчённой не доходил вовсе.
+ */
+export function benchDuration(timesBenched: number): number {
+  return Math.min(MAX_BENCH_MS, OVERLOAD_BENCH_MS * 2 ** Math.max(0, timesBenched - 1));
+}
 
 /**
  * Суточная квота бесплатного тарифа у Google - на МОДЕЛЬ в проекте
@@ -182,15 +206,30 @@ export function chooseModel(
 }
 
 function benchModel(model: string) {
-  benchedUntil.set(model, Date.now() + OVERLOAD_BENCH_MS);
+  const times = (benchCount.get(model) ?? 0) + 1;
+  benchCount.set(model, times);
+  const ms = benchDuration(times);
+  benchedUntil.set(model, Date.now() + ms);
   overloadStreak = 0;
-  console.warn(
-    `gemini: ${model} перегружена - отдыхает ${Math.round(OVERLOAD_BENCH_MS / 1000)} с, беру следующую`,
-  );
+  console.warn(`gemini: ${model} перегружена - отдыхает ${Math.round(ms / 1000)} с, беру следующую`);
 }
 
+/**
+ * Сколько ударов подряд отправляют модель отдыхать. Вернувшейся со
+ * скамейки хватает одного: она уже доказала, что лежит, и вторая
+ * проверка - это ещё один сгоревший кадр.
+ */
+function tripAfter(model: string): number {
+  return benchCount.has(model) ? 1 : OVERLOAD_TRIP_AFTER;
+}
+
+let modelNamesRetryAt = 0;
 async function loadModelNames(): Promise<string[]> {
   if (modelNames) return modelNames;
+  // сбой списка не запоминаем навсегда: раньше один 503 на ListModels -
+  // а он случается ровно тогда, когда Gemini перегружена, - оставлял
+  // прогону одну модель без запасных и без облегчённой
+  if (Date.now() < modelNamesRetryAt) return [FALLBACK_MODEL];
   try {
     const res = await fetch(`${BASE}?pageSize=1000`, {
       headers: { "x-goog-api-key": currentKey() },
@@ -201,11 +240,14 @@ async function loadModelNames(): Promise<string[]> {
     modelNames = (body.models ?? [])
       .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
       .map((m) => m.name.replace(/^models\//, ""));
+    return modelNames;
   } catch (err) {
-    console.warn(`gemini: не смог получить список моделей (${(err as Error).message}), беру ${FALLBACK_MODEL}`);
-    modelNames = [FALLBACK_MODEL];
+    console.warn(
+      `gemini: не смог получить список моделей (${(err as Error).message}), пока беру ${FALLBACK_MODEL}`,
+    );
+    modelNamesRetryAt = Date.now() + 60_000;
+    return [FALLBACK_MODEL];
   }
-  return modelNames;
 }
 
 /**
@@ -346,11 +388,15 @@ export async function geminiJson<T>(
         });
       } catch (err) {
         lastError = new Error(`gemini: сеть/таймаут — ${(err as Error).message}`);
-        // зависание у Gemini - та же перегрузка, только молчаливая: без
-        // этого зачёта зависшая модель не уходила на скамейку, и бот
-        // снова и снова ждал её по минуте
-        if (!opts.model && ++overloadStreak >= OVERLOAD_TRIP_AFTER) benchModel(model);
-        else await sleep(2000);
+        // зависание у Gemini - та же перегрузка, только молчаливая, и
+        // дорогая: минута на попытку. Отдыхать - сразу после первого,
+        // иначе на выяснение уходил весь бюджет вызова
+        if (!opts.model) {
+          benchModel(model);
+          attempt--;
+        } else {
+          await sleep(2000);
+        }
         continue;
       }
 
@@ -380,11 +426,18 @@ export async function geminiJson<T>(
         if (!opts.model && !process.env.GEMINI_MODEL) {
           exhaustedHere().add(model);
           const names = await loadModelNames();
-          const left = chooseModel(names, unavailableHere(), new Map(), Date.now());
-          if (!("none" in left)) {
+          const unavailable = unavailableHere();
+          const fullLeft = rankModels(names).some((n) => !unavailable.has(n));
+          const anyLeft = !("none" in chooseModel(names, unavailable, new Map(), Date.now()));
+          // на облегчённую этого ключа спускаемся, только если другого
+          // ключа с полноценными моделями нет: иначе вся партия ушла бы
+          // слабой модели, пока у второго ключа квота цела
+          const otherKeyLeft = keyTry < totalKeys - 1;
+          if (fullLeft || (anyLeft && !otherKeyLeft)) {
             console.warn(
               `gemini: суточная квота ${model} на ключе #${keyIdx + 1} кончилась - беру другую модель`,
             );
+            attempt--;
             continue;
           }
           quotaFailure = true;
@@ -407,8 +460,12 @@ export async function geminiJson<T>(
         // самая загруженная: ежедневный сбор 19.08 потерял на 503 шесть
         // кадров из семнадцати - больше, чем на квоте. Перегруженная
         // модель уходит на скамейку, а вызов сразу пробует следующую
-        if (!opts.model && ++overloadStreak >= OVERLOAD_TRIP_AFTER) {
+        if (!opts.model && ++overloadStreak >= tripAfter(model)) {
           benchModel(model);
+          // уход модели отдыхать - не попытка кадра: раньше восемь попыток
+          // кончались на четвёртой модели, не дойдя до той, что отвечает.
+          // Потолок вызова держит бюджет CALL_BUDGET_MS
+          attempt--;
           continue;
         }
         // одна короткая пауза перед вторым ударом: второй 503 всё равно
@@ -422,10 +479,35 @@ export async function geminiJson<T>(
         deadModels.add(model);
         console.warn(`gemini: модель ${model} недоступна (404) - вычёркиваю до конца прогона`);
         lastError = new Error(`gemini: модель ${model} недоступна (404)`);
+        attempt--;
         continue;
       }
       if (!res.ok) {
-        throw new Error(`gemini: HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
+        const text = await res.text().catch(() => "");
+        // ключ отозван, истёк или без доступа: меняем ключ, а не роняем
+        // кадр за кадром при живом втором ключе
+        const keyBroken =
+          res.status === 401 ||
+          ((res.status === 400 || res.status === 403) &&
+            /API_KEY_INVALID|API key not valid|API key expired|API_KEY_SERVICE_BLOCKED/i.test(text));
+        if (keyBroken) {
+          deadKeys.add(keyIdx);
+          lastError = new Error(`gemini: ключ #${keyIdx + 1} недействителен (HTTP ${res.status})`);
+          if (!rotateKey(`ключ #${keyIdx + 1} недействителен (HTTP ${res.status})`)) {
+            throw new Error("gemini: все ключи недействительны - проверьте GEMINI_API_KEYS");
+          }
+          attempt--;
+          continue;
+        }
+        // 403 без жалобы на ключ - модель этому проекту недоступна
+        if (res.status === 403 && !opts.model) {
+          deadModels.add(model);
+          console.warn(`gemini: модель ${model} недоступна проекту (403) - вычёркиваю`);
+          lastError = new Error(`gemini: модель ${model} недоступна (403)`);
+          attempt--;
+          continue;
+        }
+        throw new Error(`gemini: HTTP ${res.status} — ${text.slice(0, 300)}`);
       }
 
       const body = (await res.json()) as {

@@ -7,7 +7,7 @@
  * При короткой очереди - предупреждение.
  */
 import { loadConfig } from "../src/config.js";
-import { getDb } from "../src/db.js";
+import { getDb, loadKnownHashes } from "../src/db.js";
 import { env } from "../src/env.js";
 import { channelSlug } from "../src/tme.js";
 import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/schedule.js";
@@ -17,17 +17,15 @@ import {
   APPROVED_PRIORITY,
   LONG_QUOTE,
   RECENT_WINDOW,
+  RESERVE_TTL_DAYS,
   archiveKey,
   planAuto,
   quoteLength,
   weekShares,
 } from "../src/plan.js";
-import { isDeadImageError, sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
+import { escapeHtml, isPermanentSendError, sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { cleanupChat, rememberEphemeral } from "../src/tidy.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
-
-/** Сколько дней кандидат из резерва считается свежим для автопостинга. */
-const RESERVE_TTL_DAYS = 10;
 
 /**
  * Чем жила лента последнее время: темы, эпохи, архивы, доля статики и
@@ -110,7 +108,7 @@ async function main() {
   // вне зависимости от слотов
   const { data: due, error: dueErr } = await db
     .from("candidates")
-    .select("id, image_url, image_hash, caption_html")
+    .select("id, image_url, image_hash, caption_html, status")
     .eq("status", "approved")
     .not("caption_html", "is", null)
     .not("scheduled_at", "is", null)
@@ -138,14 +136,36 @@ async function main() {
     // Бундесархива подряд, хотя в очереди ждал британский)
     const res = await db
       .from("candidates")
-      .select("id, image_url, image_hash, caption_html, score, tags, attribution, source")
+      .select("id, image_url, image_hash, caption_html, score, tags, attribution, source, status")
       .eq("status", "approved")
       .not("caption_html", "is", null)
       .is("scheduled_at", null)
       .order("id", { ascending: true })
       .limit(20);
     if (res.error) throw new Error(`чтение очереди: ${res.error.message}`);
-    const approved = res.data ?? [];
+
+    // хэш сверяем ещё раз прямо перед публикацией - и у резерва, и у
+    // одобренных: одно фото приходит из двух источников (Commons и LOC),
+    // а общий пул пускает резервную копию раньше одобренной. Сверка - по
+    // ВСЕЙ таблице: одним запросом Supabase отдавал лишь первую тысячу
+    // хэшей из ~4400 истории канала
+    const seenHashes = await loadKnownHashes(db);
+    const dropDuplicates = async <T extends { id: number; image_hash: string }>(
+      rows: T[],
+      kind: string,
+    ): Promise<T[]> => {
+      const alive: T[] = [];
+      for (const cand of rows) {
+        if (seenHashes.some((h) => isDuplicate(h, cand.image_hash))) {
+          await db.from("candidates").update({ status: "rejected" }).eq("id", cand.id);
+          console.log(`${kind}: #${cand.id} - дубликат уже вышедшего, отклонён`);
+          continue;
+        }
+        alive.push(cand);
+      }
+      return alive;
+    };
+    const approved = await dropDuplicates(res.data ?? [], "очередь одобренных");
 
     // полная автоматизация (тумблер /auto в боте): резерв собранных без
     // аппрува кадров. Раньше он рассматривался, только когда одобренная
@@ -156,7 +176,7 @@ async function main() {
     if (autoPublish) {
       const rres = await db
         .from("candidates")
-        .select("id, image_url, image_hash, caption_html, score, tags, attribution, source")
+        .select("id, image_url, image_hash, caption_html, score, tags, attribution, source, status")
         .in("status", ["new", "shown"])
         .not("caption_html", "is", null)
         // срок годности резерва: у старых кадров чаще мертвеет ссылка
@@ -165,20 +185,8 @@ async function main() {
         .order("score", { ascending: false })
         .limit(20);
       if (rres.error) throw new Error(`чтение кандидатов автопостинга: ${rres.error.message}`);
-      // без глаз редактора хэш сверяем ещё раз прямо перед публикацией:
-      // в резерве могут лежать кадры, собранные до пополнения базы дедупа
-      const { data: seen, error: seenErr } = await db.from("seen_hashes").select("image_hash");
-      if (seenErr) throw new Error(`чтение seen_hashes: ${seenErr.message}`);
-      const seenHashes = (seen ?? []).map((r) => r.image_hash as string);
-      // битые кадры выкидываем до планировщика: он решает только «что интереснее»
-      for (const cand of rres.data ?? []) {
-        if (seenHashes.some((h) => isDuplicate(h, cand.image_hash))) {
-          await db.from("candidates").update({ status: "rejected" }).eq("id", cand.id);
-          console.log(`автопостинг: #${cand.id} - дубликат уже вышедшего, отклонён`);
-          continue;
-        }
-        reserve.push(cand);
-      }
+      // дубли выкидываем до планировщика: он решает только «что интереснее»
+      reserve = await dropDuplicates(rres.data ?? [], "автопостинг");
     }
 
     if (approved.length || reserve.length) {
@@ -210,12 +218,16 @@ async function main() {
 
   const post = queue?.[0];
   if (!post) {
-    // если всё в очереди запланировано на будущее - это не пустая очередь
+    // если очередь ждёт поста, назначенного на ближайшие сутки, - это не
+    // пустая очередь. Пост на следующую пятницу молчать до пятницы не
+    // разрешает: раньше любой запланированный глушил предупреждение
     const { count: future } = await db
       .from("candidates")
       .select("id", { count: "exact", head: true })
       .eq("status", "approved")
-      .not("scheduled_at", "is", null);
+      .not("caption_html", "is", null)
+      .gt("scheduled_at", now.toISOString())
+      .lte("scheduled_at", new Date(now.getTime() + 24 * 3600 * 1000).toISOString());
     if (future && future > 0) {
       console.log(`слот наступил, но все ${future} в очереди ждут своего времени`);
       await heartbeatOk("publisher");
@@ -251,33 +263,75 @@ async function main() {
     return;
   }
 
-  // битая ссылка на фото не должна вечно блокировать очередь: архивы
-  // иногда перекладывают файлы, пока пост ждёт публикации
+  // Строку ЗАХВАТЫВАЕМ до отправки: условное обновление в published из
+  // того статуса, в каком мы её прочитали. Раньше фото уходило первым, а
+  // пометка - потом, и сбой базы между ними (такой был 15.10: «Project not
+  // specified.») оставлял пост в очереди: через 15 минут он выходил
+  // второй раз. Кнопка «Сейчас» в боте захватывает так же, поэтому и
+  // гонка «бот и публикатор в одну секунду» даёт один пост, а не два
+  const { data: claimed, error: claimErr } = await db
+    .from("candidates")
+    .update({ status: "published", published_at: new Date().toISOString() })
+    .eq("id", post.id)
+    .eq("status", post.status)
+    .select("id");
+  if (claimErr) throw new Error(`захват #${post.id}: ${claimErr.message}`);
+  if (!claimed?.length) {
+    console.log(`#${post.id} забрал кто-то раньше (бот или другой заход) - этот слот пропускаю`);
+    await heartbeatOk("publisher");
+    return;
+  }
+
   let msgId: number;
   try {
     msgId = await sendPhotoHtml(env.channelId, post.image_url, post.caption_html);
   } catch (err) {
     const msg = (err as Error).message;
-    if (!isDeadImageError(msg)) throw err; // временная ошибка телеграма - пробуем в следующий заход
-    await db.from("candidates").update({ status: "failed" }).eq("id", post.id);
+    if (!isPermanentSendError(err)) {
+      // временная беда Телеграма или сети - возвращаем пост в очередь как
+      // был, следующий заход попробует снова
+      await db
+        .from("candidates")
+        .update({ status: post.status, published_at: null })
+        .eq("id", post.id)
+        .eq("status", "published")
+        .is("channel_msg_id", null);
+      throw err;
+    }
+    // этот пост не уйдёт и на повторе (мёртвая ссылка, фото не
+    // обработалось, подпись не разобралась) - брак, очередь едет дальше
+    await db
+      .from("candidates")
+      .update({ status: "failed", published_at: null })
+      .eq("id", post.id)
+      .eq("status", "published")
+      .is("channel_msg_id", null);
     await sendMessageHtml(
       env.editorsChatId,
-      `Пост #${post.id} не отправился: архив больше не отдаёт фото. Помечен браком, очередь едет дальше.`,
+      `Пост #${post.id} не отправился и помечен браком, очередь едет дальше. Телеграм ответил: ${escapeHtml(msg.slice(0, 200))}`,
     );
-    console.warn(`битая ссылка у #${post.id}: ${msg}`);
+    console.warn(`брак при отправке #${post.id}: ${msg}`);
     await heartbeatOk("publisher");
     return;
   }
 
-  const { error: updErr } = await db
-    .from("candidates")
-    .update({
-      status: "published",
-      published_at: new Date().toISOString(),
-      channel_msg_id: msgId,
-    })
-    .eq("id", post.id);
-  if (updErr) throw new Error(`пометка published #${post.id}: ${updErr.message}`);
+  // пост уже в канале: номер сообщения обязан дойти до базы, иначе /undo
+  // и «Удалить из канала» его не найдут. Сбой сети - повторяем
+  for (let attempt = 1; ; attempt++) {
+    const { error: updErr } = await db
+      .from("candidates")
+      .update({ channel_msg_id: msgId })
+      .eq("id", post.id);
+    if (!updErr) break;
+    if (attempt >= 3) {
+      await sendMessageHtml(
+        env.editorsChatId,
+        `Пост #${post.id} вышел в канал (сообщение ${msgId}), но номер не записался в базу - /undo его не найдёт.`,
+      ).catch(() => undefined);
+      throw new Error(`номер сообщения #${post.id}: ${updErr.message}`);
+    }
+    await new Promise((r) => setTimeout(r, 2000 * attempt));
+  }
 
   const { error: hashErr } = await db
     .from("seen_hashes")
@@ -285,7 +339,8 @@ async function main() {
       { image_hash: post.image_hash, origin: "published" },
       { onConflict: "image_hash", ignoreDuplicates: true },
     );
-  if (hashErr) throw new Error(`запись seen_hashes: ${hashErr.message}`);
+  // пост уже вышел и помечен - падать из-за хэша незачем, но знать надо
+  if (hashErr) console.warn(`запись seen_hashes для #${post.id}: ${hashErr.message}`);
 
   // ссылка - на канал, куда реально публикуем (env), а не из config:
   // в тестовом режиме это разные каналы

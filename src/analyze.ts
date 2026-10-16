@@ -49,8 +49,16 @@ export async function analyzeImage(
     { text: buildAnalysisPrompt(item, cfg.glossary, extraContext) },
     img,
   ]);
+  // слабая модель может вернуть «"score": "high"» или забыть подпись: NaN
+  // проходил порог оценки (NaN < 40 - ложь), а пустая подпись давала
+  // пост из одной цитаты и ссылки. Такой ответ - брак, а не кандидат
+  const score = Number(result.score);
+  if (!Number.isFinite(score)) {
+    throw new Error(`gemini: оценка не число (${JSON.stringify(result.score)})`);
+  }
+  if (!result.caption?.trim()) throw new Error("gemini: нет подписи в ответе");
   return {
-    score: Math.max(0, Math.min(100, Math.round(result.score ?? 0))),
+    score: Math.max(0, Math.min(100, Math.round(score))),
     score_why: result.score_why?.trim().slice(0, 120) || undefined,
     tags: result.tags ?? {},
     unsafe: Boolean(result.unsafe),

@@ -7,7 +7,7 @@
  */
 import { getDb } from "../src/db.js";
 import { env } from "../src/env.js";
-import { sendMessageHtml } from "../src/telegram.js";
+import { escapeHtml, sendMessageHtml } from "../src/telegram.js";
 
 const COLLECTOR_MAX_AGE_H = 26; // суточный крон + запас на опоздания
 const PUBLISHER_MAX_AGE_H = 2;  // крон каждые 15 минут
@@ -34,9 +34,12 @@ async function main() {
     const age = hoursSince(row?.last_ok ?? null);
     if (age > maxAge) {
       const ageText = age === Infinity ? "никогда" : `${Math.round(age)} ч назад`;
+      // текст ошибки экранируем и режем: HTML-страница сбоя Supabase или
+      // Cloudflare внутри HTML-сообщения ломала разбор («can't parse
+      // entities»), и тревога не доходила ровно во время аварии
       problems.push(
         `Сбой: ${job} — последний успех ${ageText}.` +
-          (row?.last_error ? `\nОшибка: ${row.last_error}` : ""),
+          (row?.last_error ? `\nОшибка: ${escapeHtml(String(row.last_error).slice(0, 500))}` : ""),
       );
     }
   }

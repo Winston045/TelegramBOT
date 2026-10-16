@@ -3,7 +3,7 @@
  * автопостингу (new/shown) - когда собран, оценка, первая строка подписи.
  * Нужна, чтобы сверять состояние базы, не заходя в Supabase.
  */
-import { getDb } from "../src/db.js";
+import { getDb, loadKnownHashes } from "../src/db.js";
 import { loadConfig } from "../src/config.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { countPublishedToday, slotsPassed } from "../src/schedule.js";
@@ -42,6 +42,18 @@ async function main() {
     .select("id, status, score, created_at, caption_html, source, source_id, raw_title, raw_desc, tags")
     .order("id", { ascending: true });
   if (error) throw new Error(error.message);
+
+  // дедуп: сколько хэшей в базе на самом деле, сколько видел прежний
+  // одиночный запрос и сколько читает постраничное чтение (ревизия 16.10)
+  const { count: seenTotal } = await db
+    .from("seen_hashes")
+    .select("image_hash", { count: "exact", head: true });
+  const { data: oneShot } = await db.from("seen_hashes").select("image_hash");
+  const paged = await loadKnownHashes(db);
+  console.log(
+    `дедуп: хэшей в seen_hashes ${seenTotal ?? "?"}, одиночный запрос видел ${oneShot?.length ?? 0}, ` +
+      `постраничное чтение - ${paged.length}`,
+  );
 
   const byStatus = new Map<string, number>();
   for (const c of all ?? []) byStatus.set(c.status, (byStatus.get(c.status) ?? 0) + 1);

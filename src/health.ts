@@ -68,7 +68,7 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
     problems.push({
       text:
         `Партия сорвана лимитом Gemini: ${quotaFailed} кадров не дошли до анализа, в резерв не попало ничего. ` +
-        "Квота сбрасывается в 10:00 МСК.",
+        "Квота сбрасывается в полночь по Калифорнии: 10:00 МСК летом, 11:00 зимой.",
     });
   } else if (last.analyzed > 0 && last.written === 0) {
     // называем состав отсева поимённо. 16.08 бот написал «все отсеяны как
@@ -107,7 +107,7 @@ export function findProblems(last: RunRow, history: RunRow[]): HealthProblem[] {
       problems.push({
         text:
           `До резерва дошло ${last.written} из ${last.analyzed}: ${quotaFailed} кадров сорвал лимит Gemini. ` +
-          "Квота сбрасывается в 10:00 МСК.",
+          "Квота сбрасывается в полночь по Калифорнии: 10:00 МСК летом, 11:00 зимой.",
       });
     } else if (lost > 0) {
       problems.push({

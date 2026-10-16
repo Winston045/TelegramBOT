@@ -99,10 +99,25 @@ export function validateYears(html: string, meta: CaptionMeta): ValidationResult
   return { ok: true };
 }
 
+/**
+ * Видимый текст тела поста - без цитат и без футера с подписью канала.
+ * Пустое тело - пост из одной цитаты и ссылки, такого в канале не бывает.
+ */
+export function bodyText(captionHtml: string): string {
+  const idx = captionHtml.lastIndexOf("\n\n");
+  const body =
+    idx !== -1 && captionHtml.slice(idx).includes("<a href=") ? captionHtml.slice(0, idx) : captionHtml;
+  return body
+    .replace(/<blockquote[^>]*>[\s\S]*?<\/blockquote>/g, "")
+    .replace(/<[^>]+>/g, "")
+    .trim();
+}
+
 export function validateCaption(captionHtml: string, meta: CaptionMeta): ValidationResult {
   if (visibleLength(captionHtml) > CAPTION_LIMIT) {
     return { ok: false, reason: `подпись длиннее ${CAPTION_LIMIT} символов` };
   }
+  if (!bodyText(captionHtml)) return { ok: false, reason: "у поста нет текста - только цитата" };
   const htmlCheck = validateHtml(captionHtml);
   if (!htmlCheck.ok) return htmlCheck;
   return validateYears(captionHtml, meta);
