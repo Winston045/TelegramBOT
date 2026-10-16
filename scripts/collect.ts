@@ -25,7 +25,7 @@ import { hiResLocUrl } from "../src/sources/loc.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { isStereoPair } from "../src/stereo.js";
 import { getDb, loadKnownHashes, selectAll } from "../src/db.js";
-import { GeminiQuotaError, lastUsedModel, quotaTripped } from "../src/gemini.js";
+import { GeminiBusyError, GeminiQuotaError, lastUsedModel, quotaTripped } from "../src/gemini.js";
 import { analyzeImage } from "../src/analyze.js";
 import { passesGate } from "../src/scoring.js";
 import { reviewQuote } from "../src/critic.js";
@@ -80,6 +80,9 @@ function numArg(name: string): number | undefined {
 }
 
 type HashedItem = CollectedItem & { imageHash: string; imageBuffer: Buffer };
+
+/** Меньше этого после паузы ждать Gemini незачем: кадр уже не успеть разобрать. */
+const MIN_ANALYSIS_LEFT_MS = 3 * 60_000;
 
 /** Осталось ли время прогона: и на скачивание, и на анализ. */
 function timeLeftMs(): number {
@@ -299,6 +302,7 @@ async function main() {
   let recovered = 0;
   const queue = [...hashed];
   const secondTry = new Set<HashedItem>();
+  let resuming = false;
   for (let qi = 0; qi < queue.length; qi++) {
     const item = queue[qi]!;
     if (Date.now() - runStartedAt > RUN_BUDGET_MS) {
@@ -314,7 +318,10 @@ async function main() {
     // честно отсеянный как скучный, числился и сбоем, и мусором (живой
     // случай 15.10: воронка показала «сбоев 1», а настоящих было ноль)
     const retrying = secondTry.has(item);
-    if (retrying) netFailed--;
+    // после ожидания свободной модели тот же кадр идёт заново, но исход у
+    // него по-прежнему один - счётчики второй раз не трогаем
+    if (resuming) resuming = false;
+    else if (retrying) netFailed--;
     else analyzed++;
     // умные цитаты: полное описание со страницы архива как доп. контекст
     let extraContext: string | undefined;
@@ -421,6 +428,26 @@ async function main() {
         console.warn(`  брак подписи: [${item.source}] ${item.sourceId} — ${check.reason}`);
       }
     } catch (err) {
+      // все модели на скамейке - кадр не виноват. Есть время дождаться -
+      // ждём и берём тот же кадр снова; нет - останавливаемся честно:
+      // неразобранные кадры не помечены и достанутся следующему сбору
+      if (err instanceof GeminiBusyError) {
+        const pauseMs = err.waitMs + 1000;
+        if (timeLeftMs() - pauseMs > MIN_ANALYSIS_LEFT_MS) {
+          console.warn(`  Gemini занята: жду ${Math.ceil(pauseMs / 1000)} с и продолжаю с того же кадра`);
+          await sleepMs(pauseMs);
+          resuming = true;
+          qi--;
+          continue;
+        }
+        if (retrying) netFailed++;
+        else analyzed--;
+        outOfTime = true;
+        console.warn(
+          `Gemini занята до конца бюджета: проанализировано ${analyzed} из ${hashed.length}, остальные ждут следующего сбора`,
+        );
+        break;
+      }
       // сорванный лимитом кадр - не брак подписи: подписи у него не было
       // вовсе. Считаем отдельно, иначе диагноз врёт («брака подписи 4»
       // при четырёх отказах по квоте - живой случай 13.08)

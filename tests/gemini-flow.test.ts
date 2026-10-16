@@ -121,6 +121,24 @@ describe("сквозной выбор модели", () => {
     expect(r.value?.model).toBe("gemini-flash-lite-latest");
   });
 
+  it("все модели надолго на скамейке - отдельная ошибка со сроком, а не сбой кадра", async () => {
+    // сбор 16.10 14:06: обычная ошибка списала 19 кадров за 4 секунды;
+    // по сроку из GeminiBusyError сбор теперь ждёт, а не списывает
+    process.env.GEMINI_API_KEYS = "k1";
+    stubGemini(["gemini-flash-latest", "gemini-flash-lite-latest"], () => "503");
+    const g = await gemini();
+    let busy: Error | undefined;
+    for (let i = 0; i < 6 && !busy; i++) {
+      const r = await settle(g.geminiJson([{ text: String(i) }]));
+      expect(r.value).toBeUndefined();
+      if (r.error instanceof g.GeminiBusyError) busy = r.error;
+    }
+    expect(busy).toBeInstanceOf(g.GeminiBusyError);
+    expect((busy as InstanceType<typeof g.GeminiBusyError>).waitMs).toBeGreaterThan(0);
+    // и это не квота: предохранитель цел
+    expect(g.quotaTripped()).toBe(false);
+  });
+
   it("вернувшаяся со скамейки модель получает одну пробу, а не две", async () => {
     process.env.GEMINI_API_KEYS = "k1";
     const calls = stubGemini(["gemini-flash-latest", "gemini-flash-lite-latest"], (_k, m) =>

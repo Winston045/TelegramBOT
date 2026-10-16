@@ -37,6 +37,18 @@ const MAX_ATTEMPTS = 8;
  * (живой прогон: 30 вызовов × ретраи = 100 минут впустую).
  */
 export class GeminiQuotaError extends Error {}
+
+/**
+ * Все модели на скамейке дольше, чем может ждать один вызов. Это не сбой
+ * кадра: через waitMs модели вернутся. Сбор 16.10 (полный, 14:06) принял
+ * такую ошибку за обычный сбой и за 4 секунды списал 19 кадров - дважды,
+ * со вторым подходом, - хотя у прогона оставалось 6 минут бюджета.
+ */
+export class GeminiBusyError extends Error {
+  constructor(readonly waitMs: number) {
+    super(`gemini: все модели перегружены, ближайшая освободится через ${Math.ceil(waitMs / 1000)} с`);
+  }
+}
 const QUOTA_TRIP_AFTER = 3;
 let consecutiveQuotaFails = 0;
 
@@ -269,11 +281,7 @@ async function resolveModel(deadline: number): Promise<string> {
       return choice.model;
     }
     if ("none" in choice) return FALLBACK_MODEL;
-    if (Date.now() + choice.waitMs > deadline) {
-      throw new Error(
-        `gemini: все модели перегружены, ближайшая освободится через ${Math.ceil(choice.waitMs / 1000)} с`,
-      );
-    }
+    if (Date.now() + choice.waitMs > deadline) throw new GeminiBusyError(choice.waitMs);
     console.warn(`gemini: все модели перегружены - жду ${Math.ceil(choice.waitMs / 1000)} с`);
     await sleep(choice.waitMs);
   }
