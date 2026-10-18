@@ -14,7 +14,7 @@ on:
 jobs:
   report:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -68,6 +68,9 @@ jobs:
             sources)
               # проверка источников: каждый архив и запрос по отдельности
               npx tsx scripts/sources-check.ts ;;
+            probe)
+              # кандидаты в источники до включения: образцы, годы, размеры
+              npx tsx scripts/probe-sources.ts ;;
             diversity)
               # разбор вышедших постов: архивы, эпохи, темы, серии подряд
               n=$(grep -oP 'diversity:\K\d+' .github/report.trigger || true)

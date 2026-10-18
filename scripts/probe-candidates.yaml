@@ -1,0 +1,68 @@
+# Кандидаты в источники для пробы (scripts/probe-sources.ts, маркер
+# «probe» в .github/report.trigger). Попадают в config.yaml только те,
+# чьи образцы выдержали просмотр.
+commons:
+  # ---- новые военные архивы ----
+  - category: "Images from the San Diego Air and Space Museum Archives"
+    terms: ["", "1944"]
+  - category: "Images from the San Diego Air & Space Museum Archives"
+  - category: "Images from the Naval History and Heritage Command"
+    terms: ["", "1942"]
+  - category: "Photographs by the Naval History and Heritage Command"
+  - category: "Fortepan"
+    deep: true
+    terms: ["1942", "1956"]
+  - category: "Images from Fortepan"
+    terms: ["1942", "1956"]
+  - category: "Images from the National Library of Ireland"
+    terms: ["1916", "1922"]
+  - category: "Images from the National Archives of Norway"
+    terms: ["1940", "1945"]
+  - category: "Images from Library and Archives Canada"
+    terms: ["1917", "1944"]
+  - category: "Images from Deutsche Fotothek"
+    terms: ["1945", "1953"]
+  - category: "Images from the Swedish Army Museum"
+  - category: "Images from Armémuseum"
+  # ---- современная армия (1991-2013) ----
+  - category: "Gulf War"
+    deep: true
+    terms: ["1991"]
+  - category: "Operation Desert Storm"
+    deep: true
+  - category: "Images from DVIDS"
+    terms: ["2003", "2008"]
+  - category: "Photographs by the United States Army"
+    terms: ["1995", "2004"]
+  - category: "Kosovo War"
+    deep: true
+  - category: "Photographs by the Bundeswehr"
+  - category: "Images from Bundeswehr"
+  # ---- культура 1945-1989 (Anefo) ----
+  - category: "Images from Anefo"
+    lang: "nl"
+    terms: ["Beatles", "popgroep", "zanger", "filmster", "jazz", "concert"]
+  # ---- советская повседневность (РИА Новости) ----
+  - category: "Images from RIA Novosti"
+    lang: "ru"
+    terms: ["street", "shop", "kolkhoz", "metro", "everyday life", "children"]
+  # ---- плакаты и карикатуры ----
+  - category: "World War II posters"
+    deep: true
+  - category: "World War I posters"
+    deep: true
+  - category: "Soviet posters"
+    deep: true
+  - category: "Political cartoons"
+    deep: true
+loc:
+  # плакаты и карикатуры
+  - "war poster 1942"
+  - "world war poster 1917"
+  - "propaganda poster"
+  - "political cartoon 1940"
+  # социальная история
+  - "hine child labor"
+  - "lewis hine 1911"
+  - "dust bowl 1936"
+  - "great depression breadline"

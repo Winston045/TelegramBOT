@@ -36,13 +36,17 @@ export async function searchCategory(
   term: string,
   limit: number,
   offset: number,
+  deep = false,
 ): Promise<CommonsPage[]> {
   const url = new URL(API);
   url.searchParams.set("action", "query");
   url.searchParams.set("format", "json");
   url.searchParams.set("formatversion", "2");
   url.searchParams.set("generator", "search");
-  url.searchParams.set("gsrsearch", `incategory:"${category}" ${term}`.trim());
+  // incategory видит только файлы, лежащие в категории напрямую; у
+  // тематических категорий («Gulf War») файлы разложены по подкатегориям,
+  // и тогда нужен deepcat - поиск по дереву подкатегорий
+  url.searchParams.set("gsrsearch", `${deep ? "deepcat" : "incategory"}:"${category}" ${term}`.trim());
   url.searchParams.set("gsrnamespace", "6"); // File:
   url.searchParams.set("gsrlimit", String(Math.min(limit, 50)));
   url.searchParams.set("gsroffset", String(offset));
