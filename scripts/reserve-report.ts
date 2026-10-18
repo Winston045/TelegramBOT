@@ -81,6 +81,24 @@ async function main() {
     );
   }
 
+  // рубрики вне ядра: как приживаются - сколько дошло, сколько отсеяно
+  // и за что (gate: dull / hookless / rubric:<id>)
+  const rubricRows = (all ?? []).filter((c) => (c.tags as { rubric?: string } | null)?.rubric);
+  if (rubricRows.length) {
+    const byRubric = new Map<string, Map<string, number>>();
+    for (const c of rubricRows) {
+      const t = c.tags as { rubric: string; gate?: string };
+      const key = c.status === "rejected" && t.gate ? `rejected:${t.gate}` : c.status;
+      const m = byRubric.get(t.rubric) ?? new Map<string, number>();
+      m.set(key, (m.get(key) ?? 0) + 1);
+      byRubric.set(t.rubric, m);
+    }
+    console.log("\nрубрики:");
+    for (const [r, m] of byRubric) {
+      console.log(`  ${r}: ${[...m.entries()].map(([s, n]) => `${s}=${n}`).join(", ")}`);
+    }
+  }
+
   const ready = (all ?? []).filter(
     (c) => (c.status === "new" || c.status === "shown") && c.caption_html,
   );

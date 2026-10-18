@@ -4,7 +4,7 @@
  *
  * Фотоколлекции LOC (FSA/OWI и др.) — public domain / no known restrictions.
  */
-import type { SourceConfig } from "../config.js";
+import { locQueries, type SourceConfig } from "../config.js";
 import type { RawItem, SourceAdapter } from "./types.js";
 
 type LocResult = {
@@ -17,6 +17,9 @@ type LocResult = {
   image_url?: string[];
   access_restricted?: boolean;
 };
+
+/** Курсор ротации: с какого запроса начинать прогон. */
+const START_CURSOR = "__query-start__";
 
 /** Сколько всего времени отводим источнику за один прогон. */
 const LOC_TIME_BUDGET_MS = 6 * 60_000;
@@ -164,7 +167,14 @@ export const loc: SourceAdapter = {
   },
 
   async fetch(limit, cfg, cursors): Promise<RawItem[]> {
-    const queries = cfg.queries?.length ? cfg.queries : [""];
+    const list = locQueries(cfg);
+    const base = list.length ? list : [{ q: "" }];
+    // стартовый запрос сдвигается каждый прогон, как архивы у commons:
+    // loc.gov медленный, бюджет времени обрывает хвост списка, и без
+    // ротации запросы в конце (рубрики) не доходили бы до выдачи никогда
+    const startIdx = (await cursors.get("loc", START_CURSOR)) % base.length;
+    const queries = base.map((_, i) => base[(i + startIdx) % base.length]!);
+    await cursors.set("loc", START_CURSOR, (startIdx + 1) % base.length);
     const perQuery = Math.ceil(limit / queries.length);
     const items: RawItem[] = [];
     // Бюджет времени на весь источник. loc.gov регулярно отвечает по
@@ -173,7 +183,12 @@ export const loc: SourceAdapter = {
     // два ежедневных прогона подряд отменены на 30-й минуте). Лучше
     // неполная выдача, чем мёртвый сбор: остальное доберём завтра.
     const deadline = Date.now() + LOC_TIME_BUDGET_MS;
-    for (const q of queries) {
+    for (const { q, rubric } of queries) {
+      // рубрика запроса едет с каждым кадром его выдачи
+      const take = (r: LocResult) => {
+        const item = mapLocResult(r);
+        if (item) items.push(rubric ? { ...item, rubric } : item);
+      };
       if (Date.now() > deadline) {
         console.warn(`  loc: бюджет времени исчерпан, собрано ${items.length} - остальные запросы пропущены`);
         break;
@@ -203,17 +218,11 @@ export const loc: SourceAdapter = {
         } catch {
           continue;
         }
-        for (const r of results) {
-          const item = mapLocResult(r);
-          if (item) items.push(item);
-        }
+        for (const r of results) take(r);
         await cursors.set("loc", q, results.length < perQuery ? 0 : 1);
         continue;
       }
-      for (const r of results) {
-        const item = mapLocResult(r);
-        if (item) items.push(item);
-      }
+      for (const r of results) take(r);
       // выдача кончилась — заворачиваем на начало
       await cursors.set("loc", q, results.length < perQuery ? 0 : page);
     }

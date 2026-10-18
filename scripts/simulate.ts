@@ -113,6 +113,7 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 10) {
     statics: 0,
     longs: 0,
     archives: [] as string[],
+    rubrics: [] as string[],
     ...shares,
   };
   const pool = [...reserve];
@@ -126,6 +127,10 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 10) {
     recent.subjects.unshift(row.tags?.subject ?? "");
     recent.periods.unshift(row.tags?.period ?? "");
     recent.archives.unshift(archiveKey(row.attribution));
+    recent.rubrics.unshift(row.tags?.rubric ?? "");
+    if (row.tags?.rubric) {
+      recent.rubricWeek[row.tags.rubric] = (recent.rubricWeek[row.tags.rubric] ?? 0) + 1;
+    }
     recent.civilian = row.tags?.military === false;
     recent.statics = row.tags?.action === false ? 1 : 0;
   }

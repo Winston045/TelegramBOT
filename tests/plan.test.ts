@@ -560,7 +560,7 @@ describe("weekShares", () => {
   });
 
   it("пустая неделя - пустые доли", () => {
-    expect(weekShares([])).toEqual({ archiveShare: {}, periodShare: {}, subjectShare: {} });
+    expect(weekShares([])).toEqual({ archiveShare: {}, periodShare: {}, subjectShare: {}, rubricWeek: {} });
   });
 });
 

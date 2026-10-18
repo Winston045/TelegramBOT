@@ -22,6 +22,16 @@ export const MAX_ARCHIVE_SHARE = 1 / 6;
 /** Доля очереди для кадров ВМВ: половина - как мягкая доля эпохи в ленте. */
 export const MAX_WW2_SHARE = 1 / 2;
 
+/**
+ * Рубрики вне военного ядра (src/rubrics.ts): все вместе - не больше
+ * четверти очереди, каждая - не больше пятнадцатой части (2 из 30).
+ * Квота Gemini - общий котёл, и ядро канала не должно голодать из-за
+ * плакатов и концертов. Публикует рубрики всё равно планировщик, по
+ * недельным потолкам; здесь - только сколько сырья им анализировать.
+ */
+export const MAX_RUBRICS_SHARE = 1 / 4;
+export const MAX_ONE_RUBRIC_SHARE = 1 / 15;
+
 /** Годы, по которым кадр до анализа считается ВМВ (тег эпохи ставит Gemini позже). */
 const WW2_FROM = 1939;
 const WW2_TO = 1945;
@@ -33,6 +43,8 @@ export type QueueCuts = {
   archiveCapped: number;
   /** придержаны потолком ВМВ (могут вернуться добором) */
   ww2Capped: number;
+  /** придержаны потолками рубрик (могут вернуться добором) */
+  rubricCapped: number;
 };
 
 function titleKey(title?: string): string {
@@ -55,9 +67,13 @@ export function buildAnalysisQueue<T extends RawItem & { source: string }>(
   items: T[],
   limit: number,
 ): { queue: T[]; cuts: QueueCuts } {
-  const cuts: QueueCuts = { duplicates: 0, archiveCapped: 0, ww2Capped: 0 };
+  const cuts: QueueCuts = { duplicates: 0, archiveCapped: 0, ww2Capped: 0, rubricCapped: 0 };
   const archiveCap = Math.max(2, Math.ceil(limit * MAX_ARCHIVE_SHARE));
   const ww2Cap = Math.max(2, Math.ceil(limit * MAX_WW2_SHARE));
+  const rubricsCap = Math.max(1, Math.floor(limit * MAX_RUBRICS_SHARE));
+  const oneRubricCap = Math.max(1, Math.ceil(limit * MAX_ONE_RUBRIC_SHARE));
+  const byRubric = new Map<string, number>();
+  let rubrics = 0;
 
   const seenTitles = new Set<string>();
   const byArchive = new Map<string, number>();
@@ -86,8 +102,16 @@ export function buildAnalysisQueue<T extends RawItem & { source: string }>(
       held.push(item);
       continue;
     }
+    if (item.rubric && (rubrics >= rubricsCap || (byRubric.get(item.rubric) ?? 0) >= oneRubricCap)) {
+      cuts.rubricCapped++;
+      continue;
+    }
     byArchive.set(archive, (byArchive.get(archive) ?? 0) + 1);
     if (isWw2(item)) ww2++;
+    if (item.rubric) {
+      rubrics++;
+      byRubric.set(item.rubric, (byRubric.get(item.rubric) ?? 0) + 1);
+    }
     queue.push(item);
   }
 

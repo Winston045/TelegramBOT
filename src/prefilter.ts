@@ -1,6 +1,7 @@
 import type { AppConfig } from "./config.js";
 import type { RawItem } from "./sources/types.js";
 import { archiveKey } from "./plan.js";
+import { rubricOf } from "./rubrics.js";
 
 export type RejectReason =
   | "no_year"
@@ -12,6 +13,8 @@ export type RejectReason =
   | "untitled_record"
   | "studio_portrait"
   | "not_photo"
+  | "not_artwork"
+  | "unknown_rubric"
   | "stop_word";
 
 /**
@@ -36,6 +39,14 @@ const NON_PHOTO_CARRIER =
   /(?:^|\|)\s*\d+\s+(?:drawings?|paintings?|posters?|watercolou?rs?|sketch(?:es)?|cartoons?|prints?\s*:\s*(?:lithograph|woodcut|etching|engraving|screenprint|serigraph)\w*)\b/i;
 const NON_PHOTO_SHOWS = /\b(?:drawing|poster|painting|cartoon|sketch|lithograph) shows\b/i;
 
+/** Архив прямо называет носитель фотографией. */
+const PHOTO_CARRIER =
+  /\b\d+\s+(?:photographic prints?|photoprints?|negatives?|transparenc(?:y|ies)|slides?)\b|\bphotograph(?:s|ed)?\b/i;
+
+export function isPhotoRecord(title?: string | null, description?: string | null): boolean {
+  return PHOTO_CARRIER.test(`${title ?? ""} ${description ?? ""}`);
+}
+
 export function isNonPhotoRecord(title?: string | null, description?: string | null): boolean {
   const desc = description ?? "";
   // заголовок и каждое поле описания проверяются как отдельное начало
@@ -52,8 +63,12 @@ export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null
   // место обязательно, но запись с содержательным описанием пропускаем:
   // у архивов вне Бундесархива места в заголовке нет, а контекст в тексте есть
   if (!item.place && (item.description?.length ?? 0) < 60) return "no_place";
+  // у рубрики своё окно лет: современная армия живёт после 1999-го,
+  // а общий потолок канала её бы отрезал целиком
+  const rubric = rubricOf(item.rubric);
+  if (item.rubric && !rubric) return "unknown_rubric";
   // живой прогон: запрос "1930s" приносит современные фото зданий 1930-х
-  const { min_year, max_year } = cfg.collect;
+  const [min_year, max_year] = rubric?.years ?? [cfg.collect.min_year, cfg.collect.max_year];
   if ((min_year && item.year < min_year) || (max_year && item.year > max_year)) {
     return "year_out_of_range";
   }
@@ -90,7 +105,18 @@ export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null
   if (/\bportrait\b/i.test(title) && !/\b(tank|aircraft|ship|gun|wreck)\b/i.test(title)) {
     return "studio_portrait";
   }
-  if (isNonPhotoRecord(item.title, item.description)) return "not_photo";
+  // плакатная рубрика - зеркало правила «не фотография»: туда идут ТОЛЬКО
+  // плакаты и карикатуры, а снимок, попавший в выдачу по слову poster
+  // («1 photographic print. | Soldiers putting up posters»), там чужой.
+  // Без описания носителя доверяем источнику: категория плакатов на
+  // Commons уже сама говорит, что внутри
+  if (rubric?.artwork) {
+    if (isPhotoRecord(item.title, item.description) && !isNonPhotoRecord(item.title, item.description)) {
+      return "not_artwork";
+    }
+  } else if (isNonPhotoRecord(item.title, item.description)) {
+    return "not_photo";
+  }
   for (const word of cfg.filters.stop_words) {
     if (haystack.includes(word.toLowerCase())) return "stop_word";
   }

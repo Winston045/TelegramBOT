@@ -3,7 +3,7 @@
  * https://catalog.archives.gov/api/v2/api-key (без карты).
  * Источник включается, когда в окружении появляется NARA_API_KEY.
  */
-import type { SourceConfig } from "../config.js";
+import { locQueries, type SourceConfig } from "../config.js";
 import type { RawItem, SourceAdapter } from "./types.js";
 import type { CursorStore } from "../cursors.js";
 import { parseYear } from "./loc.js";
@@ -32,7 +32,8 @@ export const nara: SourceAdapter = {
       return [];
     }
 
-    const queries = cfg.queries?.length ? cfg.queries : ["world war"];
+    const own = locQueries(cfg).map((x) => x.q);
+    const queries = own.length ? own : ["world war"];
     const perQuery = Math.ceil(limit / queries.length);
     const items: RawItem[] = [];
 

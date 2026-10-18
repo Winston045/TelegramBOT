@@ -56,6 +56,15 @@ sources:
       # был «kodachrome 1943 photograph»: проба 01.09 - кадры без места,
       # префильтр не пропускает ни одного
       - "aircraft color 1942"
+      # ---- Рубрики вне ядра (src/rubrics.ts), проба 18.10 ----
+      # плакаты: литографии «1 print (poster) : lithograph» - PD; снимки
+      # плакатов на стене префильтр рубрики отсекает по носителю
+      - { q: "world war poster 1917", rubric: "poster" }
+      # социальная история: Льюис Хайн для Национального комитета по
+      # детскому труду - подробные подписи самого фотографа
+      - { q: "lewis hine 1911", rubric: "social" }
+      - { q: "hine child labor", rubric: "social" }
+      - { q: "dust bowl 1936", rubric: "social" }
   # архивы разных стран на Wikimedia Commons - главный источник разнообразия
   commons:
     enabled: true
@@ -164,6 +173,44 @@ sources:
       - category: "Partisans of Yugoslavia"
         attribution: "Yugoslav Partisans"
         lang: "en"
+        terms: [""]
+      # ---- Расширение 18.10: проба probe-sources ----
+      # Морской исторический центр ВМС США: огромные сканы (медиана ~5000
+      # px), подробные описания, PD. На пробе - «тонущий крейсер Микума»,
+      # «горящий Хеллкэт на палубе Энтерпрайза»: крючки сами по себе
+      - category: "Images from the Naval History and Heritage Command"
+        attribution: "NHHC"
+        lang: "en"
+        terms: ["1942", "1944", "1918", "1943", "1951", "1945", "1966"]
+      # Fortepan: венгерский фотоархив (CC BY-SA 3.0) - Восточный фронт
+      # глазами венгерской армии и 1956 год: на пробе БТР-40 и ИСУ-152 на
+      # улицах Будапешта. Портретов там много, поэтому слова военные
+      - category: "Images from Fortepan"
+        attribution: "Fortepan"
+        lang: "hu"
+        terms: ["1956", "katona", "harckocsi", "1944", "repülőgép", "1942"]
+      # Национальная библиотека Ирландии: Пасхальное восстание 1916 и
+      # гражданская война 1922 - эпоха, которой в ленте не было
+      - category: "Images from the National Library of Ireland"
+        attribution: "National Library of Ireland"
+        lang: "en"
+        terms: ["1916", "1922", "1920", "1921", "1923"]
+      # ---- Рубрики вне ядра (src/rubrics.ts) ----
+      # культура 1945-1989: Anefo по словам эстрады и кино. На пробе -
+      # Битлз на Схипхоле, Глория Свенсон, джаз в Консертгебау. «concert»
+      # не берём: давал школьные оркестры на площади
+      - category: "Images from Anefo"
+        attribution: "Anefo / Nationaal Archief"
+        lang: "nl"
+        rubric: "culture"
+        terms: ["Beatles", "filmster", "popgroep", "jazz", "Rolling Stones", "zangeres", "actrice"]
+      # плакаты Первой мировой: категория по дереву - на пробе вербовочные
+      # британские и американские плакаты, все PD
+      - category: "World War I posters"
+        attribution: "WWI posters"
+        lang: "en"
+        rubric: "poster"
+        deep: true
         terms: [""]
   # ---- Знаковые события вне войны (решение 01.09) ----
   # Мирное берём ТОЛЬКО по событиям, не по местам и годам: урок PastVu -

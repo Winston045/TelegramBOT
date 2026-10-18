@@ -129,9 +129,14 @@ export function commonsAdapter(name: string): SourceAdapter {
       const terms = archive.terms?.length ? archive.terms : sharedTerms;
       // ротация поисковых слов и смещение внутри слова — как в других
       // источниках, чтобы каждый день приходила новая страница выдачи
-      const termIdx = await cursors.get(name, `term:${archive.category}`);
+      // один архив может стоять в пуле дважды - для ядра и для рубрики
+      // (Anefo: военное и культура). Курсоры у них свои, иначе записи
+      // сбивали бы друг другу очередь слов. У записей ядра ключ прежний,
+      // чтобы не откатить накопленные позиции
+      const cursorId = archive.rubric ? `${archive.category}#${archive.rubric}` : archive.category;
+      const termIdx = await cursors.get(name, `term:${cursorId}`);
       const term = terms[termIdx % terms.length] ?? "";
-      const offKey = `off:${archive.category}:${term}`;
+      const offKey = `off:${cursorId}:${term}`;
       const offset = await cursors.get(name, offKey);
 
       let pages: CommonsPage[];
@@ -139,7 +144,7 @@ export function commonsAdapter(name: string): SourceAdapter {
         // пауза перед каждым следующим архивом: девять запросов подряд
         // Викимедиа считает наплывом и отбивает все разом
         if (requests++) await sleep(POLITE_GAP_MS);
-        pages = await searchCategory(archive.category, term, perArchive, offset);
+        pages = await searchCategory(archive.category, term, perArchive, offset, archive.deep);
       } catch (err) {
         console.warn(`  ${name}: ${archive.attribution} — ${(err as Error).message}`);
         continue;
@@ -156,6 +161,7 @@ export function commonsAdapter(name: string): SourceAdapter {
           attributionPrefix: archive.attribution,
         });
         if (!item) continue;
+        if (archive.rubric) item.rubric = archive.rubric;
         // без места пропускаем только записи с содержательным описанием
         if (!item.place && (item.description?.length ?? 0) < MIN_DESC_WITHOUT_PLACE) continue;
         items.push(item);
@@ -167,7 +173,7 @@ export function commonsAdapter(name: string): SourceAdapter {
       // год меняется КАЖДЫЙ запуск. Раньше - только по исчерпанию выдачи,
       // и на гигантских категориях бот неделями сидел в первом годе списка:
       // живая лента превратилась в сплошную ПМВ
-      await cursors.set(name, `term:${archive.category}`, termIdx + 1);
+      await cursors.set(name, `term:${cursorId}`, termIdx + 1);
       if (items.length) byArchive.push(items);
     }
 

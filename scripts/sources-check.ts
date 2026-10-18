@@ -10,7 +10,7 @@
  *
  * Запуск: npx tsx scripts/sources-check.ts
  */
-import { loadConfig } from "../src/config.js";
+import { loadConfig, locQueries } from "../src/config.js";
 import { POLITE_GAP_MS, searchCategory } from "../src/sources/commons.js";
 import { fetchQuery, mapLocResult } from "../src/sources/loc.js";
 import { mapCommonsPage } from "../src/sources/bundesarchiv.js";
@@ -49,10 +49,11 @@ async function checkCommonsLike(
     const term = terms[0] ?? "";
     const started = Date.now();
     try {
-      const pages = await searchCategory(archive.category, term, PROBE, 0);
+      const pages = await searchCategory(archive.category, term, PROBE, 0, archive.deep);
       const items = pages
         .map((p) => mapCommonsPage(p, { lang: archive.lang, attributionPrefix: archive.attribution }))
-        .filter((it): it is RawItem => Boolean(it));
+        .filter((it): it is RawItem => Boolean(it))
+        .map((it) => (archive.rubric ? { ...it, rubric: archive.rubric } : it));
       all.push(...items);
       if (pages.length) alive++;
       const ms = Date.now() - started;
@@ -83,15 +84,18 @@ async function checkLoc(cfg: ReturnType<typeof loadConfig>) {
     console.log("источник выключен в config.yaml");
     return [] as RawItem[];
   }
-  const queries = src.queries ?? [];
+  const queries = locQueries(src);
   const all: RawItem[] = [];
   let alive = 0;
 
-  for (const q of queries) {
+  for (const { q, rubric } of queries) {
     const started = Date.now();
     try {
       const results = await fetchQuery(q, PROBE, 1);
-      const items = results.map(mapLocResult).filter((it): it is RawItem => Boolean(it));
+      const items = results
+        .map(mapLocResult)
+        .filter((it): it is RawItem => Boolean(it))
+        .map((it) => (rubric ? { ...it, rubric } : it));
       all.push(...items);
       if (results.length) alive++;
       const { kept, rejected } = prefilter(items, cfg);

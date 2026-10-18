@@ -55,7 +55,7 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
     (weekPosts ?? []) as Array<{
       attribution?: string | null;
       source?: string | null;
-      tags?: { period?: string; subject?: string } | null;
+      tags?: { period?: string; subject?: string; rubric?: string } | null;
     }>,
   );
 
@@ -74,6 +74,7 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
         archiveKey((p as { attribution?: string | null }).attribution) ||
         ((p as { source?: string | null }).source ?? ""),
     ),
+    rubrics: posts.map((p) => (p.tags as { rubric?: string } | null)?.rubric ?? ""),
     ...shares,
   };
 }

@@ -17,12 +17,14 @@ export type VisionScore = {
      * историю. Кадр без крючка в резерв не попадает.
      */
     hook?: string;
+    /** рубрика вне военного ядра - ставит сборщик по источнику, не модель */
+    rubric?: string;
   };
   unsafe: boolean;
 };
 
 /** Схема полей оценки в JSON-ответе анализа (analyze.ts). */
-export const SCORE_FIELDS_SCHEMA = `"score_why": "<до 80 символов: чем кадр хорош или слаб>", "score": <0-100>, "tags": {"period": "<конкретный конфликт или эпоха: "pre_ww1" | "WW1" | "russian_civil_war" | "interwar" | "spanish_civil_war" | "winter_war" | "WW2" | "korea" | "vietnam" | "cold_war" | "afghanistan" - выбирай самый точный, cold_war только если точнее не определить>", "region": "<регион, напр. "europe" | "ussr" | "usa" | "asia" | "africa" | "pacific">", "subject": "<тема одним словом, напр. "armor" | "aviation" | "street" | "portrait" | "navy" | "homefront" | "infantry" | "artillery" | "pow" | "medicine" | "leader" - вожди, политики и генералы как главные герои кадра (Гитлер, Сталин, Черчилль, смотры и церемонии с ними) всегда "leader">", "military": <true|false - война и армия или мирный сюжет>, "action": <true|false - в кадре что-то происходит или это статика/постановка>, "color": <true|false - подлинный цветной снимок эпохи>, "hook": "<крючок кадра: "trophy" | "wreck" | "moment" | "rare" | "oddity" | "human" | "action" | "none" - см. критерии>"}, "unsafe": <true|false>`;
+export const SCORE_FIELDS_SCHEMA = `"score_why": "<до 80 символов: чем кадр хорош или слаб>", "score": <0-100>, "tags": {"period": "<конкретный конфликт или эпоха: "pre_ww1" | "WW1" | "russian_civil_war" | "interwar" | "spanish_civil_war" | "winter_war" | "WW2" | "korea" | "vietnam" | "cold_war" | "afghanistan" | "modern" - выбирай самый точный, cold_war только если точнее не определить; "modern" - после 1991 года>", "region": "<регион, напр. "europe" | "ussr" | "usa" | "asia" | "africa" | "pacific">", "subject": "<тема одним словом, напр. "armor" | "aviation" | "street" | "portrait" | "navy" | "homefront" | "infantry" | "artillery" | "pow" | "medicine" | "leader" - вожди, политики и генералы как главные герои кадра (Гитлер, Сталин, Черчилль, смотры и церемонии с ними) всегда "leader">", "military": <true|false - война и армия или мирный сюжет>, "action": <true|false - в кадре что-то происходит или это статика/постановка>, "color": <true|false - подлинный цветной снимок эпохи>, "hook": "<крючок кадра: "trophy" | "wreck" | "moment" | "rare" | "oddity" | "human" | "action" | "none" - см. критерии>"}, "unsafe": <true|false>`;
 
 /** Крючки, ради которых пост стоит публиковать. "none" - крючка нет. */
 export const HOOKS = ["trophy", "wreck", "moment", "rare", "oddity", "human", "action"] as const;

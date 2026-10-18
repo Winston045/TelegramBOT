@@ -1,68 +1,61 @@
 # Кандидаты в источники для пробы (scripts/probe-sources.ts, маркер
 # «probe» в .github/report.trigger). Попадают в config.yaml только те,
 # чьи образцы выдержали просмотр.
+#
+# Проба 1 (18.10) дала в config: NHHC, Fortepan, Национальная библиотека
+# Ирландии, Anefo-культура, плакаты ПМВ, Хайн и пыльный котёл у LOC.
+# Проба 2 - пробелы: современная армия, советская повседневность, плакаты
+# ВМВ, карикатуры и архивы, не найденные под первыми именами.
 commons:
-  # ---- новые военные архивы ----
-  - category: "Images from the San Diego Air and Space Museum Archives"
-    terms: ["", "1944"]
-  - category: "Images from the San Diego Air & Space Museum Archives"
-  - category: "Images from the Naval History and Heritage Command"
-    terms: ["", "1942"]
-  - category: "Photographs by the Naval History and Heritage Command"
-  - category: "Fortepan"
-    deep: true
-    terms: ["1942", "1956"]
-  - category: "Images from Fortepan"
-    terms: ["1942", "1956"]
-  - category: "Images from the National Library of Ireland"
-    terms: ["1916", "1922"]
-  - category: "Images from the National Archives of Norway"
-    terms: ["1940", "1945"]
-  - category: "Images from Library and Archives Canada"
-    terms: ["1917", "1944"]
-  - category: "Images from Deutsche Fotothek"
-    terms: ["1945", "1953"]
-  - category: "Images from the Swedish Army Museum"
-  - category: "Images from Armémuseum"
   # ---- современная армия (1991-2013) ----
-  - category: "Gulf War"
-    deep: true
-    terms: ["1991"]
-  - category: "Operation Desert Storm"
-    deep: true
-  - category: "Images from DVIDS"
-    terms: ["2003", "2008"]
-  - category: "Photographs by the United States Army"
-    terms: ["1995", "2004"]
-  - category: "Kosovo War"
-    deep: true
-  - category: "Photographs by the Bundeswehr"
-  - category: "Images from Bundeswehr"
-  # ---- культура 1945-1989 (Anefo) ----
-  - category: "Images from Anefo"
-    lang: "nl"
-    terms: ["Beatles", "popgroep", "zanger", "filmster", "jazz", "concert"]
-  # ---- советская повседневность (РИА Новости) ----
+  - category: "Images from the National Archives and Records Administration"
+    terms: ["Desert Storm", "Desert Shield", "Bosnia 1996", "Somalia 1993", "Just Cause"]
+  - category: "Images from DefenseImagery.mil"
+    terms: ["", "1991"]
+  - category: "Photographs by the United States Navy"
+    terms: ["1995", "2003"]
+  - category: "Photographs by the United States Air Force"
+    terms: ["1991", "2003"]
+  - category: "Images from the United States Marine Corps"
+    terms: ["1991", "2004"]
   - category: "Images from RIA Novosti"
     lang: "ru"
-    terms: ["street", "shop", "kolkhoz", "metro", "everyday life", "children"]
-  # ---- плакаты и карикатуры ----
+    terms: ["\"RIAN archive\" exercises", "\"RIAN archive\" tank 1995", "\"RIAN archive\" Navy"]
+  # ---- советская повседневность ----
+  - category: "Images from RIA Novosti"
+    lang: "ru"
+    terms:
+      ["\"RIAN archive\" store", "\"RIAN archive\" queue", "\"RIAN archive\" collective farm",
+       "\"RIAN archive\" street", "\"RIAN archive\" workers", "\"RIAN archive\" Moscow 1960"]
+  # ---- плакаты ВМВ и карикатуры ----
   - category: "World War II posters"
     deep: true
-  - category: "World War I posters"
+    terms: ["poster"]
+  - category: "World War II posters of the United States"
     deep: true
-  - category: "Soviet posters"
+  - category: "Posters of the Soviet Union"
     deep: true
-  - category: "Political cartoons"
+  - category: "Soviet propaganda posters"
     deep: true
+  - category: "Clifford K. Berryman"
+    deep: true
+  - category: "Cartoons by Clifford K. Berryman"
+  # ---- архивы под другими именами ----
+  - category: "Images from San Diego Air and Space Museum Archives"
+  - category: "San Diego Air and Space Museum Archives"
+    deep: true
+    terms: ["1944"]
+  - category: "Images from Riksarkivet (Norway)"
+    terms: ["1940"]
+  - category: "Images from the Norwegian National Archives"
+    terms: ["1940"]
+  - category: "Images from the Deutsche Fotothek"
+    terms: ["1945"]
+  - category: "Deutsche Fotothek"
+    deep: true
+    terms: ["1945"]
 loc:
-  # плакаты и карикатуры
-  - "war poster 1942"
-  - "world war poster 1917"
-  - "propaganda poster"
-  - "political cartoon 1940"
-  # социальная история
-  - "hine child labor"
-  - "lewis hine 1911"
-  - "dust bowl 1936"
-  - "great depression breadline"
+  - "poster lithograph 1943"
+  - "office of war information poster"
+  - "berryman cartoon"
+  - "cartoon 1942 war"

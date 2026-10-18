@@ -12,6 +12,7 @@ import { FEW_SHOT, captionRules, metadataBlock } from "./caption.js";
 import { SCORE_FIELDS_SCHEMA, SCORING_CRITERIA } from "./scoring.js";
 import type { GeneratedCaption } from "./caption.js";
 import type { VisionScore } from "./scoring.js";
+import { rubricOf } from "./rubrics.js";
 
 export type Analysis = VisionScore & GeneratedCaption;
 
@@ -20,6 +21,12 @@ export function buildAnalysisPrompt(
   glossary: Record<string, string>,
   extraContext?: string,
 ): string {
+  // кадр рубрики судится по её правилам: без этого модель честно ставила
+  // бы плакату и современной съёмке «0-24, не по теме канала»
+  const rubric = rubricOf(item.rubric);
+  const rubricBlock = rubric
+    ? `\n${rubric.brief}\nЭти правила рубрики ВАЖНЕЕ общих критериев ниже там, где они расходятся.\n`
+    : "";
   return `Ты отбираешь исторические фотографии для русскоязычного телеграм-канала
 о ВОЕННОЙ ИСТОРИИ (Первая мировая, Вторая мировая, холодная война) и
 готовишь к ним подписи. Сделай обе задачи за один раз.
@@ -27,7 +34,7 @@ export function buildAnalysisPrompt(
 эпохи: первые полёты и космос, великие катастрофы и стройки, экспедиции.
 Такой кадр - по теме: оценивай его по общим критериям (military: false).
 
-${metadataBlock(item, extraContext)}
+${metadataBlock(item, extraContext)}${rubricBlock}
 ${SCORING_CRITERIA}
 
 ${captionRules(glossary)}

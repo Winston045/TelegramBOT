@@ -31,6 +31,7 @@ import { passesGate } from "../src/scoring.js";
 import { reviewQuote } from "../src/critic.js";
 import { assembleCaptionHtml, descriptiveSentences } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
+import { rubricCaptionFlaw, rubricOf } from "../src/rubrics.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 import { env } from "../src/env.js";
 import { sendMessageHtml } from "../src/telegram.js";
@@ -237,12 +238,15 @@ async function main() {
       `обещание очереди ${avg.toFixed(1)}` +
       (rest.length ? ` против ${avgRest.toFixed(1)} у отложенных` : ""),
   );
-  if (cuts.duplicates || cuts.archiveCapped || cuts.ww2Capped) {
+  if (cuts.duplicates || cuts.archiveCapped || cuts.ww2Capped || cuts.rubricCapped) {
     console.log(
       `потолки очереди: дублей названий ${cuts.duplicates}, ` +
-        `придержано потолком архива ${cuts.archiveCapped}, потолком ВМВ ${cuts.ww2Capped}`,
+        `придержано потолком архива ${cuts.archiveCapped}, потолком ВМВ ${cuts.ww2Capped}, ` +
+        `рубрик сверх потолка ${cuts.rubricCapped}`,
     );
   }
+  const queuedRubrics = survivors.filter((i) => i.rubric).map((i) => i.rubric);
+  if (queuedRubrics.length) console.log(`рубрики в очереди: ${queuedRubrics.join(", ")}`);
 
   if (dry) {
     for (const item of survivors) {
@@ -289,6 +293,45 @@ async function main() {
   // сбои сети и перегрузка Gemini (503, таймауты): это не брак подписи и
   // не квота. Утро 25.08: два таких сбоя ушли в сводку как «брак подписи»
   let netFailed = 0;
+  // кадры рубрик, чья подпись не дотянула до рубрики (нет изюминки, не
+  // назван жанр) - отдельный счётчик, чтобы видеть, как рубрика приживается
+  let rubricFlawed = 0;
+
+  /**
+   * Отсеянный на анализе кадр запоминается в базе статусом rejected, без
+   * подписи. Раньше он не оставлял следа: когда выдача архива шла по
+   * второму кругу, тот же скучный кадр снова получал слот и снова жёг
+   * запрос к Gemini. Теперь его ключ отсекается до очереди, а хэш ловит
+   * его копии в других архивах.
+   */
+  const rememberRejected = async (
+    item: HashedItem,
+    a: { score: number; tags: Record<string, unknown>; score_why?: string },
+    gate: string,
+  ) => {
+    const { error } = await db.from("candidates").upsert(
+      {
+        source: item.source,
+        source_id: item.sourceId,
+        source_url: item.sourceUrl,
+        image_url: item.imageUrl,
+        image_hash: item.imageHash,
+        raw_title: item.title ?? null,
+        raw_desc: item.description ?? null,
+        raw_lang: item.lang,
+        year: item.year ?? null,
+        place: item.place ?? null,
+        tags: { ...a.tags, gate, ...(a.score_why ? { why: a.score_why } : {}) },
+        score: a.score,
+        license: item.license,
+        attribution: item.attribution ?? null,
+        status: "rejected",
+      },
+      { onConflict: "source,source_id", ignoreDuplicates: true },
+    );
+    // не записался - не беда для прогона: худшее, что будет, - повторный анализ
+    if (error) console.warn(`  не запомнил отсев [${item.source}] ${item.sourceId}: ${error.message}`);
+  };
 
   let outOfTime = false;
   let analyzed = 0;
@@ -345,19 +388,35 @@ async function main() {
       }
       // цензуры нет: unsafe — только пометка в логе, решают редакторы
       if (a.unsafe) console.log(`  пометка unsafe: [${item.source}] ${item.sourceId}`);
+      // рубрику, тему и «мирность» кадра рубрики ставит источник, а не
+      // модель: плакат с солдатами она пометила бы infantry, и правило
+      // чередования тем путало бы его с пехотой ядра
+      const rubric = rubricOf(item.rubric);
+      if (rubric) {
+        a.tags = {
+          ...a.tags,
+          rubric: item.rubric,
+          ...(rubric.subject ? { subject: rubric.subject } : {}),
+          ...(rubric.military !== undefined ? { military: rubric.military } : {}),
+        };
+      }
       const hook = a.tags.hook ?? "none";
-      const verdict = passesGate(a, { minScore, hooklessMinScore });
+      const gateMin = rubric?.minScore ?? minScore;
+      const gateHookless = rubric?.hooklessMinScore ?? hooklessMinScore;
+      const verdict = passesGate(a, { minScore: gateMin, hooklessMinScore: gateHookless });
       if (!verdict.pass) {
         const why = a.score_why ? ` - ${a.score_why}` : "";
+        const tag = item.rubric ? ` {${item.rubric}}` : "";
         if (verdict.reason === "dull") {
           skippedDull++;
-          console.log(`  скучное (score ${a.score} < ${minScore}): [${item.source}] ${item.sourceId}${why}`);
+          console.log(`  скучное (score ${a.score} < ${gateMin}): [${item.source}] ${item.sourceId}${tag}${why}`);
         } else {
           skippedHookless++;
           console.log(
-            `  без крючка (score ${a.score} < ${hooklessMinScore}): [${item.source}] ${item.sourceId}${why}`,
+            `  без крючка (score ${a.score} < ${gateHookless}): [${item.source}] ${item.sourceId}${tag}${why}`,
           );
         }
+        await rememberRejected(item, a, verdict.reason);
         continue;
       }
       // обоснование балла видно в логе сбора: по нему ловим завышения
@@ -393,6 +452,16 @@ async function main() {
       if (reviewed.rewritten) {
         console.log(`  цитата переписана редактором: [${item.source}] ${item.sourceId}`);
         rewritten++;
+      }
+
+      // кадр рубрики обязан быть видимо рубрикой: повседневность - только
+      // изюминкой, плакат - названным плакатом. Не дотянул - не в резерв
+      const flaw = rubric ? rubricCaptionFlaw(rubric, reviewed.caption) : undefined;
+      if (flaw) {
+        rubricFlawed++;
+        console.log(`  рубрика ${item.rubric}: ${flaw} - [${item.source}] ${item.sourceId}`);
+        await rememberRejected(item, a, `rubric:${item.rubric}`);
+        continue;
       }
 
       const sentences = descriptiveSentences(reviewed.caption.caption);
@@ -488,7 +557,8 @@ async function main() {
     `отсев на анализе: мусора ${skippedDull} (score < ${minScore}), без крючка ${skippedHookless} (слабее ${hooklessMinScore}), ` +
       `брака подписи ${failed}, сорвано квотой ${quotaFailed}, сбоев сети/сервиса ${netFailed}, ` +
       `цитат переписано ${rewritten}, тело длиннее предложения ${longBody}` +
-      (recovered ? `, спасено вторым подходом ${recovered}` : ""),
+      (recovered ? `, спасено вторым подходом ${recovered}` : "") +
+      (rubricFlawed ? `, не дотянули до рубрики ${rubricFlawed}` : ""),
   );
 
   // та же воронка в базу: по ней бот сам замечает, что что-то сломалось

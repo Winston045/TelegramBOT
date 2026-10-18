@@ -1,11 +1,15 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse } from "yaml";
+import { RUBRICS } from "./rubrics.js";
+
+/** Запрос LOC: строка или запрос с рубрикой. */
+export type LocQuery = string | { q: string; rubric?: string };
 
 export type SourceConfig = {
   enabled: boolean;
   weight: number;
-  queries?: string[];
+  queries?: LocQuery[];
   categories?: string[];
   /** диапазон лет для источников с фильтром по годам (pastvu) */
   years?: number[];
@@ -16,8 +20,17 @@ export type SourceConfig = {
     lang: string;
     /** свои поисковые слова вместо общего пула categories */
     terms?: string[];
+    /** искать по дереву подкатегорий (deepcat), а не только в самой категории */
+    deep?: boolean;
+    /** рубрика вне военного ядра для всех кадров этого архива */
+    rubric?: string;
   }>;
 };
+
+/** Запросы LOC в едином виде: {q, rubric}. */
+export function locQueries(cfg: SourceConfig): Array<{ q: string; rubric?: string }> {
+  return (cfg.queries ?? []).map((q) => (typeof q === "string" ? { q } : q));
+}
 
 export type AppConfig = {
   sources: Record<string, SourceConfig>;
@@ -82,6 +95,19 @@ function assertConfig(raw: unknown): AppConfig {
   for (const [name, s] of Object.entries(sources)) {
     if (typeof s.enabled !== "boolean") fail(`sources.${name}.enabled должен быть boolean`);
     if (typeof s.weight !== "number") fail(`sources.${name}.weight должен быть числом`);
+    // опечатка в имени рубрики не должна тихо превращать кадры в ядро
+    const rubrics = [
+      ...(s.archives ?? []).map((a) => a.rubric),
+      ...(s.queries ?? []).map((q) => (typeof q === "string" ? undefined : q.rubric)),
+    ].filter((r): r is string => r !== undefined);
+    for (const r of rubrics) {
+      if (!(r in RUBRICS)) fail(`sources.${name}: неизвестная рубрика "${r}"`);
+    }
+    for (const q of s.queries ?? []) {
+      if (typeof q !== "string" && (typeof q?.q !== "string" || !q.q.trim())) {
+        fail(`sources.${name}.queries: у запроса-объекта нужен непустой q`);
+      }
+    }
   }
 
   const collect = cfg.collect as AppConfig["collect"];

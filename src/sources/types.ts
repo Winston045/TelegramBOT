@@ -14,6 +14,8 @@ export type RawItem = {
   attribution?: string;
   /** ширина картинки в px, если источник её сообщает — для префильтра */
   imageWidth?: number;
+  /** рубрика вне военного ядра (src/rubrics.ts) - ставит источник по конфигу */
+  rubric?: string;
 };
 
 export interface SourceAdapter {

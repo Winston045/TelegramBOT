@@ -17,6 +17,8 @@ export type PlanTags = {
   military?: boolean;
   action?: boolean;
   color?: boolean;
+  /** Рубрика вне военного ядра (см. RUBRIC_WEEKLY_CAP); у ядра её нет. */
+  rubric?: string;
 } | null;
 
 export type PlanCandidate = {
@@ -160,6 +162,10 @@ const ARCHIVE_NATIONS: Record<string, string> = {
   "pd-japan": "japan",
   "sino-japanese war": "china",
   "yugoslav partisans": "yugoslavia",
+  // расширение 18.10
+  nhhc: "usa",
+  fortepan: "hungary",
+  "national library of ireland": "ireland",
 };
 
 /**
@@ -257,11 +263,15 @@ export function weekShares(
   archiveShare: Record<string, number>;
   periodShare: Record<string, number>;
   subjectShare: Record<string, number>;
+  rubricWeek: Record<string, number>;
 } {
   const archiveShare: Record<string, number> = {};
   const periodShare: Record<string, number> = {};
   const subjectShare: Record<string, number> = {};
+  // рубрики считаем штуками, а не долями: потолок у них недельный и в постах
+  const rubricWeek: Record<string, number> = {};
   for (const p of rows) {
+    if (p.tags?.rubric) rubricWeek[p.tags.rubric] = (rubricWeek[p.tags.rubric] ?? 0) + 1;
     const key = archiveKey(p.attribution) || (p.source ?? "");
     if (key) archiveShare[key] = (archiveShare[key] ?? 0) + 1;
     if (p.tags?.period) periodShare[p.tags.period] = (periodShare[p.tags.period] ?? 0) + 1;
@@ -272,7 +282,7 @@ export function weekShares(
       share[key] = (share[key] ?? 0) / Math.max(1, rows.length);
     }
   }
-  return { archiveShare, periodShare, subjectShare };
+  return { archiveShare, periodShare, subjectShare, rubricWeek };
 }
 
 export type RecentContext = {
@@ -299,6 +309,10 @@ export type RecentContext = {
   periodShare?: Record<string, number>;
   /** Доли тем за неделю: {"infantry": 0.3}. Работает как archiveShare. */
   subjectShare?: Record<string, number>;
+  /** Рубрики последних постов, свежие первыми ("" - военное ядро). */
+  rubrics?: string[];
+  /** Сколько постов каждой рубрики вышло за неделю: {"poster": 1}. */
+  rubricWeek?: Record<string, number>;
 };
 
 /**
@@ -329,6 +343,28 @@ export const PERIOD_SHARE_PENALTY = 40;
  */
 export const SUBJECT_SHARE_SOFT = 0.2;
 export const SUBJECT_SHARE_PENALTY = 40;
+
+/**
+ * Рубрики вне военного ядра - не чаще стольких постов в неделю (решение
+ * редакции 16.10). Это потолки, а не план: выходят, только если в резерве
+ * есть сильный кадр рубрики. Военное ядро остаётся основой ленты: при
+ * трёх постах в день рубрики вместе занимают не больше трети недели.
+ *
+ * - modern - современная армия 1991-2013 (текущие войны не берём);
+ * - culture - культура 1945-1989, на пробу;
+ * - social - социальная история, на пробу;
+ * - ussr_daily - советская повседневность, только изюминкой и редко;
+ * - poster - плакаты и карикатуры, раз в неделю.
+ */
+export const RUBRIC_WEEKLY_CAP: Record<string, number> = {
+  modern: 3,
+  culture: 2,
+  social: 1,
+  ussr_daily: 1,
+  poster: 1,
+};
+/** Потолок для рубрики, которой нет в таблице: осторожно, раз в неделю. */
+export const DEFAULT_RUBRIC_CAP = 1;
 
 /** Сколько постов одной эпохи подряд допускаем, прежде чем сменить её. */
 export const MAX_SAME_PERIOD_STREAK = 2;
@@ -373,6 +409,16 @@ export function planAuto(
     { length: Math.min(recent.longs ?? 0, RECENT_WINDOW) },
     () => true,
   );
+  // рубрики: недельный счётчик растёт и от постов этого же плана
+  const rubrics = [...(recent.rubrics ?? [])];
+  const rubricWeek: Record<string, number> = { ...(recent.rubricWeek ?? {}) };
+  // рубрика, выбравшая недельный потолок, не выходит НИКАК - ни по
+  // правилам, ни аварийным добором: плакат дважды за неделю - это уже не
+  // рубрика, а смена профиля канала
+  const overCap = (c: PlanCandidate) => {
+    const r = c.tags?.rubric;
+    return Boolean(r) && (rubricWeek[r!] ?? 0) >= (RUBRIC_WEEKLY_CAP[r!] ?? DEFAULT_RUBRIC_CAP);
+  };
 
   while (chosen.length < count && pool.length) {
     const staticsInWindow = staticsWindow.slice(0, RECENT_WINDOW).filter(Boolean).length;
@@ -385,6 +431,9 @@ export function planAuto(
         : undefined;
     const civiliansInWindow = civiliansWindow.slice(0, RECENT_WINDOW).filter(Boolean).length;
     const fits = (c: PlanCandidate) => {
+      if (overCap(c)) return false;
+      // две рубрики подряд не идут: между ними - военное ядро
+      if (c.tags?.rubric && rubrics[0]) return false;
       const subject = c.tags?.subject;
       if (subject && subjects.slice(0, RECENT_WINDOW).includes(subject)) return false;
       if (c.tags?.military === false && civiliansInWindow >= MAX_CIVILIAN_IN_WINDOW) return false;
@@ -459,10 +508,12 @@ export function planAuto(
       ];
       let other = -1;
       for (const pref of prefs) {
-        other = pool.findIndex(pref);
+        other = pool.findIndex((c) => !overCap(c) && pref(c));
         if (other !== -1) break;
       }
-      idx = other === -1 ? 0 : other;
+      idx = other === -1 ? pool.findIndex((c) => !overCap(c)) : other;
+      // в пуле остались только рубрики сверх потолка - слот лучше оставить
+      if (idx === -1) break;
     }
     const [pick] = pool.splice(idx, 1);
     if (!pick) break;
@@ -474,6 +525,8 @@ export function planAuto(
     nations.unshift(archiveNation(pick.attribution, pick.source));
     staticsWindow.unshift(pick.tags?.action === false);
     longsWindow.unshift(quoteLength(pick.caption_html ?? null) >= LONG_QUOTE);
+    rubrics.unshift(pick.tags?.rubric ?? "");
+    if (pick.tags?.rubric) rubricWeek[pick.tags.rubric] = (rubricWeek[pick.tags.rubric] ?? 0) + 1;
   }
   return chosen;
 }

@@ -3,7 +3,7 @@
  * https://pro.europeana.eu/page/get-api (без карты).
  * Источник включается, когда в окружении появляется EUROPEANA_API_KEY.
  */
-import type { SourceConfig } from "../config.js";
+import { locQueries, type SourceConfig } from "../config.js";
 import type { RawItem, SourceAdapter } from "./types.js";
 import type { CursorStore } from "../cursors.js";
 import { parseYear } from "./loc.js";
@@ -31,7 +31,8 @@ export const europeana: SourceAdapter = {
       return [];
     }
 
-    const queries = cfg.queries?.length ? cfg.queries : ["world war"];
+    const own = locQueries(cfg).map((x) => x.q);
+    const queries = own.length ? own : ["world war"];
     const perQuery = Math.ceil(limit / queries.length);
     const items: RawItem[] = [];
 
@@ -42,6 +43,10 @@ export const europeana: SourceAdapter = {
       url.searchParams.set("query", q);
       url.searchParams.append("qf", "TYPE:IMAGE");
       url.searchParams.append("qf", "MEDIA:true");
+      // только свободные лицензии: PD, CC0, CC BY, CC BY-SA. Без этого
+      // фильтр ниже пропускал «creativecommons» вида BY-NC-ND - запрет
+      // на коммерцию и переделку, канал такое брать не может
+      url.searchParams.set("reusability", "open");
       url.searchParams.set("rows", String(perQuery));
       url.searchParams.set("start", String(start));
       url.searchParams.set("profile", "rich");
@@ -60,10 +65,14 @@ export const europeana: SourceAdapter = {
 
       for (const r of found) {
         if (!r.id || !r.edmIsShownBy?.[0]) continue;
+        // Телеграм берёт фото по ссылке только картинкой: tiff и pdf -
+        // это 400 при публикации, а не пост
+        if (/\.(tiff?|pdf|jp2)(\?|$)/i.test(r.edmIsShownBy[0])) continue;
         const rights = r.rights?.[0] ?? "";
-        // берём только открытые лицензии
-        if (!/publicdomain|creativecommons/.test(rights)) continue;
-        const isPd = /publicdomain/.test(rights);
+        // берём только открытые лицензии, и без NC/ND даже при сбое фильтра API
+        if (!/publicdomain|creativecommons/.test(rights) || /\/by-(nc|nd)|\/by-sa-nc|-nc-|-nd\b/.test(rights)) continue;
+        const isPd = /publicdomain|zero/.test(rights);
+        const provider = r.dataProvider?.[0] ?? "Europeana";
         items.push({
           sourceId: r.id,
           sourceUrl: `https://www.europeana.eu/item${r.id}`,
@@ -73,8 +82,10 @@ export const europeana: SourceAdapter = {
           lang: "en",
           year: r.year?.[0] ? Number(r.year[0]) || parseYear(r.year[0]) : parseYear(r.title?.[0]),
           place: r.country?.[0],
-          license: isPd ? "PD" : "CC BY-SA",
-          attribution: isPd ? undefined : `${r.dataProvider?.[0] ?? "Europeana"} / CC BY-SA`,
+          license: isPd ? "PD" : rights,
+          // архив-поставщик нужен балансиру всегда, и у PD тоже: иначе все
+          // кадры Europeana для чередования - один архив без страны
+          attribution: `${provider} / ${isPd ? "PD" : rights}`,
         });
       }
     }

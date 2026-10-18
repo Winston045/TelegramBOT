@@ -1092,6 +1092,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
         statics: recentRows.filter((p) => p.tags?.action === false).length,
         longs: recentRows.filter((p) => quoteLength(p.caption_html ?? null) >= LONG_QUOTE).length,
         archives: recentRows.map((p) => archiveKey(p.attribution) || (p.source ?? "")),
+        rubrics: recentRows.map((p) => p.tags?.rubric ?? ""),
         ...weekShares(
           (weekRes.data ?? []) as Array<{
             attribution?: string | null;
