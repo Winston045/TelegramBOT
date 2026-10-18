@@ -204,6 +204,36 @@ sources:
         lang: "nl"
         rubric: "culture"
         terms: ["Beatles", "filmster", "popgroep", "jazz", "Rolling Stones", "zangeres", "actrice"]
+      # современная армия 1991-2013 (проба 2, 18.10): съёмка Минобороны
+      # США в NARA - на пробе A-7E над Кувейтом, египетский M60 «Щита
+      # пустыни», сербская ЗСУ-57-2 и Т-34 в Боснии 1996, французские САУ
+      # IFOR. Курсоры у записи свои, с записью ядра NARA не путаются
+      - category: "Images from the National Archives and Records Administration"
+        attribution: "NARA"
+        lang: "en"
+        rubric: "modern"
+        terms: ["Desert Storm", "Desert Shield", "Bosnia 1996", "Somalia 1993", "Joint Endeavor", "Kosovo 1999"]
+      # ВВС США: A-10 и F-15 «Бури в пустыне»
+      - category: "Photographs by the United States Air Force"
+        attribution: "USAF"
+        lang: "en"
+        rubric: "modern"
+        terms: ["1991", "Desert Storm", "Allied Force"]
+      # плакаты Второй мировой: по дереву и со словом poster - без слова
+      # дерево приносило фотографии Палмера, попавшие в категорию плакатов
+      - category: "World War II posters"
+        attribution: "WWII posters"
+        lang: "en"
+        rubric: "poster"
+        deep: true
+        terms: ["poster"]
+      # советский плакат: Лисицкий, Апсит, плакаты Туркестана - PD на Commons
+      - category: "Posters of the Soviet Union"
+        attribution: "Soviet posters"
+        lang: "ru"
+        rubric: "poster"
+        deep: true
+        terms: [""]
       # плакаты Первой мировой: категория по дереву - на пробе вербовочные
       # британские и американские плакаты, все PD
       - category: "World War I posters"

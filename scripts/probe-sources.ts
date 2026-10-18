@@ -21,7 +21,14 @@ import { memoryCursorStore } from "../src/cursors.js";
 import type { RawItem } from "../src/sources/types.js";
 
 type Candidates = {
-  commons?: Array<{ category: string; terms?: string[]; deep?: boolean; lang?: string }>;
+  commons?: Array<{
+    category: string;
+    terms?: string[];
+    deep?: boolean;
+    lang?: string;
+    /** окно лет рубрики: образцы показываем только из него */
+    window?: [number, number];
+  }>;
   loc?: string[];
   /** запросы Europeana - пробуются, только если задан EUROPEANA_API_KEY */
   europeana?: string[];
@@ -70,8 +77,12 @@ async function main() {
         const items = pages
           .map((p) => mapCommonsPage(p, { lang: c.lang ?? "en", attributionPrefix: c.category }))
           .filter((it): it is RawItem => Boolean(it));
-        console.log(`  ${label} → ${pages.length ? summary(items) : "ПУСТО"}`);
-        samples(items);
+        const inWindow = c.window
+          ? items.filter((i) => i.year !== undefined && i.year >= c.window![0] && i.year <= c.window![1])
+          : items;
+        const windowNote = c.window ? `; в окне ${c.window[0]}-${c.window[1]}: ${inWindow.length}` : "";
+        console.log(`  ${label} → ${pages.length ? summary(items) + windowNote : "ПУСТО"}`);
+        samples(inWindow);
       } catch (err) {
         console.log(`  ${label} → ОТКАЗ ${(err as Error).message}`);
       }

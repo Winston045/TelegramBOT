@@ -2,60 +2,33 @@
 # «probe» в .github/report.trigger). Попадают в config.yaml только те,
 # чьи образцы выдержали просмотр.
 #
-# Проба 1 (18.10) дала в config: NHHC, Fortepan, Национальная библиотека
-# Ирландии, Anefo-культура, плакаты ПМВ, Хайн и пыльный котёл у LOC.
-# Проба 2 - пробелы: современная армия, советская повседневность, плакаты
-# ВМВ, карикатуры и архивы, не найденные под первыми именами.
+# Проба 1 (18.10): NHHC, Fortepan, Национальная библиотека Ирландии,
+# Anefo-культура, плакаты ПМВ, Хайн и пыльный котёл у LOC.
+# Проба 2 (18.10): современная армия из NARA и ВВС США, плакаты ВМВ и
+# советские плакаты.
+# Проба 3 - советская повседневность (РИА по бытовым словам) и карикатуры
+# 1914-1991; Europeana - если заведён ключ.
 commons:
-  # ---- современная армия (1991-2013) ----
-  - category: "Images from the National Archives and Records Administration"
-    terms: ["Desert Storm", "Desert Shield", "Bosnia 1996", "Somalia 1993", "Just Cause"]
-  - category: "Images from DefenseImagery.mil"
-    terms: ["", "1991"]
-  - category: "Photographs by the United States Navy"
-    terms: ["1995", "2003"]
-  - category: "Photographs by the United States Air Force"
-    terms: ["1991", "2003"]
-  - category: "Images from the United States Marine Corps"
-    terms: ["1991", "2004"]
   - category: "Images from RIA Novosti"
     lang: "ru"
-    terms: ["\"RIAN archive\" exercises", "\"RIAN archive\" tank 1995", "\"RIAN archive\" Navy"]
-  # ---- советская повседневность ----
-  - category: "Images from RIA Novosti"
-    lang: "ru"
+    window: [1945, 1991]
     terms:
-      ["\"RIAN archive\" store", "\"RIAN archive\" queue", "\"RIAN archive\" collective farm",
-       "\"RIAN archive\" street", "\"RIAN archive\" workers", "\"RIAN archive\" Moscow 1960"]
-  # ---- плакаты ВМВ и карикатуры ----
-  - category: "World War II posters"
+      ["children", "Pioneers", "collective farmers", "Muscovites", "department store",
+       "vacationers", "students", "shop assistant", "metro station", "construction workers"]
+  - category: "World War I cartoons"
     deep: true
-    terms: ["poster"]
-  - category: "World War II posters of the United States"
+  - category: "World War II cartoons"
     deep: true
-  - category: "Posters of the Soviet Union"
+  - category: "Cartoons from Punch"
     deep: true
-  - category: "Soviet propaganda posters"
+    terms: ["1915", "1940"]
+  - category: "Caricatures of Adolf Hitler"
     deep: true
-  - category: "Clifford K. Berryman"
-    deep: true
-  - category: "Cartoons by Clifford K. Berryman"
-  # ---- архивы под другими именами ----
-  - category: "Images from San Diego Air and Space Museum Archives"
-  - category: "San Diego Air and Space Museum Archives"
-    deep: true
-    terms: ["1944"]
-  - category: "Images from Riksarkivet (Norway)"
-    terms: ["1940"]
-  - category: "Images from the Norwegian National Archives"
-    terms: ["1940"]
-  - category: "Images from the Deutsche Fotothek"
-    terms: ["1945"]
-  - category: "Deutsche Fotothek"
-    deep: true
-    terms: ["1945"]
 loc:
-  - "poster lithograph 1943"
-  - "office of war information poster"
-  - "berryman cartoon"
-  - "cartoon 1942 war"
+  - "cartoon 1917 war"
+  - "political cartoon 1918"
+  - "caricature 1941"
+europeana:
+  - "world war 1914-1918 photograph"
+  - "soldiers 1916"
+  - "poster 1917"

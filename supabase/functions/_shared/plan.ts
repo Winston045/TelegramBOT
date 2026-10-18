@@ -166,6 +166,8 @@ const ARCHIVE_NATIONS: Record<string, string> = {
   nhhc: "usa",
   fortepan: "hungary",
   "national library of ireland": "ireland",
+  usaf: "usa",
+  "soviet posters": "ussr",
 };
 
 /**
