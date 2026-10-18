@@ -10,6 +10,7 @@ import { env } from "../src/env.js";
 import { pickBalanced } from "../src/balance.js";
 import { rank, type PlanCandidate } from "../src/plan.js";
 import { buildServiceLine } from "../src/service_line.js";
+import { rubricOf } from "../src/rubrics.js";
 import { isDeadImageError, sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { visibleLength, CAPTION_LIMIT } from "../src/validate.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
@@ -69,7 +70,10 @@ async function main() {
 
   let sent = 0;
   for (const c of picked) {
-    const serviceLine = buildServiceLine(c);
+    const serviceLine = buildServiceLine(
+      c,
+      rubricOf((c.tags as { rubric?: string } | null)?.rubric)?.title,
+    );
     const withService = `${c.caption_html}\n\n${serviceLine}`;
     const buttons = {
       inline_keyboard: [

@@ -3,12 +3,17 @@
  * По ней же вебхук находит кандидата, на которого ответили /ok.
  */
 
-export function buildServiceLine(c: {
-  id: number;
-  source: string;
-  quote_kind: string | null;
-}): string {
-  return `<i>#${c.id} · ${c.source} · ${c.quote_kind ?? "-"}</i>`;
+export function buildServiceLine(
+  c: {
+    id: number;
+    source: string;
+    quote_kind: string | null;
+  },
+  /** название рубрики вне ядра - редактор сразу видит, что это не война */
+  rubricTitle?: string,
+): string {
+  const rubric = rubricTitle ? ` · рубрика: ${rubricTitle}` : "";
+  return `<i>#${c.id} · ${c.source} · ${c.quote_kind ?? "-"}${rubric}</i>`;
 }
 
 /** Достаёт id кандидата из текста/подписи карточки ("#123 · loc · …"). */

@@ -16,11 +16,15 @@ import { parse } from "yaml";
 import { POLITE_GAP_MS, searchCategory } from "../src/sources/commons.js";
 import { mapCommonsPage } from "../src/sources/bundesarchiv.js";
 import { fetchQuery, mapLocResult } from "../src/sources/loc.js";
+import { europeana } from "../src/sources/europeana.js";
+import { memoryCursorStore } from "../src/cursors.js";
 import type { RawItem } from "../src/sources/types.js";
 
 type Candidates = {
   commons?: Array<{ category: string; terms?: string[]; deep?: boolean; lang?: string }>;
   loc?: string[];
+  /** запросы Europeana - пробуются, только если задан EUROPEANA_API_KEY */
+  europeana?: string[];
 };
 
 const PROBE = 12;
@@ -83,6 +87,22 @@ async function main() {
       samples(items);
     } catch (err) {
       console.log(`  «${q}» → ОТКАЗ ${(err as Error).message}`);
+    }
+  }
+  if (cand.europeana?.length) {
+    console.log("\n═══ EUROPEANA ═══");
+    if (!process.env.EUROPEANA_API_KEY?.trim()) {
+      console.log("  EUROPEANA_API_KEY не задан - пропуск");
+    } else {
+      for (const q of cand.europeana) {
+        try {
+          const items = await europeana.fetch(PROBE, { enabled: true, weight: 1, queries: [q] }, memoryCursorStore());
+          console.log(`  «${q}» → ${items.length ? summary(items) : "ПУСТО"}`);
+          samples(items);
+        } catch (err) {
+          console.log(`  «${q}» → ОТКАЗ ${(err as Error).message}`);
+        }
+      }
     }
   }
   console.log("\nпроба завершена: база не тронута, Gemini не вызывался");

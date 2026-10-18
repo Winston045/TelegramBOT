@@ -25,6 +25,8 @@ jobs:
       # для режима keys: проверка пула ключей Gemini
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+      # для режима probe: проба запросов Europeana, если ключ заведён
+      EUROPEANA_API_KEY: ${{ secrets.EUROPEANA_API_KEY }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
