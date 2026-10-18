@@ -60,6 +60,8 @@ sources:
       # плакаты: литографии «1 print (poster) : lithograph» - PD; снимки
       # плакатов на стене префильтр рубрики отсекает по носителю
       - { q: "world war poster 1917", rubric: "poster" }
+      # карикатуры LOC: «1 drawing. | Cartoon shows ...» - газетная сатира ПМВ
+      - { q: "cartoon 1917 war", rubric: "poster" }
       # социальная история: Льюис Хайн для Национального комитета по
       # детскому труду - подробные подписи самого фотографа
       - { q: "lewis hine 1911", rubric: "social" }
@@ -231,6 +233,22 @@ sources:
       - category: "Posters of the Soviet Union"
         attribution: "Soviet posters"
         lang: "ru"
+        rubric: "poster"
+        deep: true
+        terms: [""]
+      # карикатуры (проба 3): Первая мировая по дереву - PD, рисунки и
+      # страницы «Mr. Punch's history of the Great War»; карикатуры на
+      # Гитлера - Артур Шик и союзная сатира. Марки-пародии и поздний
+      # мусор срежет окно лет рубрики и оценка
+      - category: "World War I cartoons"
+        attribution: "WWI cartoons"
+        lang: "en"
+        rubric: "poster"
+        deep: true
+        terms: [""]
+      - category: "Caricatures of Adolf Hitler"
+        attribution: "Hitler caricatures"
+        lang: "en"
         rubric: "poster"
         deep: true
         terms: [""]

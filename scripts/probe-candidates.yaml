@@ -4,30 +4,34 @@
 #
 # Проба 1 (18.10): NHHC, Fortepan, Национальная библиотека Ирландии,
 # Anefo-культура, плакаты ПМВ, Хайн и пыльный котёл у LOC.
-# Проба 2 (18.10): современная армия из NARA и ВВС США, плакаты ВМВ и
-# советские плакаты.
-# Проба 3 - советская повседневность (РИА по бытовым словам) и карикатуры
-# 1914-1991; Europeana - если заведён ключ.
+# Проба 2: современная армия из NARA и ВВС США, плакаты ВМВ, советский плакат.
+# Проба 3: карикатуры ПМВ и на Гитлера, карикатуры LOC. Советская
+# повседневность поиском по словам РИА не находится (2-3 кадра эпохи на
+# десятки современных).
+# Проба 4 - повседневность СССР тематическими категориями Commons.
 commons:
-  - category: "Images from RIA Novosti"
-    lang: "ru"
+  - category: "Daily life in the Soviet Union"
+    deep: true
     window: [1945, 1991]
-    terms:
-      ["children", "Pioneers", "collective farmers", "Muscovites", "department store",
-       "vacationers", "students", "shop assistant", "metro station", "construction workers"]
-  - category: "World War I cartoons"
+  - category: "Society of the Soviet Union"
     deep: true
-  - category: "World War II cartoons"
+    window: [1945, 1991]
+  - category: "Shops in the Soviet Union"
     deep: true
-  - category: "Cartoons from Punch"
+    window: [1945, 1991]
+  - category: "Queues in the Soviet Union"
     deep: true
-    terms: ["1915", "1940"]
-  - category: "Caricatures of Adolf Hitler"
+    window: [1945, 1991]
+  - category: "Soviet Union in the 1960s"
     deep: true
-loc:
-  - "cartoon 1917 war"
-  - "political cartoon 1918"
-  - "caricature 1941"
+    window: [1945, 1991]
+  - category: "Moscow in the 1960s"
+    deep: true
+    window: [1945, 1991]
+  - category: "RIAN archive"
+    deep: true
+    terms: ["Moscow 1965", "kolkhoz", "store"]
+    window: [1945, 1991]
 europeana:
   - "world war 1914-1918 photograph"
   - "soldiers 1916"
