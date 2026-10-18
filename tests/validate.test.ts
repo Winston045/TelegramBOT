@@ -72,6 +72,30 @@ describe("validateYears", () => {
     // но год, которого нет нигде - по-прежнему брак
     expect(validateYears("<blockquote>Репортаж вышел в 1947 году.</blockquote>", m).ok).toBe(false);
   });
+
+  it("цифры шифра и номера описи годом не считаются", () => {
+    // у Бундесархива «1985» в шифре - год регистрации негатива, а кадр 1942-го
+    const bild = {
+      title: "Bundesarchiv Bild 183-1985-0110-500, Russland, Panzer",
+      description: undefined,
+      year: 1942,
+      place: "Russland",
+    };
+    expect(validateYears("<blockquote>Россия, 1942 год.</blockquote>", bild).ok).toBe(true);
+    expect(validateYears("<blockquote>Россия, 1985 год.</blockquote>", bild).ok).toBe(false);
+    // номер записи NARA содержит «1983», но это не год
+    const nara = { title: "Marines advance, NARA 519838", description: undefined, year: 1944, place: "Saipan" };
+    expect(validateYears("<blockquote>Сайпан, 1983 год.</blockquote>", nara).ok).toBe(false);
+    const loc = { title: "LC-USW3-018391-E", description: undefined, year: 1943, place: "Chicago" };
+    expect(validateYears("<blockquote>Чикаго, 1839 год.</blockquote>", loc).ok).toBe(false);
+  });
+
+  it("даты и диапазоны через дефис остаются годами", () => {
+    const m = { title: "Landing 1944-06-06; patrol 12-15-1944; Juni-Juli-1943, 1941-1945", place: "x" };
+    for (const y of ["1944", "1943", "1941", "1945"]) {
+      expect(validateYears(`<blockquote>${y} год.</blockquote>`, m).ok, y).toBe(true);
+    }
+  });
 });
 
 describe("validateCaption", () => {

@@ -21,7 +21,8 @@
  *   /ok, /skip        - то же, что кнопки (реплаем на карточку)
  *   /quote <текст>    - заменить цитату (реплаем)
  *   текст реплаем     - заменить подпись целиком
- *   /undo             - удалить последний опубликованный
+ *   /undo             - удалить вышедший пост (последний или реплаем -
+ *                       конкретный), только после подтверждения кнопкой
  *
  * Деплой: workflow deploy-webhook (ставит и вебхук с callback_query).
  */
@@ -32,7 +33,7 @@ import { Bot, webhookCallback } from "https://deno.land/x/grammy@v1.45.1/mod.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { entitiesToHtml } from "../_shared/entities.ts";
 import { parseCandidateId } from "../_shared/service_line.ts";
-import { replaceBody, replaceQuote } from "../_shared/edit_caption.ts";
+import { draftTag, replaceBody, replaceQuote } from "../_shared/edit_caption.ts";
 import { CAPTION_LIMIT, validateHtml, visibleLength } from "../_shared/validate.ts";
 import {
   LONG_QUOTE,
@@ -655,6 +656,16 @@ bot.on("callback_query:data", async (ctx) => {
           await ctx.answerCallbackQuery({ text: "Черновика уже нет" });
           return;
         }
+        // кнопка помнит, какой черновик показала; старые кнопки без
+        // отпечатка (до 18.10) принимаем как раньше
+        const shownTag = ctx.callbackQuery.data.split(":")[2];
+        if (shownTag && draftTag(data.caption_draft) !== shownTag) {
+          await ctx.answerCallbackQuery({
+            text: "Черновик уже другой: после этой правки прислали новую. Применяйте последнюю.",
+            show_alert: true,
+          });
+          return;
+        }
         // вышедший пост правкой в базе не изменить: канал и база разошлись
         // бы, а редактор получил бы «Подпись заменена»
         const { data: applied, error: updErr } = await db
@@ -675,7 +686,18 @@ bot.on("callback_query:data", async (ctx) => {
         return;
       }
       case "drop": {
-        await db.from("candidates").update({ caption_draft: null }).eq("id", id);
+        // отмена стирает только СВОЙ черновик: чужая правка, присланная
+        // позже, должна дожить до своей кнопки «Применить»
+        const shownTag = ctx.callbackQuery.data.split(":")[2];
+        const { data, error } = await db
+          .from("candidates")
+          .select("caption_draft")
+          .eq("id", id)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (data?.caption_draft && (!shownTag || draftTag(data.caption_draft) === shownTag)) {
+          await db.from("candidates").update({ caption_draft: null }).eq("id", id);
+        }
         await ctx.editMessageReplyMarkup({
           reply_markup: doneKeyboard("Правка отменена"),
         });
@@ -683,18 +705,28 @@ bot.on("callback_query:data", async (ctx) => {
         return;
       }
       case "del": {
+        // захват до удаления, как у публикации: два нажатия (или /undo
+        // двух редакторов) не должны снести два разных поста
         const { data, error } = await db
           .from("candidates")
-          .select("id, channel_msg_id, status")
+          .update({ status: "rejected" })
           .eq("id", id)
-          .maybeSingle();
+          .eq("status", "published")
+          .not("channel_msg_id", "is", null)
+          .select("id, channel_msg_id");
         if (error) throw new Error(error.message);
-        if (!data?.channel_msg_id || data.status !== "published") {
+        const row = data?.[0];
+        if (!row) {
           await ctx.answerCallbackQuery({ text: "Пост уже удалён" });
           return;
         }
-        await deleteChannelPost(Number(data.channel_msg_id));
-        await db.from("candidates").update({ status: "rejected" }).eq("id", id);
+        try {
+          await deleteChannelPost(Number(row.channel_msg_id));
+        } catch (err) {
+          // пост остался в канале - и в базе он снова опубликованный
+          await db.from("candidates").update({ status: "published" }).eq("id", id).eq("status", "rejected");
+          throw err;
+        }
         await ctx.editMessageReplyMarkup({
           reply_markup: doneKeyboard(`Удалено из канала - ${who}`),
         });
@@ -823,6 +855,11 @@ bot.on("callback_query:data", async (ctx) => {
             `Постов в день: ${times.length}. Открыть снова: /schedule`,
         );
         await ctx.answerCallbackQuery();
+        return;
+      }
+      case "keep": {
+        await ctx.editMessageReplyMarkup({ reply_markup: doneKeyboard(`Оставлено - ${who}`) });
+        await ctx.answerCallbackQuery({ text: "Пост остаётся в канале" });
         return;
       }
       default:
@@ -1352,26 +1389,46 @@ bot.command("quote", async (ctx) => {
   await ctx.reply(`Пост #${id}: цитата заменена.`);
 });
 
+/**
+ * /undo больше не удаляет сразу. Раньше команда сносила «последний
+ * вышедший» без вопросов: если за секунду до неё публикатор выпустил
+ * плановый пост, удалялся он, а не тот, что имел в виду редактор; /undo
+ * двух редакторов подряд сносил два поста. Теперь команда называет
+ * КОНКРЕТНЫЙ пост (реплаем на карточку - именно его) и удаляет только
+ * по кнопке, привязанной к его номеру.
+ */
 bot.command("undo", async (ctx) => {
-  const { data, error } = await db
+  const target = repliedCandidateId(ctx);
+  let query = db
     .from("candidates")
-    .select("id, channel_msg_id")
+    .select("id, channel_msg_id, caption_html, published_at")
     .eq("status", "published")
-    .order("published_at", { ascending: false })
-    .limit(1);
+    .not("channel_msg_id", "is", null);
+  query = target ? query.eq("id", target) : query.order("published_at", { ascending: false });
+  const { data, error } = await query.limit(1);
   if (error) throw new Error(error.message);
-  const last = data[0];
-  if (!last?.channel_msg_id) {
-    await ctx.reply("Опубликованных постов нет - удалять нечего.");
+  const post = data?.[0];
+  if (!post) {
+    await ctx.reply(
+      target ? `#${target}: в канале его нет - удалять нечего.` : "Опубликованных постов нет - удалять нечего.",
+    );
     return;
   }
-  await deleteChannelPost(Number(last.channel_msg_id));
-  const { error: updErr } = await db
-    .from("candidates")
-    .update({ status: "rejected" })
-    .eq("id", last.id);
-  if (updErr) throw new Error(updErr.message);
-  await ctx.reply(`Пост #${last.id} удалён из канала.`);
+  await ctx.reply(
+    `Удалить из канала пост #${post.id} (вышел ${moscowTime(post.published_at)})?\n` +
+      `${headline(post.caption_html)}\nhttps://t.me/${CHANNEL_SLUG}/${post.channel_msg_id}`,
+    {
+      link_preview_options: { is_disabled: true },
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "Удалить из канала", callback_data: `del:${post.id}` },
+            { text: "Оставить", callback_data: `keep:${post.id}` },
+          ],
+        ],
+      },
+    },
+  );
 });
 
 // реплай обычным текстом - предложить замену подписи (с подтверждением:
@@ -1393,11 +1450,15 @@ bot.on("message:text", async (ctx) => {
 
   const { data: candidate, error } = await db
     .from("candidates")
-    .select("caption_html")
+    .select("caption_html, status")
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!candidate?.caption_html) return;
+  if (!PUBLISHABLE.includes(candidate.status)) {
+    await ctx.reply(`#${id}: пост уже вышел или снят - подпись не трогаю.`);
+    return;
+  }
 
   const bodyHtml = entitiesToHtml(ctx.message.text, ctx.message.entities ?? []);
   const updated = replaceBody(candidate.caption_html, bodyHtml);
@@ -1415,17 +1476,19 @@ bot.on("message:text", async (ctx) => {
   const { error: updErr } = await db
     .from("candidates")
     .update({ caption_draft: updated })
-    .eq("id", id);
+    .eq("id", id)
+    .in("status", PUBLISHABLE);
   if (updErr) throw new Error(updErr.message);
 
+  const tag = draftTag(updated);
   await ctx.reply(`Новая подпись для поста #${id} - проверьте и подтвердите:\n\n${updated}`, {
     parse_mode: "HTML",
     link_preview_options: { is_disabled: true },
     reply_markup: {
       inline_keyboard: [
         [
-          { text: "Применить", callback_data: `apply:${id}` },
-          { text: "Отмена", callback_data: `drop:${id}` },
+          { text: "Применить", callback_data: `apply:${id}:${tag}` },
+          { text: "Отмена", callback_data: `drop:${id}:${tag}` },
         ],
       ],
     },

@@ -4,6 +4,7 @@ import {
   escapeHtml,
 } from "../supabase/functions/_shared/entities.js";
 import {
+  draftTag,
   replaceBody,
   replaceQuote,
   splitFooter,
@@ -126,5 +127,17 @@ describe("replaceBody", () => {
 describe("escapeHtml", () => {
   it("экранирует & < >", () => {
     expect(escapeHtml('<a href="x">&</a>')).toBe('&lt;a href="x"&gt;&amp;&lt;/a&gt;');
+  });
+});
+
+describe("отпечаток черновика", () => {
+  it("один текст - один отпечаток, другой текст - другой, и влезает в callback_data", () => {
+    const a = "<b>Танкисты</b> у Т-34.\n\n<a href=\"https://t.me/x\">X</a>";
+    const b = a.replace("Т-34", "Т-34-85");
+    expect(draftTag(a)).toBe(draftTag(a));
+    expect(draftTag(a)).not.toBe(draftTag(b));
+    expect(draftTag(a)).toMatch(/^[0-9a-f]{8}$/);
+    // apply:<id>:<tag> укладывается в 64 байта Телеграма с большим запасом
+    expect(`apply:999999:${draftTag(a)}`.length).toBeLessThan(64);
   });
 });

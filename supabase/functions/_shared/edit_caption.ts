@@ -36,6 +36,24 @@ export function replaceQuote(captionHtml: string, newQuote: string): string {
   return footer ? `${replaced}\n\n${footer}` : replaced;
 }
 
+/**
+ * Короткий отпечаток черновика для кнопок «Применить» и «Отмена».
+ *
+ * Черновик у карточки один, а редакторов несколько: если двое прислали
+ * правку одного поста, кнопка первого применяла черновик второго - текст,
+ * которого первый не видел. Отпечаток в callback_data (64 байта на всё,
+ * сам текст туда не влезет) связывает кнопку с тем черновиком, который
+ * был показан. FNV-1a: синхронно и одинаково в Node и Deno.
+ */
+export function draftTag(html: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < html.length; i++) {
+    hash ^= html.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 /** Реплай текстом — заменить подпись целиком (кроме футера). */
 export function replaceBody(captionHtml: string, newBodyHtml: string): string {
   const { footer } = splitFooter(captionHtml);

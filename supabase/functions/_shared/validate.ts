@@ -81,16 +81,42 @@ export function validateHtml(html: string): ValidationResult {
 }
 
 /**
+ * Шифр единицы хранения: три и больше групп через дефис - «Bild
+ * 183-1985-0110-500», «LC-USZ62-12345». Цифры внутри шифра - не год
+ * снимка: у Бундесархива «1985» там - год регистрации негатива, а сам
+ * кадр сорок второго. Шифром считаем только цепочку хотя бы с двумя
+ * числовыми группами: «Juni-Juli-1944» - это слова, а не шифр. Дата
+ * вида 1944-06-06 или 06-12-1944 - тоже не шифр, её оставляем.
+ */
+const CATALOG_ID_RE = /[A-Za-z0-9]+(?:-[A-Za-z0-9]+){2,}/g;
+
+function isCatalogId(token: string): boolean {
+  const groups = token.split("-");
+  const numeric = groups.filter((g) => /\d/.test(g));
+  if (numeric.length < 2) return false;
+  const isDate =
+    groups.every((g) => /^\d+$/.test(g)) &&
+    groups.filter((g) => g.length === 4).length === 1 &&
+    groups.every((g) => g.length === 4 || g.length <= 2);
+  return !isDate;
+}
+
+/** Годы, которые метаданные действительно называют. */
+export function knownYears(sourceText: string): Set<string> {
+  const text = sourceText.replace(CATALOG_ID_RE, (id) => (isCatalogId(id) ? " " : id));
+  // год может быть частью "1930s", "1930-е", "30.12.1939", поэтому \b не
+  // годится; но и цифрами внутри длинного номера («NARA 519838») он быть
+  // не должен - иначе любой номер описи «подтверждал» случайный год
+  return new Set([...text.matchAll(/(?<!\d)(1[89]\d{2}|20\d{2})(?!\d)/g)].map((m) => m[0]));
+}
+
+/**
  * Каждый год, упомянутый в подписи, должен присутствовать во входных
  * метаданных — иначе модель что-то выдумала.
  */
 export function validateYears(html: string, meta: CaptionMeta): ValidationResult {
   const sourceText = `${meta.title ?? ""} ${meta.description ?? ""} ${meta.year ?? ""} ${meta.place ?? ""} ${meta.context ?? ""}`;
-  // в метаданных год может быть частью "1930s", "1930-е", "30.12.1939" —
-  // сканируем без границ слова (строгие границы остаются для подписи)
-  const known = new Set(
-    [...sourceText.matchAll(/(1[89]\d{2}|20\d{2})/g)].map((m) => m[0]),
-  );
+  const known = knownYears(sourceText);
   for (const m of html.replace(/<[^>]+>/g, " ").matchAll(YEAR_RE)) {
     if (!known.has(m[0])) {
       return { ok: false, reason: `год ${m[0]} отсутствует в метаданных` };
