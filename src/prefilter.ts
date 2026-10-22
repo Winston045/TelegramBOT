@@ -15,6 +15,7 @@ export type RejectReason =
   | "not_photo"
   | "not_artwork"
   | "unknown_rubric"
+  | "no_star"
   | "stop_word";
 
 /**
@@ -118,6 +119,11 @@ export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null
   // 12.08: «Churchill portrait NYP 45063»)
   if (/\bportrait\b/i.test(title) && !/\b(tank|aircraft|ship|gun|wreck)\b/i.test(title)) {
     return "studio_portrait";
+  }
+  // рубрика, которой нужно громкое имя в метаданных (культура - только
+  // мировые звёзды): без него кадр не стоит запроса к Gemini
+  if (rubric?.metaMust && !rubric.metaMust.test(`${item.title ?? ""} ${item.description ?? ""}`)) {
+    return "no_star";
   }
   // плакатная рубрика - зеркало правила «не фотография»: туда идут ТОЛЬКО
   // плакаты и карикатуры, а снимок, попавший в выдачу по слову poster

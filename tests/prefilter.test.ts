@@ -244,3 +244,22 @@ describe("стереокарточки на языке музея", () => {
     expect(rejectReason({ ...good, title: "Soldiers with stereo equipment" }, cfg)).toBeNull();
   });
 });
+
+describe("культура - только мировые звёзды", () => {
+  const culture = { ...good, rubric: "culture", year: 1965, place: "Amsterdam" };
+  it("местная эстрада отсекается до Gemini", () => {
+    for (const title of [
+      "Optreden popgroep op de Dam, Bestanddeelnr 928-5525",
+      "Zangeres Willeke Alberti in studio",
+      "Trompettist tijdens jazzconcert",
+    ]) {
+      expect(rejectReason({ ...culture, title }, cfg), title).toBe("no_star");
+    }
+  });
+  it("звезда в метаданных - проходит, в том числе в описании", () => {
+    expect(rejectReason({ ...culture, title: "Aankomst The Beatles op Schiphol" }, cfg)).toBeNull();
+    expect(rejectReason({ ...culture, title: "Concert in Concertgebouw", description: "Louis  Armstrong met band" }, cfg)).toBeNull();
+    // военные кадры без рубрики звезду не ищут
+    expect(rejectReason({ ...good, title: "Soldiers at rest" }, cfg)).toBeNull();
+  });
+});

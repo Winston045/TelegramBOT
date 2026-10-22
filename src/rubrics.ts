@@ -36,7 +36,43 @@ export type Rubric = {
   bodyMust?: RegExp;
   /** Носитель - не фотография: рисунок, плакат, литография. */
   artwork?: boolean;
+  /**
+   * Метаданные кадра обязаны назвать кого-то из этого списка - иначе кадр
+   * отсекается до Gemini. Для культуры: местная эстрада никому не нужна.
+   */
+  metaMust?: RegExp;
 };
+
+/**
+ * Звёзды мировой величины для рубрики «культура». Редакция 22.10: Anefo
+ * по словам «popgroep», «zangeres», «actrice» приносил нидерландских
+ * исполнителей, которых за пределами страны никто не знает, - читатель
+ * канала видел «каких-то певиц и музыкантов». Судить известность по
+ * лицу модель не может, а список - может: в рубрику идут только кадры,
+ * где архив сам назвал одну из этих звёзд. Список же служит словами
+ * поиска по Anefo (config.yaml).
+ */
+export const CULTURE_STARS = [
+  "Beatles", "Rolling Stones", "Louis Armstrong", "Ella Fitzgerald", "Duke Ellington",
+  "Count Basie", "Miles Davis", "Dizzy Gillespie", "Lionel Hampton", "Benny Goodman",
+  "Nat King Cole", "Ray Charles", "Chuck Berry", "Fats Domino", "Mahalia Jackson",
+  "Harry Belafonte", "Sammy Davis", "Frank Sinatra", "Bing Crosby", "Marlene Dietrich",
+  "Josephine Baker", "Edith Piaf", "Yves Montand", "Charles Aznavour", "Jacques Brel",
+  "Johnny Hallyday", "Jimi Hendrix", "Bob Dylan", "ABBA", "Pink Floyd", "The Who",
+  "The Kinks", "Led Zeppelin", "David Bowie", "Elton John", "Tina Turner", "Stevie Wonder",
+  "Diana Ross", "Bee Gees", "Cliff Richard", "Shirley Bassey", "Tom Jones",
+  "Charlie Chaplin", "Audrey Hepburn", "Sophia Loren", "Gina Lollobrigida", "Brigitte Bardot",
+  "Kirk Douglas", "Gregory Peck", "Cary Grant", "John Wayne", "Elizabeth Taylor",
+  "Ingrid Bergman", "Grace Kelly", "Gloria Swanson", "Romy Schneider", "Jane Fonda",
+  "Alfred Hitchcock", "Federico Fellini", "Danny Kaye", "Jerry Lewis",
+  "Leonard Bernstein", "Herbert von Karajan", "Igor Stravinsky", "Rudolf Noerejev",
+  "Rudolf Nureyev", "Margot Fonteyn", "Salvador Dali", "Pablo Picasso", "Marc Chagall",
+];
+
+const CULTURE_STAR_RE = new RegExp(
+  `(?<![\\p{L}])(${CULTURE_STARS.map((n) => n.replace(/ /g, "\\s+")).join("|")})(?![\\p{L}])`,
+  "iu",
+);
 
 export const RUBRICS: Record<string, Rubric> = {
   modern: {
@@ -55,11 +91,16 @@ export const RUBRICS: Record<string, Rubric> = {
     years: [1945, 1989],
     subject: "culture",
     military: false,
-    brief: `РУБРИКА «КУЛЬТУРА 1945-1989»: музыка, кино, знаменитости, мода,
-большие концерты и гастроли эпохи. Это по теме канала (military: false).
-Крючок здесь - узнаваемый человек или момент: "human", "moment", "rare".
-Людей называй ТОЛЬКО если они названы в метаданных - по лицу никого не
-узнавай и не угадывай. Нет имён в метаданных и нет события - hook: "none".`,
+    // только звёзды мировой величины, названные архивом (редакция 22.10)
+    metaMust: CULTURE_STAR_RE,
+    minScore: 55,
+    brief: `РУБРИКА «КУЛЬТУРА 1945-1989»: звёзды мировой величины - музыка,
+кино, гастроли эпохи. Это по теме канала (military: false). Кадр интересен
+ТОЛЬКО звездой, которую знает весь мир: Битлз, Луи Армстронг, Марлен
+Дитрих. Подпись строится вокруг неё - назови её в теле поста. Крючок -
+"human", "moment" или "rare". Людей называй ТОЛЬКО если они названы в
+метаданных - по лицу никого не узнавай и не угадывай. Звезда стоит в
+кадре мелко, со спины или её не видно - hook: "none".`,
   },
   social: {
     title: "социальная история",

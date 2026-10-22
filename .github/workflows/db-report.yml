@@ -70,6 +70,13 @@ jobs:
             sources)
               # проверка источников: каждый архив и запрос по отдельности
               npx tsx scripts/sources-check.ts ;;
+            purgeculture)
+              # местная эстрада из резерва культуры; без apply - только список
+              if grep -q 'apply' .github/report.trigger; then
+                npx tsx scripts/purge-culture.ts --apply
+              else
+                npx tsx scripts/purge-culture.ts
+              fi ;;
             gateaudit)
               # отсеянные на анализе - заново полноценной моделью: не теряем
               # ли годное из-за модели. gateaudit:14 since:2026-10-20

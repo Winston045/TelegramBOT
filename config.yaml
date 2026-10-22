@@ -198,14 +198,20 @@ sources:
         lang: "en"
         terms: ["1916", "1922", "1920", "1921", "1923"]
       # ---- Рубрики вне ядра (src/rubrics.ts) ----
-      # культура 1945-1989: Anefo по словам эстрады и кино. На пробе -
-      # Битлз на Схипхоле, Глория Свенсон, джаз в Консертгебау. «concert»
-      # не берём: давал школьные оркестры на площади
+      # культура 1945-1989: Anefo ТОЛЬКО по именам мировых звёзд. Редакция
+      # 22.10: слова «popgroep», «zangeres», «actrice», «jazz» приносили
+      # местную эстраду, которую никто не знает. В рубрику пропускаются
+      # лишь кадры, где архив назвал звезду из CULTURE_STARS (src/rubrics.ts)
       - category: "Images from Anefo"
         attribution: "Anefo / Nationaal Archief"
         lang: "nl"
         rubric: "culture"
-        terms: ["Beatles", "filmster", "popgroep", "jazz", "Rolling Stones", "zangeres", "actrice"]
+        terms: ["Beatles", "Rolling Stones", "Louis Armstrong", "Ella Fitzgerald", "Duke Ellington",
+                "Marlene Dietrich", "Sophia Loren", "Audrey Hepburn", "Kirk Douglas", "Gloria Swanson",
+                "Josephine Baker", "Count Basie", "Miles Davis", "Jimi Hendrix", "ABBA", "Bob Dylan",
+                "Charles Aznavour", "Jacques Brel", "Yves Montand", "Lionel Hampton", "Harry Belafonte",
+                "Mahalia Jackson", "Ray Charles", "Chuck Berry", "Cliff Richard", "Shirley Bassey",
+                "Danny Kaye", "Jerry Lewis", "Gina Lollobrigida", "Rudolf Noerejev"]
       # современная армия 1991-2013 (проба 2, 18.10): съёмка Минобороны
       # США в NARA - на пробе A-7E над Кувейтом, египетский M60 «Щита
       # пустыни», сербская ЗСУ-57-2 и Т-34 в Боснии 1996, французские САУ
