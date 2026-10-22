@@ -32,6 +32,7 @@ import { passesGate } from "../src/scoring.js";
 import { reviewQuote } from "../src/critic.js";
 import { assembleCaptionHtml, descriptiveSentences } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
+import { guardNumbers } from "../src/factcheck.js";
 import { rubricCaptionFlaw, rubricOf } from "../src/rubrics.js";
 import { subjectReference } from "../src/wiki.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
@@ -482,6 +483,17 @@ async function main() {
       if (reviewed.rewritten) {
         console.log(`  цитата переписана редактором: [${item.source}] ${item.sourceId}`);
         rewritten++;
+      }
+
+      // числа изюминки должны быть в источниках (src/factcheck.ts)
+      const sources = [item.title, item.description, item.place, extraContext, subjectContext]
+        .filter(Boolean)
+        .join("\n");
+      const numbers = guardNumbers(reviewed, a, sources);
+      if (numbers.outcome !== "ok") {
+        const what = numbers.outcome === "editor_rejected" ? "правка редактора отклонена" : "изюминка снята";
+        console.warn(`  числа не из источников (${numbers.bad.join(", ")}) - ${what}: [${item.source}] ${item.sourceId}`);
+        reviewed.caption = numbers.caption;
       }
 
       // кадр рубрики обязан быть видимо рубрикой: повседневность - только

@@ -125,6 +125,23 @@ export function validateYears(html: string, meta: CaptionMeta): ValidationResult
   return { ok: true };
 }
 
+/** Цифры подряд, с разделителями разрядов и дробей склеенными: «1 600» → 1600, «4,5» → 45. */
+function numberTokens(text: string): string[] {
+  return [...text.replace(/(\d)[\s\u00a0.,](?=\d)/g, "$1").matchAll(/\d{2,}/g)].map((m) => m[0]);
+}
+
+/**
+ * Числа изюминки, которых нет в источниках: метаданных и справках.
+ * Годы не считаем - их держит validateYears. Прогон 22.10: облегчённая
+ * модель без справки дописала ИСУ-152 вес «сорок шесть тонн» - число
+ * верное, но взято из головы модели, а правило канала - только из
+ * источников. Числа словами эта проверка не видит; цифрами - да.
+ */
+export function unsupportedNumbers(text: string, sources: string): string[] {
+  const known = new Set(numberTokens(sources));
+  return numberTokens(text).filter((n) => !/^(1[89]\d{2}|20\d{2})$/.test(n) && !known.has(n));
+}
+
 /**
  * Видимый текст тела поста - без цитат и без футера с подписью канала.
  * Пустое тело - пост из одной цитаты и ссылки, такого в канале не бывает.

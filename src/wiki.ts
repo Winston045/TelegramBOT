@@ -13,6 +13,8 @@
 
 const UA = "story-team-bot/0.1 (Telegram history channel; contact via t.me/Story_Teams)";
 const INTRO_LIMIT = 1200;
+const RETRIES = 1;
+const RETRY_DELAY_MS = 2_000;
 
 /** Страница-развилка («может означать», «may refer to») - не справка. */
 const DISAMBIGUATION = /may refer to|may also refer to|может означать|может относиться/i;
@@ -37,13 +39,26 @@ async function fetchPage(lang: string, title: string, withRuLink: boolean): Prom
   url.searchParams.set("titles", title);
   if (withRuLink) url.searchParams.set("lllang", "ru");
 
-  const res = await fetch(url, {
-    headers: { "user-agent": UA },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) return undefined;
-  const body = (await res.json()) as { query?: { pages?: WikiPage[] } };
-  return body.query?.pages?.[0];
+  // Википедия с датацентровых адресов иногда отвечает 429 и 5xx: прогон
+  // 22.10 нашёл справку об ИСУ-152 в первый раз и не нашёл во второй. Один
+  // повтор с паузой; дальше - без справки, кадр от этого не страдает
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: { "user-agent": UA },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (res.ok) {
+        const body = (await res.json()) as { query?: { pages?: WikiPage[] } };
+        return body.query?.pages?.[0];
+      }
+      if (res.status !== 429 && res.status < 500) return undefined;
+    } catch (err) {
+      if (attempt >= RETRIES) throw err;
+    }
+    if (attempt >= RETRIES) return undefined;
+    await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+  }
 }
 
 function usable(page: WikiPage | undefined): string | undefined {

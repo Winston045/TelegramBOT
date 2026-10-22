@@ -56,7 +56,9 @@ ${metadataBlock(item, extraContext)}${subject}
   живым языком. Аудитория в теме и базовые вещи знает - нужен уровень
   знатока, поданный интересно.
 
-Эталон изюминки (в кадре британский аэростат наблюдения у Ипра):
+Образец ПОДАЧИ изюминки (чужой кадр - британский аэростат у Ипра; его
+факты - не источник, переносить их в цитату нельзя, даже если в кадре
+тоже аэростат: факты только из метаданных и справок выше):
 «Наблюдатель в плетёной корзине поднимался примерно на километр и видел
 на десятки километров вглубь чужих позиций. По телефонному проводу,
 вплетённому прямо в трос, он корректировал огонь своих батарей.
@@ -139,9 +141,10 @@ export async function reviewQuote(
     return { caption: generated, rewritten: false };
   }
   try {
-    const res = await geminiJson<Verdict>([
-      { text: buildPrompt(item, generated, extraContext, subjectContext) },
-    ]);
+    const res = await geminiJson<Verdict>(
+      [{ text: buildPrompt(item, generated, extraContext, subjectContext) }],
+      { fullOnly: true },
+    );
     if (res.verdict !== "weak") {
       return { caption: generated, rewritten: false };
     }

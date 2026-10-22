@@ -17,6 +17,7 @@ import { reviewQuote } from "../src/critic.js";
 import { assembleCaptionHtml } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
 import { subjectReference } from "../src/wiki.js";
+import { guardNumbers } from "../src/factcheck.js";
 import type { RawItem } from "../src/sources/types.js";
 
 type Row = {
@@ -95,7 +96,13 @@ async function main() {
       const a = await analyzeImage(item, cfg, image, extra);
       const subject = a.subject_wiki ? await subjectReference(a.subject_wiki) : undefined;
       console.log(`предмет: ${a.subject_wiki ?? "-"}${subject ? " (справка найдена)" : a.subject_wiki ? " (справки нет)" : ""}`);
+      // первый заход отдельно: видно, кто сделал изюминку, а кто её снял
+      console.log(`ПЕРВЫЙ ЗАХОД:\n  ${plain(assembleCaptionHtml(a, item, cfg.channel))}`);
       const reviewed = await reviewQuote(item, cfg, a, extra, subject);
+      const sources = [item.title, item.description, item.place, extra, subject].filter(Boolean).join("\n");
+      const numbers = guardNumbers(reviewed, a, sources);
+      if (numbers.outcome !== "ok") console.log(`  ! числа не из источников: ${numbers.bad.join(", ")} (${numbers.outcome})`);
+      reviewed.caption = numbers.caption;
       const html = assembleCaptionHtml(reviewed.caption, item, cfg.channel);
       const context = [extra, subject].filter(Boolean).join("\n");
       const check = validateCaption(html, { ...item, context: context || undefined });

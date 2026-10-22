@@ -121,3 +121,33 @@ describe("validateCaption", () => {
     expect(validateCaption(okLen, meta).ok).toBe(true);
   });
 });
+
+describe("числа изюминки - только из источников", async () => {
+  const { unsupportedNumbers } = await import("../src/validate.js");
+  const { guardNumbers } = await import("../src/factcheck.js");
+
+  it("число из справки - можно, из головы модели - нельзя", () => {
+    const src = "ISU-152 weighed 47.3 tonnes; 152 mm howitzer; crew of 5";
+    expect(unsupportedNumbers("Самоходка весила 47,3 тонны и несла 152-мм гаубицу.", src)).toEqual([]);
+    expect(unsupportedNumbers("Самоходка весила 46 тонн.", src)).toEqual(["46"]);
+  });
+
+  it("годы и однозначные числа не в счёт, разряды склеиваются", () => {
+    expect(unsupportedNumbers("В 1944 году пять машин.", "")).toEqual([]);
+    expect(unsupportedNumbers("Высота 1 600 метров.", "altitude 1600 m")).toEqual([]);
+  });
+
+  it("плохая правка редактора уступает первому заходу, плохой первый заход - снимается", () => {
+    const first = { caption: "Т.", quote: "Самоходка весила 47,3 тонны.", quote_kind: "context" as const, quote_place: "Будапешт, 1956 год." };
+    const edited = { ...first, quote: "Самоходка весила 46 тонн." };
+    const src = "weighed 47.3 tonnes";
+    expect(guardNumbers({ caption: edited, rewritten: true }, first, src)).toMatchObject({
+      outcome: "editor_rejected",
+      caption: first,
+    });
+    expect(guardNumbers({ caption: edited, rewritten: false }, edited, src)).toMatchObject({
+      outcome: "quote_dropped",
+      caption: { quote: "Будапешт, 1956 год.", quote_place: undefined },
+    });
+  });
+});

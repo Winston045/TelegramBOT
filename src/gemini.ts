@@ -207,9 +207,10 @@ export function chooseModel(
   dead: ReadonlySet<string>,
   benched: ReadonlyMap<string, number>,
   now: number,
+  fullOnly = false,
 ): ModelChoice {
   const alive = names.filter((n) => !dead.has(n));
-  const ladder = [...rankModels(alive), ...liteModels(alive)];
+  const ladder = fullOnly ? rankModels(alive) : [...rankModels(alive), ...liteModels(alive)];
   if (!ladder.length) return { none: true };
   const free = ladder.find((n) => (benched.get(n) ?? 0) <= now);
   if (free) return { model: free };
@@ -267,11 +268,11 @@ async function loadModelNames(): Promise<string[]> {
  * список моделей читается один раз за прогон), поэтому, как только
  * лучшая модель отдохнула, бот к ней и возвращается.
  */
-async function resolveModel(deadline: number): Promise<string> {
+async function resolveModel(deadline: number, fullOnly = false): Promise<string> {
   if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;
   const names = await loadModelNames();
   for (;;) {
-    const choice = chooseModel(names, unavailableHere(), benchedUntil, Date.now());
+    const choice = chooseModel(names, unavailableHere(), benchedUntil, Date.now(), fullOnly);
     if ("model" in choice) {
       if (choice.model !== currentModel) {
         console.log(`gemini: выбрана модель ${choice.model}`);
@@ -280,7 +281,12 @@ async function resolveModel(deadline: number): Promise<string> {
       }
       return choice.model;
     }
-    if ("none" in choice) return FALLBACK_MODEL;
+    if ("none" in choice) {
+      // вызову нужна полноценная модель, а живых нет - честный отказ, а
+      // не тихий спуск на облегчённую
+      if (fullOnly) throw new Error("gemini: нет доступной полноценной модели");
+      return FALLBACK_MODEL;
+    }
     if (Date.now() + choice.waitMs > deadline) throw new GeminiBusyError(choice.waitMs);
     console.warn(`gemini: все модели перегружены - жду ${Math.ceil(choice.waitMs / 1000)} с`);
     await sleep(choice.waitMs);
@@ -346,7 +352,17 @@ const CALL_BUDGET_MS = 150_000;
 
 export async function geminiJson<T>(
   parts: GeminiPart[],
-  opts: { model?: string; temperature?: number } = {},
+  opts: {
+    model?: string;
+    temperature?: number;
+    /**
+     * Только полноценные модели. Редактору цитат облегчённая не годится:
+     * прогон 22.10 - flash-lite без справки дописала в изюминку ИСУ-152
+     * вес и «уязвимость перед пехотой» от себя. Лучше оставить цитату
+     * как есть, чем отдать правку слабой модели.
+     */
+    fullOnly?: boolean;
+  } = {},
 ): Promise<T> {
   if (quotaTripped()) {
     throw new GeminiQuotaError("дневная квота Gemini исчерпана — предохранитель разомкнут");
@@ -365,7 +381,7 @@ export async function geminiJson<T>(
           `gemini: вызов не уложился в ${Math.round(CALL_BUDGET_MS / 1000)} с (${lastError?.message ?? "без ответа"})`,
         );
       }
-      const model = opts.model ?? (await resolveModel(callDeadline));
+      const model = opts.model ?? (await resolveModel(callDeadline, opts.fullOnly));
       const url = `${BASE}/${model}:generateContent`;
 
       const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
