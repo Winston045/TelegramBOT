@@ -89,6 +89,8 @@ type HashedItem = CollectedItem & { imageHash: string; imageBuffer: Buffer };
 const MIN_ANALYSIS_LEFT_MS = 3 * 60_000;
 /** Ниже - явный брак, второе мнение по нему не спрашиваем. */
 const SECOND_OPINION_MIN = 40;
+/** Неудач подряд, после которых второе мнение в прогоне выключается. */
+const SECOND_OPINION_MAX_MISSES = 2;
 
 /** Осталось ли время прогона: и на скачивание, и на анализ. */
 function timeLeftMs(): number {
@@ -346,6 +348,7 @@ async function main() {
   const secondOpinion = cfg.collect.second_opinion !== false;
   let secondOpinions = 0;
   let rescuedBySecond = 0;
+  let secondOpinionMisses = 0;
 
   /**
    * Отсеянный на анализе кадр запоминается в базе статусом rejected, без
@@ -464,14 +467,16 @@ async function main() {
       let verdict = passesGate(a, { minScore: gateMin, hooklessMinScore: gateHookless });
       // Второе мнение: отказ облегчённой модели перепроверяет полноценная.
       // Аудит 22.10 (scripts/gate-audit.ts): облегчённая ставила «45, без
-      // крючка» почти любому кадру, и годное терялось из-за модели, а не
-      // из-за порога. Явный брак (стереопара, репродукция - ниже
+      // крючка» почти любому кадру; полноценная из 16 таких отказов три
+      // подняла до 62-72 (плакат, марш, портрет), остальные подтвердила
+      // близкими оценками - теряет годное модель, а не порог. Явный брак (стереопара, репродукция - ниже
       // SECOND_OPINION_MIN) не перепроверяем: там модели согласны
       if (
         !verdict.pass &&
         secondOpinion &&
         isLiteModel(model) &&
         a.score >= SECOND_OPINION_MIN &&
+        secondOpinionMisses < SECOND_OPINION_MAX_MISSES &&
         timeLeftMs() > MIN_ANALYSIS_LEFT_MS
       ) {
         try {
@@ -480,6 +485,7 @@ async function main() {
           const secondModel = lastUsedModel();
           const secondVerdict = passesGate(second, { minScore: gateMin, hooklessMinScore: gateHookless });
           secondOpinions++;
+          secondOpinionMisses = 0;
           console.log(
             `  второе мнение (${secondModel}): ${a.score} [${a.tags.hook ?? "none"}] → ${second.score} [${second.tags.hook ?? "none"}]` +
               `${secondVerdict.pass ? " - проходит" : ""}: [${item.source}] ${item.sourceId}`,
@@ -489,7 +495,11 @@ async function main() {
           model = secondModel;
           verdict = secondVerdict;
         } catch (err) {
-          // полноценные заняты или кончились - остаётся вердикт облегчённой
+          // полноценные заняты или кончились - остаётся вердикт облегчённой.
+          // Облегчённая работает именно тогда, когда полноценные лежат, и
+          // каждая попытка может ждать до 150 с: после двух неудач подряд
+          // второе мнение в этом прогоне больше не спрашиваем
+          secondOpinionMisses++;
           console.log(`  второе мнение не получено (${(err as Error).message}): [${item.source}] ${item.sourceId}`);
         }
       }
