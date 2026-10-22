@@ -73,9 +73,17 @@ jobs:
           fi
       # размер партии считает сторож: ровно столько, сколько не хватает
       # до запаса, с поправкой на выбраковку по порогу оценки
+      # only:<источник> в маркере - сбор из одного источника (проба нового
+      # архива целой партией: «force:30 only:europeana»). По расписанию -
+      # всегда все включённые источники
       - name: Сбор свежей партии
         if: steps.need.outputs.need == 'true'
-        run: npm run collect -- --keep ${{ steps.need.outputs.keep }}
+        run: |
+          only=""
+          if [ "${{ github.event_name }}" = "push" ]; then
+            only=$(grep -oP 'only:\K[a-z]+' .github/topup.trigger || true)
+          fi
+          npm run collect -- --keep ${{ steps.need.outputs.keep }} ${only:+--only $only}
       - name: Карточки редакторам
         if: always() && steps.need.outputs.need == 'true'
         run: npm run send-candidates -- --limit 3
