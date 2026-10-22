@@ -67,12 +67,14 @@ export async function analyzeImage(
   cfg: AppConfig,
   image: Buffer,
   extraContext?: string,
+  /** только полноценные модели - для второго мнения по отказам */
+  opts: { fullOnly?: boolean } = {},
 ): Promise<Analysis> {
   const img = await imagePart(image);
-  const result = await geminiJson<Analysis>([
-    { text: buildAnalysisPrompt(item, cfg.glossary, extraContext) },
-    img,
-  ]);
+  const result = await geminiJson<Analysis>(
+    [{ text: buildAnalysisPrompt(item, cfg.glossary, extraContext) }, img],
+    { fullOnly: opts.fullOnly },
+  );
   // слабая модель может вернуть «"score": "high"» или забыть подпись: NaN
   // проходил порог оценки (NaN < 40 - ложь), а пустая подпись давала
   // пост из одной цитаты и ссылки. Такой ответ - брак, а не кандидат

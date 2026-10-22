@@ -340,7 +340,13 @@ async function main() {
         raw_lang: item.lang,
         year: item.year ?? null,
         place: item.place ?? null,
-        tags: { ...a.tags, gate, ...(a.score_why ? { why: a.score_why } : {}) },
+        // модель - чтобы отказы облегчённой можно было перепроверить
+        tags: {
+          ...a.tags,
+          gate,
+          ...(a.score_why ? { why: a.score_why } : {}),
+          ...(lastUsedModel() ? { model: lastUsedModel() } : {}),
+        },
         score: a.score,
         license: item.license,
         attribution: item.attribution ?? null,

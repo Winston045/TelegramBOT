@@ -70,6 +70,12 @@ jobs:
             sources)
               # проверка источников: каждый архив и запрос по отдельности
               npx tsx scripts/sources-check.ts ;;
+            gateaudit)
+              # отсеянные на анализе - заново полноценной моделью: не теряем
+              # ли годное из-за модели. gateaudit:14 since:2026-10-20
+              n=$(grep -oP 'gateaudit:\K\d+' .github/report.trigger || true)
+              since=$(grep -oP 'since:\K[0-9-]+' .github/report.trigger || true)
+              npx tsx scripts/gate-audit.ts ${n:-14} $since ;;
             preview)
               # подписи на текущих промптах по готовым кадрам: было → стало,
               # без записи в базу; ids:445,419 - какие кадры взять
