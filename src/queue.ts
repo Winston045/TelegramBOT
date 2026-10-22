@@ -15,10 +15,18 @@
  * добираются придержанными кадрами - неполная очередь хуже перекошенной.
  */
 import type { RawItem } from "./sources/types.js";
-import { archiveKey } from "./plan.js";
+import { archiveKey, archiveNation } from "./plan.js";
 
 /** Доля очереди, больше которой один архив не занимает (LOC брал 7 из 30). */
 export const MAX_ARCHIVE_SHARE = 1 / 6;
+/**
+ * Доля очереди для одной страны архива. Потолок архива (1/6) страну не
+ * держит: у США пять поставщиков (LOC дважды, NARA, Signal Corps, флот),
+ * и вместе они брали треть очереди - а потом треть ленты (разбор 22.10:
+ * американцы в 29% постов). Четверть - и сырья хватает, и перекоса нет.
+ */
+export const MAX_NATION_SHARE = 1 / 4;
+
 /** Доля очереди для кадров ВМВ: половина - как мягкая доля эпохи в ленте. */
 export const MAX_WW2_SHARE = 1 / 2;
 
@@ -45,6 +53,8 @@ export type QueueCuts = {
   ww2Capped: number;
   /** придержаны потолками рубрик (могут вернуться добором) */
   rubricCapped: number;
+  /** придержаны потолком страны архива (могут вернуться добором) */
+  nationCapped: number;
 };
 
 function titleKey(title?: string): string {
@@ -67,7 +77,9 @@ export function buildAnalysisQueue<T extends RawItem & { source: string }>(
   items: T[],
   limit: number,
 ): { queue: T[]; cuts: QueueCuts } {
-  const cuts: QueueCuts = { duplicates: 0, archiveCapped: 0, ww2Capped: 0, rubricCapped: 0 };
+  const cuts: QueueCuts = { duplicates: 0, archiveCapped: 0, ww2Capped: 0, rubricCapped: 0, nationCapped: 0 };
+  const nationCap = Math.max(2, Math.floor(limit * MAX_NATION_SHARE));
+  const byNation = new Map<string, number>();
   const archiveCap = Math.max(2, Math.ceil(limit * MAX_ARCHIVE_SHARE));
   const ww2Cap = Math.max(2, Math.ceil(limit * MAX_WW2_SHARE));
   const rubricsCap = Math.max(1, Math.floor(limit * MAX_RUBRICS_SHARE));
@@ -102,11 +114,18 @@ export function buildAnalysisQueue<T extends RawItem & { source: string }>(
       held.push(item);
       continue;
     }
+    const nation = archiveNation(item.attribution, item.source);
+    if (nation && (byNation.get(nation) ?? 0) >= nationCap) {
+      cuts.nationCapped++;
+      held.push(item);
+      continue;
+    }
     if (item.rubric && (rubrics >= rubricsCap || (byRubric.get(item.rubric) ?? 0) >= oneRubricCap)) {
       cuts.rubricCapped++;
       continue;
     }
     byArchive.set(archive, (byArchive.get(archive) ?? 0) + 1);
+    if (nation) byNation.set(nation, (byNation.get(nation) ?? 0) + 1);
     if (isWw2(item)) ww2++;
     if (item.rubric) {
       rubrics++;

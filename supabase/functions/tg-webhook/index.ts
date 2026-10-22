@@ -42,6 +42,7 @@ import {
   archiveKey,
   buildPlan,
   headline,
+  postNation,
   quoteLength,
   weekShares,
   type PlanEntry,
@@ -1049,10 +1050,11 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       .select("published_at")
       .eq("status", "published")
       .gte("published_at", new Date(Date.now() - 48 * 3600 * 1000).toISOString()),
-    // недельные доли архивов, эпох и тем - как у публикатора
+    // недельные доли архивов, эпох, тем и стран - как у публикатора;
+    // страна поста берётся из подписи, поэтому нужна и она
     db
       .from("candidates")
-      .select("attribution, source, tags")
+      .select("attribution, source, tags, caption_html")
       .eq("status", "published")
       .gte("published_at", new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()),
   ]);
@@ -1093,11 +1095,13 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
         longs: recentRows.filter((p) => quoteLength(p.caption_html ?? null) >= LONG_QUOTE).length,
         archives: recentRows.map((p) => archiveKey(p.attribution) || (p.source ?? "")),
         rubrics: recentRows.map((p) => p.tags?.rubric ?? ""),
+        nations: recentRows.map((p) => postNation(p)),
         ...weekShares(
           (weekRes.data ?? []) as Array<{
             attribution?: string | null;
             source?: string | null;
             tags?: PlanTags;
+            caption_html?: string | null;
           }>,
         ),
       },

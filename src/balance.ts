@@ -15,7 +15,7 @@
  * добираем лучшими оставшимися. Пустой чат хуже повтора.
  */
 
-import { archiveKey, archiveNation } from "./plan.js";
+import { archiveKey, postNation } from "./plan.js";
 
 export type Taggable = {
   tags: { subject?: string; region?: string; period?: string } | null;
@@ -46,7 +46,7 @@ export function pickBalanced<T extends Taggable>(
   const queues = new Map<string, T[]>();
   for (const item of ordered) {
     const key =
-      archiveNation(item.attribution, item.source) ||
+      postNation(item) ||
       archiveKey(item.attribution) ||
       item.source ||
       "(без архива)";

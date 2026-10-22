@@ -18,7 +18,8 @@ import {
   type CollectedItem,
 } from "../src/sources/index.js";
 import { reportHealth } from "../src/health.js";
-import { prefilter } from "../src/prefilter.js";
+import { minWidthFor, prefilter } from "../src/prefilter.js";
+import sharp from "sharp";
 import { byPromise, promise } from "../src/promise.js";
 import { buildAnalysisQueue } from "../src/queue.js";
 import { hiResLocUrl } from "../src/sources/loc.js";
@@ -141,7 +142,11 @@ async function fetchImage(url: string): Promise<Response | null> {
   }
 }
 
-async function hashAndDedup(items: CollectedItem[], known: string[]): Promise<HashedItem[]> {
+async function hashAndDedup(
+  items: CollectedItem[],
+  known: string[],
+  cfg: ReturnType<typeof loadConfig>,
+): Promise<HashedItem[]> {
   const out: HashedItem[] = [];
   const batchHashes: string[] = [];
   for (const item of items) {
@@ -166,6 +171,18 @@ async function hashAndDedup(items: CollectedItem[], known: string[]): Promise<Ha
       // пауза между скачиваниями: вежливо к архивам, дешевле, чем ретраи
       await sleepMs(politeDelayMs);
       const imageBuffer = Buffer.from(await res.arrayBuffer());
+      // ширину знают не все источники (Europeana её не сообщает), и до
+      // скачивания порог к таким кадрам не применялся: превью в 512 px
+      // ушло бы на анализ, а потом мылом в канал. Меряем сам файл; не
+      // картинка вовсе (страница вместо файла) - sharp бросит, кадр мимо
+      if (item.imageWidth === undefined) {
+        const { width } = await sharp(imageBuffer).metadata();
+        const min = minWidthFor(item, cfg);
+        if (!width || width < min) {
+          console.log(`  мелкая после скачивания (${width ?? "?"} px < ${min}): [${item.source}] ${item.sourceId}`);
+          continue;
+        }
+      }
       // метаданные молчат, а кадр всё равно стереопара - ловим по картинке
       if (await isStereoPair(imageBuffer)) {
         console.log(`  стереопара: [${item.source}] ${item.sourceId}`);
@@ -238,11 +255,11 @@ async function main() {
       `обещание очереди ${avg.toFixed(1)}` +
       (rest.length ? ` против ${avgRest.toFixed(1)} у отложенных` : ""),
   );
-  if (cuts.duplicates || cuts.archiveCapped || cuts.ww2Capped || cuts.rubricCapped) {
+  if (cuts.duplicates || cuts.archiveCapped || cuts.ww2Capped || cuts.rubricCapped || cuts.nationCapped) {
     console.log(
       `потолки очереди: дублей названий ${cuts.duplicates}, ` +
         `придержано потолком архива ${cuts.archiveCapped}, потолком ВМВ ${cuts.ww2Capped}, ` +
-        `рубрик сверх потолка ${cuts.rubricCapped}`,
+        `рубрик сверх потолка ${cuts.rubricCapped}, потолком страны ${cuts.nationCapped}`,
     );
   }
   const queuedRubrics = survivors.filter((i) => i.rubric).map((i) => i.rubric);
@@ -267,7 +284,7 @@ async function main() {
   // вся история канала и все кандидаты, постранично: одним запросом
   // Supabase отдавал лишь первую тысячу хэшей
   const known = await loadKnownHashes(db, { candidates: true });
-  const hashed = await hashAndDedup(fresh, known);
+  const hashed = await hashAndDedup(fresh, known, cfg);
   console.log(`уникальных: ${hashed.length}`);
 
   // один запрос Gemini на фото: оценка + подпись сразу. Все прошедшие

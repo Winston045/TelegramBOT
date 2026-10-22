@@ -141,7 +141,83 @@ export const ARCHIVE_WINDOW = 2;
  * стране архива.
  */
 export const MAX_SAME_NATION_IN_WINDOW = 1;
-export const NATION_WINDOW = 2;
+/**
+ * Окно по стране - три поста: одна страна не чаще раза в три поста. Было
+ * два, и разбор 22.10 показал, что этого мало: американцы шли через пост
+ * (29% ленты за две недели, три из четырёх постов 20-21.10), и читатель
+ * видел «канал про США».
+ */
+export const NATION_WINDOW = 3;
+
+/**
+ * Страна, занявшая больше пятой части недели, уступает при равном
+ * качестве - как архив, эпоха и тема. Окно держит соседство, а доля -
+ * неделю: без неё «через два поста на третий» тоже даёт треть ленты.
+ */
+export const NATION_SHARE_SOFT = 0.2;
+export const NATION_SHARE_PENALTY = 60;
+
+/**
+ * О какой стране пост - по тексту подписи, а не по архиву. Правило по
+ * архиву не видело американцев в чужих архивах: плакат США с Commons
+ * («WWII posters»), «американские солдаты» в британском IWM. Берём
+ * страну, названную в описании первой: «Американские солдаты
+ * осматривают подбитый немецкий танк» - пост про американцев.
+ * Аббревиатуры ищем через \p{L}, а не \b: в JS граница слова не видит
+ * кириллицы, и «армии США» правило пропускало.
+ */
+const NATION_WORDS: Array<[RegExp, string]> = [
+  [/американ|(?<!\p{L})США(?!\p{L})/iu, "usa"],
+  [/британ|английск|Королевск\S* (?:ВВС|флот)/i, "uk"],
+  [/немецк|германск|вермахт|люфтваффе|кригсмарине/i, "germany"],
+  [/советск|Красн\S* арми|(?<!\p{L})(?:СССР|РККА)(?!\p{L})/iu, "ussr"],
+  [/японск/i, "japan"],
+  [/французск|\bФранци/i, "france"],
+  [/польск/i, "poland"],
+  [/финск|финлянд/i, "finland"],
+  [/итальянск/i, "italy"],
+  [/нидерланд|голландск/i, "netherlands"],
+  [/австралийск/i, "australia"],
+  [/канадск/i, "canada"],
+  [/венгерск/i, "hungary"],
+  [/китайск/i, "china"],
+  [/югослав/i, "yugoslavia"],
+  [/израильск/i, "israel"],
+  [/ирландск/i, "ireland"],
+];
+
+/** Видимый текст описания - без цитат и подписи канала. */
+function captionBody(captionHtml: string | null | undefined): string {
+  if (!captionHtml) return "";
+  return (captionHtml.split(/<blockquote/i)[0] ?? "").replace(/<[^>]+>/g, " ");
+}
+
+/** Страна, названная в описании первой; пустая строка - не названа. */
+export function captionNation(captionHtml: string | null | undefined): string {
+  const body = captionBody(captionHtml);
+  let best = "";
+  let bestAt = Infinity;
+  for (const [re, nation] of NATION_WORDS) {
+    const at = body.search(re);
+    if (at !== -1 && at < bestAt) {
+      bestAt = at;
+      best = nation;
+    }
+  }
+  return best;
+}
+
+/**
+ * Страна поста для правил чередования: сначала то, о ком пост, потом -
+ * страна архива. Пусто - страна неизвестна, правило такой кадр не держит.
+ */
+export function postNation(c: {
+  caption_html?: string | null;
+  attribution?: string | null;
+  source?: string | null;
+}): string {
+  return captionNation(c.caption_html) || archiveNation(c.attribution, c.source);
+}
 
 /** Страна архива: ключ archiveKey → флаг. Незнакомые архивы - без страны. */
 const ARCHIVE_NATIONS: Record<string, string> = {
@@ -219,6 +295,7 @@ export function rank(
   archiveShare?: Record<string, number>,
   periodShare?: Record<string, number>,
   subjectShare?: Record<string, number>,
+  nationShare?: Record<string, number>,
 ): number {
   const quote = quoteLength(c.caption_html ?? null) >= LONG_QUOTE ? QUOTE_BONUS : 0;
   const staticShot = c.tags?.action === false ? STATIC_PENALTY : 0;
@@ -239,6 +316,12 @@ export function rank(
   const sShare = c.tags?.subject ? (subjectShare?.[c.tags.subject] ?? 0) : 0;
   const subjectOver =
     sShare > SUBJECT_SHARE_SOFT ? (sShare - SUBJECT_SHARE_SOFT) * SUBJECT_SHARE_PENALTY : 0;
+  // и страна поста: американцы на трети недели - перекос, даже если
+  // соседние посты честно чередуются
+  const nation = postNation(c);
+  const nShare = nation ? (nationShare?.[nation] ?? 0) : 0;
+  const nationOver =
+    nShare > NATION_SHARE_SOFT ? (nShare - NATION_SHARE_SOFT) * NATION_SHARE_PENALTY : 0;
   return (
     (c.score ?? 0) +
     quote +
@@ -249,7 +332,8 @@ export function rank(
     leader -
     overshare -
     periodOver -
-    subjectOver
+    subjectOver -
+    nationOver
   );
 }
 
@@ -260,16 +344,23 @@ export function rank(
  * на очереди анализа).
  */
 export function weekShares(
-  rows: Array<{ attribution?: string | null; source?: string | null; tags?: PlanTags }>,
+  rows: Array<{
+    attribution?: string | null;
+    source?: string | null;
+    tags?: PlanTags;
+    caption_html?: string | null;
+  }>,
 ): {
   archiveShare: Record<string, number>;
   periodShare: Record<string, number>;
   subjectShare: Record<string, number>;
+  nationShare: Record<string, number>;
   rubricWeek: Record<string, number>;
 } {
   const archiveShare: Record<string, number> = {};
   const periodShare: Record<string, number> = {};
   const subjectShare: Record<string, number> = {};
+  const nationShare: Record<string, number> = {};
   // рубрики считаем штуками, а не долями: потолок у них недельный и в постах
   const rubricWeek: Record<string, number> = {};
   for (const p of rows) {
@@ -278,13 +369,15 @@ export function weekShares(
     if (key) archiveShare[key] = (archiveShare[key] ?? 0) + 1;
     if (p.tags?.period) periodShare[p.tags.period] = (periodShare[p.tags.period] ?? 0) + 1;
     if (p.tags?.subject) subjectShare[p.tags.subject] = (subjectShare[p.tags.subject] ?? 0) + 1;
+    const nation = postNation(p);
+    if (nation) nationShare[nation] = (nationShare[nation] ?? 0) + 1;
   }
-  for (const share of [archiveShare, periodShare, subjectShare]) {
+  for (const share of [archiveShare, periodShare, subjectShare, nationShare]) {
     for (const key of Object.keys(share)) {
       share[key] = (share[key] ?? 0) / Math.max(1, rows.length);
     }
   }
-  return { archiveShare, periodShare, subjectShare, rubricWeek };
+  return { archiveShare, periodShare, subjectShare, nationShare, rubricWeek };
 }
 
 export type RecentContext = {
@@ -311,6 +404,13 @@ export type RecentContext = {
   periodShare?: Record<string, number>;
   /** Доли тем за неделю: {"infantry": 0.3}. Работает как archiveShare. */
   subjectShare?: Record<string, number>;
+  /** Доли стран за неделю (по тому, о ком пост): {"usa": 0.29}. */
+  nationShare?: Record<string, number>;
+  /**
+   * Страны последних постов, свежие первыми, - по тому, о ком пост
+   * (postNation). Не задано - выводится из архивов, как раньше.
+   */
+  nations?: string[];
   /** Рубрики последних постов, свежие первыми ("" - военное ядро). */
   rubrics?: string[];
   /** Сколько постов каждой рубрики вышло за неделю: {"poster": 1}. */
@@ -387,8 +487,8 @@ export function planAuto(
   const pool = [...reserve].sort(
     (a, b) =>
       (b.priority ?? 0) - (a.priority ?? 0) ||
-      rank(b, recent.archiveShare, recent.periodShare, recent.subjectShare) -
-        rank(a, recent.archiveShare, recent.periodShare, recent.subjectShare) ||
+      rank(b, recent.archiveShare, recent.periodShare, recent.subjectShare, recent.nationShare) -
+        rank(a, recent.archiveShare, recent.periodShare, recent.subjectShare, recent.nationShare) ||
       a.id - b.id,
   );
   const chosen: PlanCandidate[] = [];
@@ -400,7 +500,7 @@ export function planAuto(
   const archives = [...(recent.archives ?? [])];
   // и страны этих архивов: четыре разных американских архива подряд -
   // формально чередование, а на деле «канал про США»
-  const nations = archives.map((a) => ARCHIVE_NATIONS[a] ?? "");
+  const nations = recent.nations ? [...recent.nations] : archives.map((a) => ARCHIVE_NATIONS[a] ?? "");
   // окно скользит: сколько статики в последних RECENT_WINDOW постах
   const staticsWindow: boolean[] = Array.from(
     { length: Math.min(recent.statics ?? 0, RECENT_WINDOW) },
@@ -464,7 +564,7 @@ export function planAuto(
         return false;
       }
       // то же по стране архива - иначе перекос просто меняет флаг
-      const nation = archiveNation(c.attribution, c.source);
+      const nation = postNation(c);
       if (
         nation &&
         nations.slice(0, NATION_WINDOW).filter((n) => n === nation).length >=
@@ -492,7 +592,7 @@ export function planAuto(
       const otherSubject = (c: PlanCandidate) =>
         Boolean(lastSubject) && Boolean(c.tags?.subject) && c.tags?.subject !== lastSubject;
       const otherNation = (c: PlanCandidate) => {
-        const n = archiveNation(c.attribution, c.source);
+        const n = postNation(c);
         return Boolean(lastNation) && n !== "" && n !== lastNation;
       };
       const otherArchive = (c: PlanCandidate) =>
@@ -501,11 +601,16 @@ export function planAuto(
         // смена эпохи, не тащащая за собой повтор темы, - лучший выход:
         // контрольная симуляция 15.09 показала, как добор честно сменил
         // эпоху и поставил вторую aviation подряд
+        // сменить сразу и эпоху, и тему, и страну - лучше всего
+        (c: PlanCandidate) => otherPeriod(c) && otherSubject(c) && otherNation(c),
         (c: PlanCandidate) => otherPeriod(c) && otherSubject(c),
+        // страна поднята выше одиночной смены эпохи: аварийный добор
+        // 12.10 дал два Signal Corps подряд - американцы шли сериями
+        (c: PlanCandidate) => otherNation(c) && otherSubject(c),
         (c: PlanCandidate) => otherPeriod(c) && otherNation(c),
+        otherNation,
         otherPeriod,
         otherSubject,
-        otherNation,
         otherArchive,
       ];
       let other = -1;
@@ -524,7 +629,7 @@ export function planAuto(
     periods.unshift(pick.tags?.period ?? "");
     civiliansWindow.unshift(pick.tags?.military === false);
     archives.unshift(archiveKey(pick.attribution) || (pick.source ?? ""));
-    nations.unshift(archiveNation(pick.attribution, pick.source));
+    nations.unshift(postNation(pick));
     staticsWindow.unshift(pick.tags?.action === false);
     longsWindow.unshift(quoteLength(pick.caption_html ?? null) >= LONG_QUOTE);
     rubrics.unshift(pick.tags?.rubric ?? "");

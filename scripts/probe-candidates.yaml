@@ -2,24 +2,20 @@
 # «probe» в .github/report.trigger). Попадают в config.yaml только те,
 # чьи образцы выдержали просмотр.
 #
-# Проба 1 (18.10): NHHC, Fortepan, Национальная библиотека Ирландии,
-# Anefo-культура, плакаты ПМВ, Хайн и пыльный котёл у LOC.
-# Проба 2: современная армия из NARA и ВВС США, плакаты ВМВ, советский плакат.
-# Проба 3: карикатуры ПМВ и на Гитлера, карикатуры LOC.
-# Проба 4: быт СССР на Commons чистого источника не имеет - рубрика
-# ussr_daily стоит без поставщика.
-# Проба 5 (22.10) - Europeana с личным ключом: европейские архивы, которых
-# нет на Commons. Смотрим поставщиков, лицензии, годы и ссылки на картинки.
+# Проба 1-4 (18.10): см. историю - NHHC, Fortepan, НБ Ирландии, рубрики;
+# быта СССР на Commons нет.
+# Проба 5 (22.10): Europeana по голым словам - много европейских архивов
+# (эстонские музеи, польские библиотеки, Баден-Вюртемберг, Страсбург), но
+# и шум: марки, часы, значки, превью 512 px.
+# Проба 6 - те же запросы в тематических коллекциях: ww1 и photography.
 europeana:
-  - "soldiers 1916"
-  - "trench 1917"
-  - "tank 1918"
-  - "soldiers 1944"
-  - "partisans 1943"
-  - "Warsaw uprising 1944"
-  - "Berlin 1945"
-  - "Budapest 1956"
-  - "Prague 1968"
-  - "Soviet Union 1965"
-  - "poster 1917"
-  - "Moscow 1960"
+  - { q: "soldiers 1916", theme: "ww1" }
+  - { q: "trench", theme: "ww1" }
+  - { q: "tank", theme: "ww1" }
+  - { q: "soldiers 1944", theme: "photography" }
+  - { q: "partisans", theme: "photography" }
+  - { q: "Wehrmacht", theme: "photography" }
+  - { q: "Red Army", theme: "photography" }
+  - { q: "1956 revolution", theme: "photography" }
+  - { q: "Prague 1968", theme: "photography" }
+  - { q: "Soviet", theme: "photography" }

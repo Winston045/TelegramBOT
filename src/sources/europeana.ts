@@ -21,6 +21,11 @@ type EuropeanaItem = {
   rights?: string[];
 };
 
+/** IIIF-рендер «/full/512,/0/default.jpg» → тот же кадр в 1600 px. */
+export function upsizeIiif(url: string): string {
+  return url.replace(/\/full\/(?:\d+,\d*|,\d+|!\d+,\d+)\/0\/default\.jpg/, "/full/1600,/0/default.jpg");
+}
+
 export const europeana: SourceAdapter = {
   name: "europeana",
 
@@ -31,12 +36,12 @@ export const europeana: SourceAdapter = {
       return [];
     }
 
-    const own = locQueries(cfg).map((x) => x.q);
-    const queries = own.length ? own : ["world war"];
+    const own = locQueries(cfg);
+    const queries = own.length ? own : [{ q: "world war", theme: "photography" }];
     const perQuery = Math.ceil(limit / queries.length);
     const items: RawItem[] = [];
 
-    for (const q of queries) {
+    for (const { q, theme, rubric } of queries) {
       const start = (await cursors.get("europeana", q)) + 1; // 1-based
       const url = new URL(API);
       url.searchParams.set("wskey", apiKey);
@@ -47,6 +52,7 @@ export const europeana: SourceAdapter = {
       // фильтр ниже пропускал «creativecommons» вида BY-NC-ND - запрет
       // на коммерцию и переделку, канал такое брать не может
       url.searchParams.set("reusability", "open");
+      if (theme) url.searchParams.set("theme", theme);
       url.searchParams.set("rows", String(perQuery));
       url.searchParams.set("start", String(start));
       url.searchParams.set("profile", "rich");
@@ -68,6 +74,10 @@ export const europeana: SourceAdapter = {
         // Телеграм берёт фото по ссылке только картинкой: tiff и pdf -
         // это 400 при публикации, а не пост
         if (/\.(tiff?|pdf|jp2)(\?|$)/i.test(r.edmIsShownBy[0])) continue;
+        // превью вместо файла: «thumbnail» и IIIF-рендеры в 512 px. IIIF
+        // просим крупнее сами - тот же сервер отдаёт любой размер
+        const imageUrl = upsizeIiif(r.edmIsShownBy[0]);
+        if (/thumbnail/i.test(imageUrl)) continue;
         const rights = r.rights?.[0] ?? "";
         // берём только открытые лицензии, и без NC/ND даже при сбое фильтра API
         if (!/publicdomain|creativecommons/.test(rights) || /\/by-(nc|nd)|\/by-sa-nc|-nc-|-nd\b/.test(rights)) continue;
@@ -76,7 +86,7 @@ export const europeana: SourceAdapter = {
         items.push({
           sourceId: r.id,
           sourceUrl: `https://www.europeana.eu/item${r.id}`,
-          imageUrl: r.edmIsShownBy[0],
+          imageUrl,
           title: r.title?.[0],
           description: r.dcDescription?.[0],
           lang: "en",
@@ -86,6 +96,7 @@ export const europeana: SourceAdapter = {
           // архив-поставщик нужен балансиру всегда, и у PD тоже: иначе все
           // кадры Europeana для чередования - один архив без страны
           attribution: `${provider} / ${isPd ? "PD" : rights}`,
+          ...(rubric ? { rubric } : {}),
         });
       }
     }

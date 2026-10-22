@@ -3,8 +3,12 @@ import { resolve } from "node:path";
 import { parse } from "yaml";
 import { RUBRICS } from "./rubrics.js";
 
-/** Запрос LOC: строка или запрос с рубрикой. */
-export type LocQuery = string | { q: string; rubric?: string };
+/**
+ * Запрос LOC или Europeana: строка или запрос с рубрикой. theme - только
+ * для Europeana: тематическая коллекция («photography», «ww1»), без неё
+ * поиск по словам приносит марки, часы и спортивные значки (проба 22.10).
+ */
+export type LocQuery = string | { q: string; rubric?: string; theme?: string };
 
 export type SourceConfig = {
   enabled: boolean;
@@ -28,7 +32,7 @@ export type SourceConfig = {
 };
 
 /** Запросы LOC в едином виде: {q, rubric}. */
-export function locQueries(cfg: SourceConfig): Array<{ q: string; rubric?: string }> {
+export function locQueries(cfg: SourceConfig): Array<{ q: string; rubric?: string; theme?: string }> {
   return (cfg.queries ?? []).map((q) => (typeof q === "string" ? { q } : q));
 }
 

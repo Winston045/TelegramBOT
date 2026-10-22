@@ -57,6 +57,15 @@ export function isNonPhotoRecord(title?: string | null, description?: string | n
   );
 }
 
+/**
+ * Порог ширины кадра: у отдельных архивов он свой. Живой замер 16.08: у
+ * РИА Новости общий порог отсекал 4 кадра из 6, и единственный советский
+ * архив не доходил до ленты вовсе.
+ */
+export function minWidthFor(item: Pick<RawItem, "attribution">, cfg: AppConfig): number {
+  return cfg.collect.min_image_width_by_archive?.[archiveKey(item.attribution)] ?? cfg.collect.min_image_width;
+}
+
 /** Дешёвый префильтр до vision-скоринга. Возвращает причину брака или null. */
 export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null {
   if (!item.year) return "no_year";
@@ -72,11 +81,7 @@ export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null
   if ((min_year && item.year < min_year) || (max_year && item.year > max_year)) {
     return "year_out_of_range";
   }
-  // порог ширины: у отдельных архивов он свой. Живой замер 16.08: у РИА
-  // Новости общий порог отсекал 4 кадра из 6, и единственный советский
-  // архив не доходил до ленты вовсе
-  const perArchive = cfg.collect.min_image_width_by_archive?.[archiveKey(item.attribution)];
-  const minWidth = perArchive ?? cfg.collect.min_image_width;
+  const minWidth = minWidthFor(item, cfg);
   if (item.imageWidth !== undefined && item.imageWidth < minWidth) {
     return "too_small";
   }

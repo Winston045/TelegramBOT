@@ -18,7 +18,7 @@ import { buildAnalysisQueue } from "../src/queue.js";
 import { memoryCursorStore } from "../src/cursors.js";
 import { prefilter } from "../src/prefilter.js";
 import { pickBalanced } from "../src/balance.js";
-import { archiveKey, planAuto, rank, weekShares, type PlanCandidate } from "../src/plan.js";
+import { archiveKey, planAuto, postNation, rank, weekShares, type PlanCandidate } from "../src/plan.js";
 import { passesGate } from "../src/scoring.js";
 
 type Row = PlanCandidate & {
@@ -99,7 +99,7 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 10) {
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
   const { data: weekPosts } = await db
     .from("candidates")
-    .select("attribution, source, tags")
+    .select("attribution, source, tags, caption_html")
     .eq("status", "published")
     .gte("published_at", weekAgo);
   const shares = weekShares((weekPosts ?? []) as Array<Row>);
@@ -113,6 +113,7 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 10) {
     statics: 0,
     longs: 0,
     archives: [] as string[],
+    nations: [] as string[],
     rubrics: [] as string[],
     ...shares,
   };
@@ -127,6 +128,7 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 10) {
     recent.subjects.unshift(row.tags?.subject ?? "");
     recent.periods.unshift(row.tags?.period ?? "");
     recent.archives.unshift(archiveKey(row.attribution));
+    recent.nations.unshift(postNation(row));
     recent.rubrics.unshift(row.tags?.rubric ?? "");
     if (row.tags?.rubric) {
       recent.rubricWeek[row.tags.rubric] = (recent.rubricWeek[row.tags.rubric] ?? 0) + 1;

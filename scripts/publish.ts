@@ -20,6 +20,7 @@ import {
   RESERVE_TTL_DAYS,
   archiveKey,
   planAuto,
+  postNation,
   quoteLength,
   weekShares,
 } from "../src/plan.js";
@@ -46,7 +47,7 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
   const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
   const { data: weekPosts } = await db
     .from("candidates")
-    .select("attribution, source, tags")
+    .select("attribution, source, tags, caption_html")
     .eq("status", "published")
     .gte("published_at", weekAgo);
   // доли эпох (замер 24.08: ВМВ 70% и девятки подряд) и тем (замер
@@ -56,6 +57,7 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
       attribution?: string | null;
       source?: string | null;
       tags?: { period?: string; subject?: string; rubric?: string } | null;
+      caption_html?: string | null;
     }>,
   );
 
@@ -75,6 +77,10 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
         ((p as { source?: string | null }).source ?? ""),
     ),
     rubrics: posts.map((p) => (p.tags as { rubric?: string } | null)?.rubric ?? ""),
+    // страна поста - по тому, о ком подпись, а не по архиву
+    nations: posts.map((p) =>
+      postNation(p as { caption_html?: string | null; attribution?: string | null; source?: string | null }),
+    ),
     ...shares,
   };
 }

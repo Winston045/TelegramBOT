@@ -9,7 +9,7 @@
  * Запуск: npx tsx scripts/diversity.ts [сколько последних]
  */
 import { getDb } from "../src/db.js";
-import { archiveKey, archiveNation } from "../src/plan.js";
+import { archiveKey, archiveNation, postNation } from "../src/plan.js";
 
 const LIMIT = Number(process.argv[2]) || 60;
 
@@ -108,6 +108,11 @@ async function main() {
   // страна архива - то, что видит правило чередования; «о ком пост» -
   // то, что видит читатель: британский архив тоже снимал американцев
   const nations = rows.map((r) => archiveNation(r.attribution, r.source) || "(страна не задана)");
+  const postNations = rows.map((r) => postNation(r) || "(не названа)");
+  console.log("\nСТРАНЫ ПОСТОВ (о ком подпись, иначе страна архива)");
+  spread(postNations).forEach((l) => console.log(l));
+  console.log("\nсерии подряд:");
+  runs(postNations, "страна поста").forEach((l) => console.log(l));
   console.log("\nСТРАНЫ АРХИВОВ");
   spread(nations).forEach((l) => console.log(l));
   console.log("\nсерии подряд:");

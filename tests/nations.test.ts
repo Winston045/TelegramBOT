@@ -1,0 +1,110 @@
+import { describe, expect, it } from "vitest";
+import {
+  captionNation,
+  NATION_WINDOW,
+  planAuto,
+  postNation,
+  rank,
+  weekShares,
+  type PlanCandidate,
+} from "../src/plan.js";
+import { buildAnalysisQueue } from "../src/queue.js";
+import type { RawItem } from "../src/sources/types.js";
+
+const cap = (body: string, quote = "Франция, 1944 год.") =>
+  `${body}\n<blockquote expandable>${quote}</blockquote>\n\n<a href="https://t.me/x">X</a>`;
+
+function post(id: number, body: string, attribution: string, subject = `s${id}`): PlanCandidate {
+  return { id, caption_html: cap(body), score: 60, tags: { subject, period: `p${id % 3}` }, attribution };
+}
+
+describe("о ком пост", () => {
+  it("страна, названная в описании первой", () => {
+    expect(captionNation(cap("Американские солдаты осматривают подбитый немецкий танк."))).toBe("usa");
+    expect(captionNation(cap("Немецкий танк, подбитый американскими солдатами."))).toBe("germany");
+    expect(captionNation(cap("Пехотинцы 35-й дивизии армии США продвигаются по улице."))).toBe("usa");
+    expect(captionNation(cap("Бойцы Красной армии под прикрытием дымовой завесы."))).toBe("ussr");
+    expect(captionNation(cap("Британские солдаты готовят к подъёму аэростат."))).toBe("uk");
+  });
+
+  it("цитата и подпись канала на страну не влияют", () => {
+    expect(captionNation(cap("Колонна на марше.", "США, 1944 год."))).toBe("");
+  });
+
+  it("подпись важнее архива: американцы из британского архива - это США", () => {
+    expect(postNation({ caption_html: cap("Американские морпехи на берегу."), attribution: "IWM" })).toBe("usa");
+    // страны в тексте нет - остаётся страна архива
+    expect(postNation({ caption_html: cap("Колонна на марше."), attribution: "IWM" })).toBe("uk");
+  });
+});
+
+describe("чередование стран по смыслу поста", () => {
+  it("американец из чужого архива не встаёт сразу после американца", () => {
+    const pool = [
+      post(1, "Американский плакат времён Второй мировой.", "WWII posters"),
+      post(2, "Финские лыжники на привале.", "SA-kuva"),
+    ];
+    pool[0]!.score = 90;
+    const [pick] = planAuto(pool, { subjects: [], civilian: false, nations: ["usa"] }, 1);
+    expect(pick?.id).toBe(2);
+  });
+
+  it("одна страна - не чаще раза в три поста", () => {
+    expect(NATION_WINDOW).toBe(3);
+    const pool = [
+      post(1, "Американские пехотинцы в Арденнах.", "NARA"),
+      post(2, "Американские танкисты у «Шермана».", "Library of Congress"),
+      post(3, "Немецкие сапёры наводят мост.", "Bundesarchiv"),
+      post(4, "Финские лыжники на привале.", "SA-kuva"),
+      post(5, "Польские уланы на марше.", "Narodowe Archiwum Cyfrowe"),
+    ];
+    const plan = planAuto(pool, { subjects: [], civilian: false }, 5);
+    const nations = plan.map((c) => postNation(c));
+    for (let i = 1; i < nations.length; i++) {
+      const window = nations.slice(Math.max(0, i - (NATION_WINDOW - 1)), i);
+      if (nations[i] === "usa") expect(window).not.toContain("usa");
+    }
+  });
+
+  it("страна, занявшая больше пятой части недели, уступает равному кадру", () => {
+    const us = post(1, "Американские пехотинцы в Арденнах.", "NARA");
+    const fi = post(2, "Финские лыжники на привале.", "SA-kuva");
+    const week = weekShares([
+      { caption_html: cap("Американские лётчики."), attribution: "NARA" },
+      { caption_html: cap("Американские моряки."), attribution: "NHHC" },
+      { caption_html: cap("Немецкие сапёры."), attribution: "Bundesarchiv" },
+    ]);
+    expect(week.nationShare.usa).toBeCloseTo(2 / 3);
+    expect(rank(us, undefined, undefined, undefined, week.nationShare)).toBeLessThan(
+      rank(fi, undefined, undefined, undefined, week.nationShare),
+    );
+  });
+});
+
+describe("очередь анализа: потолок страны архива", () => {
+  const item = (i: number, attribution: string, source = "commons"): RawItem & { source: string } => ({
+    sourceId: String(i),
+    sourceUrl: "https://x",
+    imageUrl: "https://x.jpg",
+    title: `Frame ${i}`,
+    lang: "en",
+    license: "PD",
+    year: 1950,
+    place: "x",
+    attribution,
+    source,
+  });
+
+  it("США вместе - не больше четверти очереди, даже из разных архивов", () => {
+    const us = ["NARA", "Library of Congress", "US Army Signal Corps", "NHHC", "USAF"];
+    const others = ["Bundesarchiv", "SA-kuva", "IWM", "Anefo", "Fortepan", "AWM"];
+    const items = Array.from({ length: 60 }, (_, i) =>
+      i % 2 ? item(i, others[(i >> 1) % others.length]!) : item(i, us[(i >> 1) % us.length]!),
+    );
+    const { queue, cuts } = buildAnalysisQueue(items, 30);
+    const usCount = queue.filter((q) => us.includes(q.attribution!)).length;
+    expect(usCount).toBeLessThanOrEqual(7);
+    expect(cuts.nationCapped).toBeGreaterThan(0);
+    expect(queue).toHaveLength(30);
+  });
+});

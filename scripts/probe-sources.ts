@@ -19,6 +19,7 @@ import { fetchQuery, mapLocResult } from "../src/sources/loc.js";
 import { europeana } from "../src/sources/europeana.js";
 import { memoryCursorStore } from "../src/cursors.js";
 import type { RawItem } from "../src/sources/types.js";
+import type { LocQuery } from "../src/config.js";
 
 type Candidates = {
   commons?: Array<{
@@ -31,7 +32,7 @@ type Candidates = {
   }>;
   loc?: string[];
   /** запросы Europeana - пробуются, только если задан EUROPEANA_API_KEY */
-  europeana?: string[];
+  europeana?: LocQuery[];
 };
 
 const PROBE = 12;
@@ -110,10 +111,11 @@ async function main() {
       for (const q of cand.europeana) {
         try {
           const items = await europeana.fetch(PROBE, { enabled: true, weight: 1, queries: [q] }, memoryCursorStore());
-          console.log(`  «${q}» → ${items.length ? summary(items) : "ПУСТО"}`);
+          const label = typeof q === "string" ? q : `${q.q}${q.theme ? ` [${q.theme}]` : ""}`;
+          console.log(`  «${label}» → ${items.length ? summary(items) : "ПУСТО"}`);
           samples(items);
         } catch (err) {
-          console.log(`  «${q}» → ОТКАЗ ${(err as Error).message}`);
+          console.log(`  «${JSON.stringify(q)}» → ОТКАЗ ${(err as Error).message}`);
         }
       }
     }
