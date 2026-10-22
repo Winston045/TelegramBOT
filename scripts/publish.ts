@@ -14,7 +14,7 @@ import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/sched
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { isDuplicate } from "../src/dhash.js";
 import {
-  APPROVED_PRIORITY,
+  approvedPriority,
   LONG_QUOTE,
   RECENT_WINDOW,
   RESERVE_TTL_DAYS,
@@ -143,7 +143,7 @@ async function main() {
     // Бундесархива подряд, хотя в очереди ждал британский)
     const res = await db
       .from("candidates")
-      .select("id, image_url, image_hash, caption_html, score, tags, attribution, source, status")
+      .select("id, image_url, image_hash, caption_html, score, tags, attribution, source, status, created_at")
       .eq("status", "approved")
       .not("caption_html", "is", null)
       .is("scheduled_at", null)
@@ -183,7 +183,7 @@ async function main() {
     if (autoPublish) {
       const rres = await db
         .from("candidates")
-        .select("id, image_url, image_hash, caption_html, score, tags, attribution, source, status")
+        .select("id, image_url, image_hash, caption_html, score, tags, attribution, source, status, created_at")
         .in("status", ["new", "shown"])
         .not("caption_html", "is", null)
         // срок годности резерва: у старых кадров чаще мертвеет ссылка
@@ -202,7 +202,7 @@ async function main() {
       const recent = await recentContext(db, now);
       const approvedIds = new Set(approved.map((c) => c.id));
       const pool = [
-        ...approved.map((c) => ({ ...c, priority: APPROVED_PRIORITY })),
+        ...approved.map((c) => ({ ...c, priority: approvedPriority(c.created_at, now) })),
         ...reserve,
       ];
       // тот же планировщик, что показывает /queue - предпросмотр не врёт

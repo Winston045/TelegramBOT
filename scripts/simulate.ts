@@ -19,7 +19,7 @@ import { memoryCursorStore } from "../src/cursors.js";
 import { prefilter } from "../src/prefilter.js";
 import { pickBalanced } from "../src/balance.js";
 import {
-  APPROVED_PRIORITY,
+  approvedPriority,
   LONG_QUOTE,
   RECENT_WINDOW,
   RESERVE_TTL_DAYS,
@@ -150,7 +150,7 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
   const window: Row[] = [...last];
 
   const pool: Array<Pooled & { priority?: number }> = [
-    ...approved.map((c) => ({ ...c, priority: APPROVED_PRIORITY })),
+    ...approved.map((c) => ({ ...c, priority: approvedPriority(c.created_at, new Date()) })),
     ...reserve,
   ];
   const feed: Pooled[] = [];

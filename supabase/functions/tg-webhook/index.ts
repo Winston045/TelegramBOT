@@ -1018,7 +1018,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
     // бы с тем, что реально выберет публикатор
     db
       .from("candidates")
-      .select("id, caption_html, score, tags, attribution, source")
+      .select("id, caption_html, score, tags, attribution, source, created_at")
       .eq("status", "approved")
       .not("caption_html", "is", null)
       .is("scheduled_at", null)

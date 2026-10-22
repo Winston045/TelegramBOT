@@ -95,7 +95,11 @@ export async function countAvailable(now = new Date()): Promise<number> {
       .from("candidates")
       .select("id", { count: "exact", head: true })
       .eq("status", "approved")
-      .not("caption_html", "is", null),
+      .not("caption_html", "is", null)
+      // одобрение стареет вместе с резервом (approvedPriority): старые
+      // одобренные выйдут, но запасом не считаются - иначе сторож не
+      // собирал свежего, и лента жила остатками сентябрьской очереди
+      .gte("created_at", freshSince),
   ]);
   if (reserve.error) throw new Error(`чтение резерва: ${reserve.error.message}`);
   if (approved.error) throw new Error(`чтение очереди: ${approved.error.message}`);

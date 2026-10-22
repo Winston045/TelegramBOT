@@ -34,6 +34,8 @@ export type PlanCandidate = {
   source?: string | null;
   /** Ярус очереди: одобренным - APPROVED_PRIORITY, резерву - 0. */
   priority?: number;
+  /** Когда кадр собран - по нему одобрение стареет (approvedPriority). */
+  created_at?: string | null;
 };
 
 /**
@@ -64,6 +66,23 @@ export const RESERVE_TTL_DAYS = 10;
  * сильный резервный кадр мог обойти подходящий одобренный.
  */
 export const APPROVED_PRIORITY = 1;
+
+/**
+ * Ярус одобренного поста. Одобрение стареет вместе с резервом: пост,
+ * собранный больше RESERVE_TTL_DAYS назад, остаётся в очереди и выходит,
+ * но уже на общих основаниях - по рангу, без права вперёд.
+ *
+ * Симуляция 22.10: в очереди 14 одобренных, четыре из них - американская
+ * пехота с оценкой 45-52, ждущая с 7 сентября. Ярус ставил их вперёд
+ * всего, правило стран лишь разводило их через пост - и лента шла
+ * «американец, кто-то, американец». А сторож добора считал их запасом и
+ * не собирал свежего: резерва в сроке годности - ноль.
+ */
+export function approvedPriority(createdAt: string | null | undefined, now: Date): number {
+  if (!createdAt) return APPROVED_PRIORITY;
+  const age = now.getTime() - new Date(createdAt).getTime();
+  return age <= RESERVE_TTL_DAYS * 24 * 3600 * 1000 ? APPROVED_PRIORITY : 0;
+}
 
 /** Откуда пост попал в план - это видно редактору в /queue. */
 export type PlanKind = "scheduled" | "approved" | "auto";
@@ -742,7 +761,10 @@ export function buildPlan(input: PlanInput, count: number): PlanEntry[] {
   // публикатор, иначе предпросмотр врал бы о порядке
   const approvedIds = new Set(input.approved.map((c) => c.id));
   const pool: PlanCandidate[] = [
-    ...input.approved.map((c) => ({ ...c, priority: (c.priority ?? 0) + APPROVED_PRIORITY })),
+    ...input.approved.map((c) => ({
+      ...c,
+      priority: (c.priority ?? 0) + approvedPriority(c.created_at, input.now),
+    })),
     ...(input.autoPublish ? input.reserve : []),
   ];
   const want = Math.max(input.approved.length, count - entries.length);

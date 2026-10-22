@@ -108,3 +108,22 @@ describe("очередь анализа: потолок страны архив�
     expect(queue).toHaveLength(30);
   });
 });
+
+describe("одобрение стареет вместе с резервом", async () => {
+  const { approvedPriority, APPROVED_PRIORITY, RESERVE_TTL_DAYS } = await import("../src/plan.js");
+  const now = new Date("2026-10-22T07:00:00Z");
+  const daysAgo = (d: number) => new Date(now.getTime() - d * 24 * 3600 * 1000).toISOString();
+
+  it("свежий одобренный - вперёд, старый - на общих основаниях", () => {
+    expect(approvedPriority(daysAgo(2), now)).toBe(APPROVED_PRIORITY);
+    expect(approvedPriority(daysAgo(RESERVE_TTL_DAYS + 1), now)).toBe(0);
+    expect(approvedPriority(undefined, now)).toBe(APPROVED_PRIORITY);
+  });
+
+  it("старая американская пехота из очереди не обходит сильный свежий кадр", () => {
+    const stale = { ...post(1, "Американские пехотинцы на марше.", "US Army Signal Corps"), score: 52, priority: approvedPriority(daysAgo(45), now) };
+    const fresh = { ...post(2, "Подбитая советская самоходка ИСУ-152.", "Fortepan"), score: 75 };
+    const [pick] = planAuto([stale, fresh], { subjects: [], civilian: false }, 1);
+    expect(pick?.id).toBe(2);
+  });
+});

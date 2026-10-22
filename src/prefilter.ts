@@ -38,6 +38,12 @@ export type RejectReason =
 const NON_PHOTO_CARRIER =
   /(?:^|\|)\s*\d+\s+(?:drawings?|paintings?|posters?|watercolou?rs?|sketch(?:es)?|cartoons?|prints?\s*:\s*(?:lithograph|woodcut|etching|engraving|screenprint|serigraph)\w*)\b/i;
 const NON_PHOTO_SHOWS = /\b(?:drawing|poster|painting|cartoon|sketch|lithograph) shows\b/i;
+/**
+ * Как пишут о рисунке музеи Europeana (Wellcome Collection): «Drawing by
+ * F. Dadd: red cross soldiers...», «Gouache painting, c. 1916». Симуляция
+ * 22.10 поставила такой рисунок в очередь анализа как фотографию.
+ */
+const NON_PHOTO_BY = /\b(?:drawing|painting|sketch|watercolou?r|etching|engraving) by\b|\b(?:gouache|oil|watercolou?r) painting\b/i;
 
 /** Архив прямо называет носитель фотографией. */
 const PHOTO_CARRIER =
@@ -53,7 +59,8 @@ export function isNonPhotoRecord(title?: string | null, description?: string | n
   const fields = [title ?? "", ...desc.split("|")];
   return (
     fields.some((f) => NON_PHOTO_CARRIER.test(f.trimStart())) ||
-    NON_PHOTO_SHOWS.test(`${title ?? ""} ${desc}`)
+    NON_PHOTO_SHOWS.test(`${title ?? ""} ${desc}`) ||
+    NON_PHOTO_BY.test(`${title ?? ""} ${desc}`)
   );
 }
 

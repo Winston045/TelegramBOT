@@ -218,3 +218,19 @@ describe("свой порог ширины у отдельных архивов"
     );
   });
 });
+
+describe("рисунки музеев Europeana", () => {
+  it("«Drawing by» и «gouache painting» - не фотографии", () => {
+    expect(
+      rejectReason({ ...good, title: "Drawing by F. Dadd: red cross soldiers and wounded, 1916" }, cfg),
+    ).toBe("not_photo");
+    expect(
+      rejectReason(
+        { ...good, title: "World War One: three soldiers sterilising water. Gouache painting, c. 1916." },
+        cfg,
+      ),
+    ).toBe("not_photo");
+    // а снимок со словом drawing в сюжете остаётся снимком
+    expect(rejectReason({ ...good, title: "Soldiers drawing water by the river" }, cfg)).toBeNull();
+  });
+});
