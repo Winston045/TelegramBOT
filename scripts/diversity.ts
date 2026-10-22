@@ -9,7 +9,7 @@
  * Запуск: npx tsx scripts/diversity.ts [сколько последних]
  */
 import { getDb } from "../src/db.js";
-import { archiveKey } from "../src/plan.js";
+import { archiveKey, archiveNation } from "../src/plan.js";
 
 const LIMIT = Number(process.argv[2]) || 60;
 
@@ -104,6 +104,19 @@ async function main() {
   spread(subjects).forEach((l) => console.log(l));
   console.log("\nсерии подряд:");
   runs(subjects, "тема").forEach((l) => console.log(l));
+
+  // страна архива - то, что видит правило чередования; «о ком пост» -
+  // то, что видит читатель: британский архив тоже снимал американцев
+  const nations = rows.map((r) => archiveNation(r.attribution, r.source) || "(страна не задана)");
+  console.log("\nСТРАНЫ АРХИВОВ");
+  spread(nations).forEach((l) => console.log(l));
+  console.log("\nсерии подряд:");
+  runs(nations, "страна").forEach((l) => console.log(l));
+  const aboutUs = rows.filter((r) => /американ|США|U\.S\.|US Army/i.test(r.caption_html ?? "")).length;
+  console.log(
+    `\nО КОМ ПОСТ: в подписи американцы или США - ${aboutUs} из ${rows.length} ` +
+      `(${Math.round((aboutUs / rows.length) * 100)}%)`,
+  );
 
   console.log("\nРЕГИОНЫ");
   spread(regions).forEach((l) => console.log(l));
