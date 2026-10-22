@@ -335,10 +335,24 @@ sources:
     enabled: false       # нужен бесплатный ключ: секрет NARA_API_KEY
     weight: 20
     queries: ["world war", "infantry"]
+  # Europeana (личный ключ с 22.10, секрет EUROPEANA_API_KEY): десятки
+  # европейских архивов, которых нет на Commons, - эстонские музеи,
+  # польские библиотеки, Страсбург, Баден-Вюртемберг. Противовес
+  # американскому перекосу (разбор 22.10: США в 29% постов). Ищем только в
+  # тематических коллекциях: по голым словам шли марки, часы и значки.
+  # Пробы 22.10: годных больше всего в ww1 и по «soldiers 1944»; запросы
+  # без года (Wehrmacht, Red Army) отдают записи без даты - мимо
   europeana:
-    enabled: false       # нужен бесплатный ключ: секрет EUROPEANA_API_KEY
-    weight: 20
-    queries: ["world war 1914-1918", "world war 1939-1945"]
+    enabled: true
+    weight: 12
+    queries:
+      - { q: "soldiers 1916", theme: "ww1" }
+      - { q: "tank", theme: "ww1" }
+      - { q: "soldiers 1917", theme: "ww1" }
+      - { q: "front 1915", theme: "ww1" }
+      - { q: "soldiers 1944", theme: "photography" }
+      - { q: "soldiers 1941", theme: "photography" }
+      - { q: "1956 revolution", theme: "photography" }
 
 collect:
   raw_limit: 150         # сколько тянем из архивов
