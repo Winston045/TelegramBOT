@@ -36,12 +36,18 @@ type Row = {
   tags: { rubric?: string } | null;
 };
 
-const plain = (html: string | null) =>
-  (html ?? "")
-    .replace(/<blockquote[^>]*>/g, "\n  » ")
+/** Подпись без футера канала, цитаты - строками «» с отступом. */
+const plain = (html: string | null) => {
+  const raw = html ?? "";
+  // футер - последний блок после пустой строки со ссылкой канала; режем
+  // его ДО разметки цитат, иначе перенос перед цитатой съедал и их
+  const cut = raw.lastIndexOf("\n\n");
+  const body = cut !== -1 && raw.slice(cut).includes("<a href=") ? raw.slice(0, cut) : raw;
+  return body
+    .replace(/\n?<blockquote[^>]*>/g, "\n  » ")
     .replace(/<[^>]+>/g, "")
-    .replace(/\n\n.*$/s, "")
     .trim();
+};
 
 async function main() {
   const cfg = loadConfig();
