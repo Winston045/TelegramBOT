@@ -137,6 +137,27 @@ describe("числа изюминки - только из источников",
     expect(unsupportedNumbers("Высота 1 600 метров.", "altitude 1600 m")).toEqual([]);
   });
 
+  it("числа словами ловятся так же, как цифрами", () => {
+    const src = "ISU-152 weighed 47.3 tonnes; crew of five; 4,075 built";
+    expect(unsupportedNumbers("Самоходка весила сорок шесть тонн.", src)).toEqual(["46"]);
+    expect(unsupportedNumbers("Таких машин построили около четырёх тысяч.", src)).toEqual(["4000"]);
+    expect(unsupportedNumbers("Выпустили полторы тысячи машин.", "1,500 vehicles")).toEqual([]);
+    expect(unsupportedNumbers("Двести пятьдесят танков.", "two hundred and fifty tanks")).toEqual([]);
+  });
+
+  it("обороты речи - не числа", () => {
+    expect(unsupportedNumbers("Тысячи солдат и сотни машин, десятки орудий.", "")).toEqual([]);
+    expect(unsupportedNumbers("Один из пяти экипажей вернулся с семьёй.", "")).toEqual([]);
+    // год словами - всё равно год, его держит validateYears
+    expect(unsupportedNumbers("В тысяча девятьсот сорок первом.", "")).toEqual([]);
+  });
+
+  it("множитель после цифр: «47 тысяч» равно «47,000» источника", () => {
+    expect(unsupportedNumbers("Погибли 47 тысяч человек.", "about 47,000 dead")).toEqual([]);
+    expect(unsupportedNumbers("Тираж 1,5 млн экземпляров.", "1.5 million copies")).toEqual([]);
+    expect(unsupportedNumbers("Погибли 50 тысяч человек.", "about 47,000 dead")).toEqual(["50000"]);
+  });
+
   it("плохая правка редактора уступает первому заходу, плохой первый заход - снимается", () => {
     const first = { caption: "Т.", quote: "Самоходка весила 47,3 тонны.", quote_kind: "context" as const, quote_place: "Будапешт, 1956 год." };
     const edited = { ...first, quote: "Самоходка весила 46 тонн." };

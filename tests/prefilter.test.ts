@@ -234,3 +234,13 @@ describe("рисунки музеев Europeana", () => {
     expect(rejectReason({ ...good, title: "Soldiers drawing water by the river" }, cfg)).toBeNull();
   });
 });
+
+describe("стереокарточки на языке музея", () => {
+  it("немецкие, французские и русские пометки ловятся до Gemini", () => {
+    for (const title of ["Stereofoto: Schützengraben bei Ypern", "Vue stéréoscopique, tranchée 1916", "Стереопара: окоп"]) {
+      expect(rejectReason({ ...good, title }, cfg), title).toBe("stereograph");
+    }
+    // слово «stereo» само по себе - не повод: «Stereo equipment» в кадре
+    expect(rejectReason({ ...good, title: "Soldiers with stereo equipment" }, cfg)).toBeNull();
+  });
+});

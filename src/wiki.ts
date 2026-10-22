@@ -11,7 +11,13 @@
  * выдуманными.
  */
 
-const UA = "story-team-bot/0.1 (Telegram history channel; contact via t.me/Story_Teams)";
+/**
+ * Подпись для всех запросов к Викимедиа. Правила их API требуют в
+ * User-Agent контакт - ссылку или почту; клиентов без контакта
+ * датацентровые лимиты режут первыми.
+ */
+export const WIKIMEDIA_UA = "story-team-bot/0.1 (https://t.me/Story_Teams; Telegram history channel)";
+const UA = WIKIMEDIA_UA;
 const INTRO_LIMIT = 1200;
 const RETRIES = 1;
 const RETRY_DELAY_MS = 2_000;

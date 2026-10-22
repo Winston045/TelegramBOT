@@ -94,8 +94,10 @@ export function rejectReason(item: RawItem, cfg: AppConfig): RejectReason | null
   }
 
   const haystack = `${item.title ?? ""} ${item.description ?? ""}`.toLowerCase();
-  // стереокарточки: два одинаковых кадра на картонке - в канал не годятся
-  if (/stereograph|stereoscop|stereo card|stereo view/.test(haystack)) {
+  // стереокарточки: два одинаковых кадра на картонке - в канал не годятся.
+  // Europeana пишет на языке музея: «Stereofoto», «stéréoscopie» - сбор
+  // 22.10 отдал такую карточку Gemini и получил оценку 15
+  if (/st[eé]r[eé]o(?:graph|scop|skop|card|view|foto|photo|bild|aufnahm|gram|karte|kort|pair)|stereo[- ](?:card|view|pair|photo)|стерео/.test(haystack)) {
     return "stereograph";
   }
   // карточка целого альбома вместо снимка: у LOC такие приходят с обычной

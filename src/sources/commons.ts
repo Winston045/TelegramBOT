@@ -12,7 +12,7 @@ import type { SourceConfig } from "../config.js";
 import type { RawItem, SourceAdapter } from "./types.js";
 import type { CursorStore } from "../cursors.js";
 import { mapCommonsPage, type CommonsPage } from "./bundesarchiv.js";
-import { wikiIntro } from "../wiki.js";
+import { WIKIMEDIA_UA, wikiIntro } from "../wiki.js";
 
 const API = "https://commons.wikimedia.org/w/api.php";
 
@@ -71,8 +71,7 @@ export async function searchCategory(
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url, {
       headers: {
-        "user-agent":
-          "story-team-bot/0.1 (Telegram history channel; contact via t.me/Story_Teams)",
+        "user-agent": WIKIMEDIA_UA,
         accept: "application/json",
       },
       signal: AbortSignal.timeout(30_000),
@@ -244,6 +243,16 @@ export const events = commonsAdapter("events");
 const SERVICE_CATEGORY =
   /images? from|photographs? from|files? from|media (from|needing)|cc-|pd-|licen|scan|uploaded|wikimedia|self-published|extracted|retouched|flickr|taken (on|with)|\bde\b-|german federal archive/i;
 
+/**
+ * Категории-пересечения, которые есть только на Викискладе: «1944 in
+ * Mulhouse», «Photographs by Horst Sturm», «Willys MB during World War
+ * II», «Construction workers in Berlin (East) 1968». Статьи с таким
+ * названием в Википедии нет, а запрос тратит её лимит - полный сбор 22.10
+ * спросил по восемь таких тем на кадр, и все ушли в 429.
+ */
+export const COMMONS_ONLY_CATEGORY =
+  /^\d{4}s? in |\b(photographs|pictures|portraits|images) (by|of)\b|black and white|\bin (\w+ )?service\b|during world war|\b(1[89]|20)\d{2}$|^people (of|in|with)|^(men|women|children|soldiers|groups?) (of|in|with)\b/i;
+
 /** Тематические категории файла: сперва те, что перекликаются с заголовком. */
 async function fileTopics(pageId: string, title?: string): Promise<string[]> {
   const url = new URL(API);
@@ -256,7 +265,7 @@ async function fileTopics(pageId: string, title?: string): Promise<string[]> {
   url.searchParams.set("clshow", "!hidden");
 
   const res = await fetch(url, {
-    headers: { "user-agent": "story-team-bot/0.1 (contentbot)" },
+    headers: { "user-agent": WIKIMEDIA_UA },
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) return [];
@@ -279,7 +288,7 @@ async function fileTopics(pageId: string, title?: string): Promise<string[]> {
 
   return (body.query?.pages?.[0]?.categories ?? [])
     .map((c) => c.title.replace(/^Category:/, ""))
-    .filter((t) => !SERVICE_CATEGORY.test(t) && !/^\d{4}$/.test(t))
+    .filter((t) => !SERVICE_CATEGORY.test(t) && !COMMONS_ONLY_CATEGORY.test(t) && !/^\d{4}$/.test(t))
     .sort((a, b) => relevance(b) - relevance(a) || a.length - b.length)
     .slice(0, 8);
 }

@@ -17,7 +17,7 @@ import { isBarePlaceDate, metadataBlock } from "./caption.js";
 
 export { isBarePlaceDate };
 import type { RawItem } from "./sources/types.js";
-import { geminiJson } from "./gemini.js";
+import { GeminiBusyError, geminiJson } from "./gemini.js";
 
 type Verdict = {
   verdict: "ok" | "weak";
@@ -131,6 +131,13 @@ export async function reviewQuote(
   generated: GeneratedCaption,
   extraContext?: string,
   subjectContext?: string,
+  /**
+   * Пробросить «все модели перегружены» наверх, а не молча оставить
+   * цитату первого захода. Сбор 22.10: редактор дважды пропущен с
+   * ожиданием 196-240 с, и изюминки облегчённой модели ушли в резерв
+   * без вычитки, хотя времени дождаться было больше десяти минут.
+   */
+  opts: { throwBusy?: boolean } = {},
 ): Promise<{ caption: GeneratedCaption; rewritten: boolean }> {
   // пустую цитату и штатное «место, год» без справки о предмете не
   // проверяем - экономим квоту: сделать из них изюминку не из чего.
@@ -193,6 +200,7 @@ export async function reviewQuote(
       rewritten: true,
     };
   } catch (err) {
+    if (opts.throwBusy && err instanceof GeminiBusyError) throw err;
     console.warn(`  редактор цитаты пропущен: ${(err as Error).message}`);
     return { caption: generated, rewritten: false };
   }

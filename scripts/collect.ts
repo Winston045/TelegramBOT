@@ -26,11 +26,11 @@ import { hiResLocUrl } from "../src/sources/loc.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { isStereoPair } from "../src/stereo.js";
 import { getDb, loadKnownHashes, selectAll } from "../src/db.js";
-import { GeminiBusyError, GeminiQuotaError, lastUsedModel, quotaTripped } from "../src/gemini.js";
+import { GeminiBusyError, GeminiQuotaError, isLiteModel, lastUsedModel, quotaTripped } from "../src/gemini.js";
 import { analyzeImage } from "../src/analyze.js";
 import { passesGate } from "../src/scoring.js";
 import { reviewQuote } from "../src/critic.js";
-import { assembleCaptionHtml, descriptiveSentences } from "../src/caption.js";
+import { assembleCaptionHtml, descriptiveSentences, type GeneratedCaption } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
 import { guardCopies, guardNumbers } from "../src/factcheck.js";
 import { rubricCaptionFlaw, rubricOf } from "../src/rubrics.js";
@@ -87,6 +87,8 @@ type HashedItem = CollectedItem & { imageHash: string; imageBuffer: Buffer };
 
 /** Меньше этого после паузы ждать Gemini незачем: кадр уже не успеть разобрать. */
 const MIN_ANALYSIS_LEFT_MS = 3 * 60_000;
+/** Ниже - явный брак, второе мнение по нему не спрашиваем. */
+const SECOND_OPINION_MIN = 40;
 
 /** Осталось ли время прогона: и на скачивание, и на анализ. */
 function timeLeftMs(): number {
@@ -112,6 +114,31 @@ function isTransientFailure(message: string): boolean {
  * когда хост забанил нас всерьёз - лучше меньше партия, чем мёртвый прогон.
  */
 const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Редактор цитат работает только на полноценных моделях. Все на скамейке -
+ * ждём их, пока бюджет позволяет: невычитанная изюминка облегчённой
+ * модели хуже, чем пара минут паузы. Не дождались - цитата первого захода,
+ * её всё равно проверят страховки чисел и списывания.
+ */
+async function reviewWithWait<T extends { caption: GeneratedCaption; rewritten: boolean }>(
+  review: () => Promise<T>,
+  generated: GeneratedCaption,
+): Promise<T | { caption: GeneratedCaption; rewritten: false }> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await review();
+    } catch (err) {
+      if (!(err instanceof GeminiBusyError)) throw err;
+      const pauseMs = err.waitMs + 1000;
+      if (timeLeftMs() - pauseMs <= MIN_ANALYSIS_LEFT_MS) break;
+      console.log(`  редактор цитаты ждёт полноценную модель ${Math.round(pauseMs / 1000)} с`);
+      await sleepMs(pauseMs);
+    }
+  }
+  console.warn("  редактор цитаты пропущен: полноценные модели заняты, бюджет на исходе");
+  return { caption: generated, rewritten: false };
+}
 let politeDelayMs = 800; // после первого 429 темп снижается
 let consecutive429 = 0;
 
@@ -315,6 +342,10 @@ async function main() {
   // кадры рубрик, чья подпись не дотянула до рубрики (нет изюминки, не
   // назван жанр) - отдельный счётчик, чтобы видеть, как рубрика приживается
   let rubricFlawed = 0;
+  // второе мнение полноценной модели по отказам облегчённой
+  const secondOpinion = cfg.collect.second_opinion !== false;
+  let secondOpinions = 0;
+  let rescuedBySecond = 0;
 
   /**
    * Отсеянный на анализе кадр запоминается в базе статусом rejected, без
@@ -327,6 +358,7 @@ async function main() {
     item: HashedItem,
     a: { score: number; tags: Record<string, unknown>; score_why?: string },
     gate: string,
+    model: string | undefined,
   ) => {
     const { error } = await db.from("candidates").upsert(
       {
@@ -345,7 +377,7 @@ async function main() {
           ...a.tags,
           gate,
           ...(a.score_why ? { why: a.score_why } : {}),
-          ...(lastUsedModel() ? { model: lastUsedModel() } : {}),
+          ...(model ? { model } : {}),
         },
         score: a.score,
         license: item.license,
@@ -400,11 +432,11 @@ async function main() {
     }
 
     try {
-      const a = await analyzeImage(item, cfg, item.imageBuffer, extraContext);
+      let a = await analyzeImage(item, cfg, item.imageBuffer, extraContext);
       // какая модель оценила и подписала кадр - при перегрузке это может
       // быть облегчённая; храним рядом с тегами, чтобы потом сверить её
       // посты с остальными по живым данным, а не по догадкам
-      const model = lastUsedModel();
+      let model = lastUsedModel();
       // спасён - значит, Gemini наконец ответила; дальше кадр судят по
       // существу, как любой другой
       if (retrying) {
@@ -417,18 +449,51 @@ async function main() {
       // модель: плакат с солдатами она пометила бы infantry, и правило
       // чередования тем путало бы его с пехотой ядра
       const rubric = rubricOf(item.rubric);
-      if (rubric) {
-        a.tags = {
-          ...a.tags,
+      const tagRubric = (x: typeof a) => {
+        if (!rubric) return;
+        x.tags = {
+          ...x.tags,
           rubric: item.rubric,
           ...(rubric.subject ? { subject: rubric.subject } : {}),
           ...(rubric.military !== undefined ? { military: rubric.military } : {}),
         };
-      }
-      const hook = a.tags.hook ?? "none";
+      };
+      tagRubric(a);
       const gateMin = rubric?.minScore ?? minScore;
       const gateHookless = rubric?.hooklessMinScore ?? hooklessMinScore;
-      const verdict = passesGate(a, { minScore: gateMin, hooklessMinScore: gateHookless });
+      let verdict = passesGate(a, { minScore: gateMin, hooklessMinScore: gateHookless });
+      // Второе мнение: отказ облегчённой модели перепроверяет полноценная.
+      // Аудит 22.10 (scripts/gate-audit.ts): облегчённая ставила «45, без
+      // крючка» почти любому кадру, и годное терялось из-за модели, а не
+      // из-за порога. Явный брак (стереопара, репродукция - ниже
+      // SECOND_OPINION_MIN) не перепроверяем: там модели согласны
+      if (
+        !verdict.pass &&
+        secondOpinion &&
+        isLiteModel(model) &&
+        a.score >= SECOND_OPINION_MIN &&
+        timeLeftMs() > MIN_ANALYSIS_LEFT_MS
+      ) {
+        try {
+          const second = await analyzeImage(item, cfg, item.imageBuffer, extraContext, { fullOnly: true });
+          tagRubric(second);
+          const secondModel = lastUsedModel();
+          const secondVerdict = passesGate(second, { minScore: gateMin, hooklessMinScore: gateHookless });
+          secondOpinions++;
+          console.log(
+            `  второе мнение (${secondModel}): ${a.score} [${a.tags.hook ?? "none"}] → ${second.score} [${second.tags.hook ?? "none"}]` +
+              `${secondVerdict.pass ? " - проходит" : ""}: [${item.source}] ${item.sourceId}`,
+          );
+          if (secondVerdict.pass) rescuedBySecond++;
+          a = second;
+          model = secondModel;
+          verdict = secondVerdict;
+        } catch (err) {
+          // полноценные заняты или кончились - остаётся вердикт облегчённой
+          console.log(`  второе мнение не получено (${(err as Error).message}): [${item.source}] ${item.sourceId}`);
+        }
+      }
+      const hook = a.tags.hook ?? "none";
       if (!verdict.pass) {
         const why = a.score_why ? ` - ${a.score_why}` : "";
         const tag = item.rubric ? ` {${item.rubric}}` : "";
@@ -441,7 +506,7 @@ async function main() {
             `  без крючка (score ${a.score} < ${gateHookless}): [${item.source}] ${item.sourceId}${tag}${why}`,
           );
         }
-        await rememberRejected(item, a, verdict.reason);
+        await rememberRejected(item, a, verdict.reason, model);
         continue;
       }
       // обоснование балла видно в логе сбора: по нему ловим завышения
@@ -484,7 +549,7 @@ async function main() {
         enoughTime && a.subject_wiki ? await subjectReference(a.subject_wiki) : undefined;
       if (subjectContext) console.log(`  справка о предмете: «${a.subject_wiki}» [${item.source}] ${item.sourceId}`);
       const reviewed = enoughTime
-        ? await reviewQuote(item, cfg, a, extraContext, subjectContext)
+        ? await reviewWithWait(() => reviewQuote(item, cfg, a, extraContext, subjectContext, { throwBusy: true }), a)
         : { caption: a, rewritten: false };
       if (reviewed.rewritten) {
         console.log(`  цитата переписана редактором: [${item.source}] ${item.sourceId}`);
@@ -514,7 +579,7 @@ async function main() {
       if (flaw) {
         rubricFlawed++;
         console.log(`  рубрика ${item.rubric}: ${flaw} - [${item.source}] ${item.sourceId}`);
-        await rememberRejected(item, a, `rubric:${item.rubric}`);
+        await rememberRejected(item, a, `rubric:${item.rubric}`, model);
         continue;
       }
 
@@ -613,7 +678,8 @@ async function main() {
       `брака подписи ${failed}, сорвано квотой ${quotaFailed}, сбоев сети/сервиса ${netFailed}, ` +
       `цитат переписано ${rewritten}, тело длиннее предложения ${longBody}` +
       (recovered ? `, спасено вторым подходом ${recovered}` : "") +
-      (rubricFlawed ? `, не дотянули до рубрики ${rubricFlawed}` : ""),
+      (rubricFlawed ? `, не дотянули до рубрики ${rubricFlawed}` : "") +
+      (secondOpinions ? `, второе мнение ${secondOpinions} (спасено ${rescuedBySecond})` : ""),
   );
 
   // та же воронка в базу: по ней бот сам замечает, что что-то сломалось

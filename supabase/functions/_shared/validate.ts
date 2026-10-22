@@ -125,9 +125,130 @@ export function validateYears(html: string, meta: CaptionMeta): ValidationResult
   return { ok: true };
 }
 
+/** Множители после цифр: «47 тысяч», «1,5 млн», «2 million». */
+const MULTIPLIER_AFTER_DIGITS =
+  /(\d+(?:[.,]\d+)?)\s*(тыс\.?|тысяч[а-я]*|млн\.?|миллион[а-я]*|млрд\.?|миллиард[а-я]*|thousand|million|billion)(?![a-zа-яё])/giu;
+
+function multiplierValue(word: string): number {
+  const w = word.toLowerCase();
+  if (w.startsWith("тыс") || w === "thousand") return 1e3;
+  if (w.startsWith("млн") || w.startsWith("миллион") || w === "million") return 1e6;
+  return 1e9;
+}
+
 /** Цифры подряд, с разделителями разрядов и дробей склеенными: «1 600» → 1600, «4,5» → 45. */
 function numberTokens(text: string): string[] {
-  return [...text.replace(/(\d)[\s\u00a0.,](?=\d)/g, "$1").matchAll(/\d{2,}/g)].map((m) => m[0]);
+  const scaled = text.replace(MULTIPLIER_AFTER_DIGITS, (_m, num: string, mult: string) =>
+    String(Math.round(Number(num.replace(",", ".")) * multiplierValue(mult))),
+  );
+  return [...scaled.replace(/(\d)[\s\u00a0.,](?=\d)/g, "$1").matchAll(/\d{2,}/g)].map((m) => m[0]);
+}
+
+type NumWord = { v: number; kind: "unit" | "mult" | "half" };
+
+/** Числительные по-русски во всех падежах (ё уже заменена на е) и по-английски. */
+const NUM_WORDS = new Map<string, NumWord>();
+function addWords(v: number, kind: NumWord["kind"], forms: string) {
+  for (const f of forms.split(" ")) NUM_WORDS.set(f, { v, kind });
+}
+addWords(1, "unit", "один одна одно одного одной одному одним одном одну one");
+addWords(2, "unit", "два две двух двум двумя two");
+addWords(3, "unit", "три трех трем тремя three");
+addWords(4, "unit", "четыре четырех четырем четырьмя four");
+addWords(5, "unit", "пять пяти пятью five");
+addWords(6, "unit", "шесть шести шестью six");
+addWords(7, "unit", "семь семи seven");
+addWords(8, "unit", "восемь восьми восемью восьмью eight");
+addWords(9, "unit", "девять девяти девятью nine");
+const TEENS: Array<[number, string, string]> = [
+  [10, "десят", "ten"],
+  [11, "одиннадцат", "eleven"],
+  [12, "двенадцат", "twelve"],
+  [13, "тринадцат", "thirteen"],
+  [14, "четырнадцат", "fourteen"],
+  [15, "пятнадцат", "fifteen"],
+  [16, "шестнадцат", "sixteen"],
+  [17, "семнадцат", "seventeen"],
+  [18, "восемнадцат", "eighteen"],
+  [19, "девятнадцат", "nineteen"],
+  [20, "двадцат", "twenty"],
+  [30, "тридцат", "thirty"],
+];
+for (const [v, stem, en] of TEENS) addWords(v, "unit", `${stem}ь ${stem}и ${stem}ью ${en}`);
+addWords(40, "unit", "сорок сорока forty");
+addWords(50, "unit", "пятьдесят пятидесяти пятьюдесятью fifty");
+addWords(60, "unit", "шестьдесят шестидесяти шестьюдесятью sixty");
+addWords(70, "unit", "семьдесят семидесяти семьюдесятью seventy");
+addWords(80, "unit", "восемьдесят восьмидесяти восемьюдесятью eighty");
+addWords(90, "unit", "девяносто девяноста ninety");
+addWords(100, "unit", "сто ста hundred");
+addWords(200, "unit", "двести двухсот двумстам двумястами двухстах");
+addWords(300, "unit", "триста трехсот тремстам тремястами трехстах");
+addWords(400, "unit", "четыреста четырехсот четыремстам четырьмястами четырехстах");
+for (const [v, stem, instr] of [
+  [500, "пят", "пятьюстами"],
+  [600, "шест", "шестьюстами"],
+  [700, "сем", "семьюстами"],
+  [800, "восьм", "восемьюстами"],
+  [900, "девят", "девятьюстами"],
+] as Array<[number, string, string]>) {
+  const nom = v === 800 ? "восемьсот" : `${stem}ьсот`;
+  addWords(v, "unit", `${nom} ${stem}исот ${stem}истам ${stem}истах ${instr}`);
+}
+addWords(1e3, "mult", "тысяча тысячи тысячу тысячей тысяче тысяч тысячам тысячами тысячах thousand");
+addWords(1e6, "mult", "миллион миллиона миллионов миллиону миллионом миллионе миллионам миллионами миллионах million");
+addWords(1e9, "mult", "миллиард миллиарда миллиардов миллиарду миллиардом миллиарде миллиардам миллиардами миллиардах billion");
+addWords(1.5, "half", "полтора полторы полутора");
+
+const SINGULAR_MULT = /^(тысяч(а|у|ей|е)|(миллион|миллиард)(|у|ом|е))$/;
+
+/**
+ * Числа, записанные словами: «сорок шесть тонн» → 46, «полторы тысячи»
+ * → 1500. Одинокое «тысячи» или «сотни» - оборот речи, а не число, его
+ * не считаем; «сто» английского «hundred» без числа впереди - тоже.
+ */
+function wordNumbers(text: string): string[] {
+  const words = text.toLowerCase().replace(/ё/g, "е").split(/[^\p{L}]+/u);
+  const out: string[] = [];
+  let total = 0;
+  let current = 0;
+  let seen = false;
+  const flush = () => {
+    const value = total + current;
+    if (seen && value >= 10 && Number.isInteger(value)) out.push(String(value));
+    total = 0;
+    current = 0;
+    seen = false;
+  };
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i]!;
+    const n = NUM_WORDS.get(w);
+    // «one hundred and five»: союз внутри английского числа
+    if (!n && w === "and" && seen && NUM_WORDS.get(words[i + 1] ?? "")?.kind === "unit") continue;
+    if (!n) {
+      flush();
+      continue;
+    }
+    if (n.kind === "mult") {
+      // «тысячи солдат» - не число, а «тысяча самолётов» и «тысяча
+      // девятьсот сорок первый» - число
+      if (!seen && !SINGULAR_MULT.test(w)) continue;
+      total += (seen ? current : 1) * n.v;
+      seen = true;
+      current = 0;
+    } else if (n.kind === "half") {
+      current = 1.5;
+      seen = true;
+    } else if (w === "hundred") {
+      if (!seen) continue;
+      current = (current || 1) * 100;
+    } else {
+      current += n.v;
+      seen = true;
+    }
+  }
+  flush();
+  return out;
 }
 
 /**
@@ -135,11 +256,13 @@ function numberTokens(text: string): string[] {
  * Годы не считаем - их держит validateYears. Прогон 22.10: облегчённая
  * модель без справки дописала ИСУ-152 вес «сорок шесть тонн» - число
  * верное, но взято из головы модели, а правило канала - только из
- * источников. Числа словами эта проверка не видит; цифрами - да.
+ * источников. Числа ловим и цифрами, и словами; в источнике годится
+ * любая запись - «47,000», «47 thousand», «сорок семь тысяч».
  */
 export function unsupportedNumbers(text: string, sources: string): string[] {
-  const known = new Set(numberTokens(sources));
-  return numberTokens(text).filter((n) => !/^(1[89]\d{2}|20\d{2})$/.test(n) && !known.has(n));
+  const known = new Set([...numberTokens(sources), ...wordNumbers(sources)]);
+  const found = [...numberTokens(text), ...wordNumbers(text)];
+  return [...new Set(found)].filter((n) => !/^(1[89]\d{2}|20\d{2})$/.test(n) && !known.has(n));
 }
 
 /**

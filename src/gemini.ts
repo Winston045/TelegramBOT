@@ -190,6 +190,11 @@ export function rankModels(names: string[]): string[] {
 }
 
 /** Облегчённые модели - запасной выход, в том же порядке предпочтения. */
+/** Облегчённая ли модель: ей не доверяем ни правку цитат, ни окончательный отказ. */
+export function isLiteModel(name: string | undefined): boolean {
+  return !!name && /lite/.test(name);
+}
+
 export function liteModels(names: string[]): string[] {
   const lite = names.filter((n) => n.includes("flash") && !NOT_TEXT.test(n) && /lite/.test(n));
   return byPreference(lite, "gemini-flash-lite-latest");
