@@ -58,6 +58,8 @@ function samples(items: RawItem[]) {
     const desc = (i.description ?? "").replace(/\s+/g, " ").slice(0, 110);
     console.log(`      · ${i.year ?? "----"} · ${i.imageWidth ?? "?"}px · ${(i.title ?? "").slice(0, 90)}`);
     if (desc) console.log(`          ${desc}`);
+    // у агрегаторов поставщик у каждого кадра свой - по нему и решаем
+    if (i.attribution) console.log(`          [${i.attribution.slice(0, 90)}] ${i.imageUrl.slice(0, 80)}`);
   }
 }
 
