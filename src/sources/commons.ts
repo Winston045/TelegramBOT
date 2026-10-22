@@ -12,6 +12,7 @@ import type { SourceConfig } from "../config.js";
 import type { RawItem, SourceAdapter } from "./types.js";
 import type { CursorStore } from "../cursors.js";
 import { mapCommonsPage, type CommonsPage } from "./bundesarchiv.js";
+import { wikiIntro } from "../wiki.js";
 
 const API = "https://commons.wikimedia.org/w/api.php";
 
@@ -207,7 +208,10 @@ export function commonsAdapter(name: string): SourceAdapter {
       for (const topic of topics) {
         const intro = (await wikiIntro("ru", topic)) ?? (await wikiIntro("en", topic));
         if (intro && intro.length >= 200) {
-          return `Справка из Википедии о теме снимка («${topic}»), использовать только если она прямо относится к тому, что на фото:\n${intro}`;
+          // справка о СОБЫТИИ или месте - фон, а не изюминка: из неё
+          // модель лепила штабные сводки («целью сражения за Пашендаль был
+          // захват высот...»). Это сказано ей прямо
+          return `Справка из Википедии о событии или теме снимка («${topic}») - это ФОН, а не материал изюминки; брать из неё только то, что прямо объясняет происходящее на фото:\n${intro}`;
         }
       }
       return undefined;
@@ -272,29 +276,4 @@ async function fileTopics(pageId: string, title?: string): Promise<string[]> {
     .filter((t) => !SERVICE_CATEGORY.test(t) && !/^\d{4}$/.test(t))
     .sort((a, b) => relevance(b) - relevance(a) || a.length - b.length)
     .slice(0, 8);
-}
-
-/** Вступление статьи Википедии по точному названию. */
-async function wikiIntro(lang: string, title: string): Promise<string | undefined> {
-  const url = new URL(`https://${lang}.wikipedia.org/w/api.php`);
-  url.searchParams.set("action", "query");
-  url.searchParams.set("format", "json");
-  url.searchParams.set("formatversion", "2");
-  url.searchParams.set("prop", "extracts");
-  url.searchParams.set("exintro", "1");
-  url.searchParams.set("explaintext", "1");
-  url.searchParams.set("redirects", "1");
-  url.searchParams.set("titles", title);
-
-  const res = await fetch(url, {
-    headers: { "user-agent": "story-team-bot/0.1 (contentbot)" },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) return undefined;
-  const body = (await res.json()) as {
-    query?: { pages?: Array<{ missing?: boolean; extract?: string }> };
-  };
-  const page = body.query?.pages?.[0];
-  if (!page || page.missing || !page.extract) return undefined;
-  return page.extract.replace(/\s+/g, " ").trim().slice(0, 1200);
 }

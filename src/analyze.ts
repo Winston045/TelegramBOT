@@ -14,7 +14,16 @@ import type { GeneratedCaption } from "./caption.js";
 import type { VisionScore } from "./scoring.js";
 import { rubricOf } from "./rubrics.js";
 
-export type Analysis = VisionScore & GeneratedCaption;
+export type Analysis = VisionScore &
+  GeneratedCaption & {
+    /**
+     * Английское название статьи Википедии о главном предмете кадра
+     * («Observation balloon», «HMS Campbeltown (I42)»). По нему сборщик
+     * достаёт справку, и редактор цитат строит изюминку о самом предмете,
+     * а не о событии вокруг.
+     */
+    subject_wiki?: string;
+  };
 
 export function buildAnalysisPrompt(
   item: RawItem,
@@ -41,8 +50,16 @@ ${captionRules(glossary)}
 
 ${FEW_SHOT}
 
+subject_wiki - точное название статьи АНГЛИЙСКОЙ Википедии о ГЛАВНОМ
+ПРЕДМЕТЕ кадра, про который интересно рассказать: тип техники, корабль,
+самолёт, оружие, явление («Observation balloon», «Tiger I», «HMS
+Campbeltown (I42)», «Higgins boat»). Только если предмет назван в
+метаданных или однозначно узнаётся; общие сцены (солдаты, улица,
+построение) и сомнения - пустая строка. По этому названию редакция
+достанет справку: выдуманное название даст чужую статью.
+
 Верни строго JSON без обёрток и без markdown:
-{${SCORE_FIELDS_SCHEMA}, "caption": "...", "quote": "<обычный пост: место и год короткой строкой; изюминка: факт-справка>", "quote_place": "<у изюминки место и дата ВСЕГДА здесь - отдельной второй цитатой после факта; у обычного поста пустая строка>", "quote_kind": "observation" | "context"}`;
+{${SCORE_FIELDS_SCHEMA}, "subject_wiki": "<название статьи или пустая строка>", "caption": "...", "quote": "<обычный пост: место и год короткой строкой; изюминка: факт-справка>", "quote_place": "<у изюминки место и дата ВСЕГДА здесь - отдельной второй цитатой после факта; у обычного поста пустая строка>", "quote_kind": "observation" | "context"}`;
 }
 
 export async function analyzeImage(
@@ -73,5 +90,6 @@ export async function analyzeImage(
     quote: result.quote ?? "",
     quote_place: result.quote_place?.trim() || undefined,
     quote_kind: result.quote_kind === "observation" ? "observation" : "context",
+    subject_wiki: typeof result.subject_wiki === "string" ? result.subject_wiki.trim().slice(0, 120) || undefined : undefined,
   };
 }

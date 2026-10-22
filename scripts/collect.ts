@@ -33,6 +33,7 @@ import { reviewQuote } from "../src/critic.js";
 import { assembleCaptionHtml, descriptiveSentences } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
 import { rubricCaptionFlaw, rubricOf } from "../src/rubrics.js";
+import { subjectReference } from "../src/wiki.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 import { env } from "../src/env.js";
 import { sendMessageHtml } from "../src/telegram.js";
@@ -452,7 +453,13 @@ async function main() {
         place: item.place ?? null,
         // обоснование храним рядом с тегами: отдельной колонки ради одной
         // строки заводить не стоит, а в отчёте по подписям оно нужно
-        tags: { ...a.tags, ...(a.score_why ? { why: a.score_why } : {}), ...(model ? { model } : {}) },
+        tags: {
+          ...a.tags,
+          ...(a.score_why ? { why: a.score_why } : {}),
+          ...(model ? { model } : {}),
+          // о чём справка: по нему видно, откуда в изюминке факт
+          ...(a.subject_wiki ? { subject_wiki: a.subject_wiki } : {}),
+        },
         score: a.score,
         license: item.license,
         attribution: item.attribution ?? null,
@@ -462,10 +469,16 @@ async function main() {
       // запрос на кандидата, но только на тех, кто прошёл порог оценки.
       // На исходе бюджета пропускаем: кадр с цитатой как есть лучше, чем
       // job, убитый таймаутом воркфлоу посреди записи
-      const reviewed =
-        timeLeftMs() > 3 * 60_000
-          ? await reviewQuote(item, cfg, a, extraContext)
-          : { caption: a, rewritten: false };
+      // справка о самом предмете в кадре (аэростат, эсминец, танк) - из
+      // неё редактор строит изюминку, а не из статьи о событии вокруг.
+      // Сбой Википедии - не беда: тогда редактор работает как раньше
+      const enoughTime = timeLeftMs() > 3 * 60_000;
+      const subjectContext =
+        enoughTime && a.subject_wiki ? await subjectReference(a.subject_wiki) : undefined;
+      if (subjectContext) console.log(`  справка о предмете: «${a.subject_wiki}» [${item.source}] ${item.sourceId}`);
+      const reviewed = enoughTime
+        ? await reviewQuote(item, cfg, a, extraContext, subjectContext)
+        : { caption: a, rewritten: false };
       if (reviewed.rewritten) {
         console.log(`  цитата переписана редактором: [${item.source}] ${item.sourceId}`);
         rewritten++;
@@ -492,7 +505,8 @@ async function main() {
       const captionHtml = assembleCaptionHtml(reviewed.caption, item, cfg.channel);
       // контекст (описание с карточки, вики-справка) - легальный источник
       // фактов для изюминки, его годы валидатор тоже должен знать
-      const check = validateCaption(captionHtml, { ...item, context: extraContext });
+      const context = [extraContext, subjectContext].filter(Boolean).join("\n");
+      const check = validateCaption(captionHtml, { ...item, context: context || undefined });
       const { error } = await db.from("candidates").upsert(
         check.ok
           ? {

@@ -25,3 +25,70 @@ describe("duplicatesPlace", () => {
     expect(duplicatesPlace("СССР, 1943 год.", undefined)).toBe(false);
   });
 });
+
+describe("редактор цитаты: изюминка о предмете в кадре", async () => {
+  const { vi, beforeEach } = await import("vitest");
+  const reply = { value: {} as Record<string, unknown> };
+  const calls: string[] = [];
+  vi.doMock("../src/gemini.js", () => ({
+    geminiJson: async (parts: Array<{ text: string }>) => {
+      calls.push(parts[0]!.text);
+      return reply.value;
+    },
+  }));
+  // critic.js уже загружен статическим импортом вверху - без сброса
+  // модулей подмена gemini.js до него не дойдёт
+  vi.resetModules();
+  const { reviewQuote, buildPrompt } = await import("../src/critic.js");
+  const cfg = {} as never;
+  const item = {
+    sourceId: "1",
+    sourceUrl: "https://x",
+    imageUrl: "https://x.jpg",
+    title: "Allied observation balloon Ypres 1917",
+    lang: "en",
+    license: "PD",
+    year: 1917,
+    place: "Ypres",
+  };
+  const base = {
+    caption: "Британские солдаты готовят к подъёму аэростат наблюдения на фоне руин Ипра.",
+    quote: "Ипр, Бельгия, 1917 год.",
+    quote_kind: "context" as const,
+  };
+  const subject = "Справка из Википедии о предмете в кадре («Привязной аэростат»): ...";
+
+  beforeEach(() => {
+    calls.length = 0;
+  });
+
+  it("обычный пост без справки о предмете редактор не трогает - квота цела", async () => {
+    const r = await reviewQuote(item, cfg, base);
+    expect(r.rewritten).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("со справкой обычный пост становится изюминкой, место и год уходят второй цитатой", async () => {
+    reply.value = { verdict: "weak", quote: "Наблюдатель поднимался на километр и корректировал огонь по проводу в тросе.", quote_kind: "context" };
+    const r = await reviewQuote(item, cfg, base, undefined, subject);
+    expect(r.rewritten).toBe(true);
+    expect(r.caption.quote).toContain("Наблюдатель");
+    expect(r.caption.quote_place).toBe("Ипр, Бельгия, 1917 год.");
+    expect(calls[0]).toContain("Привязной аэростат");
+  });
+
+  it("если сильного факта нет, обычный пост остаётся обычным", async () => {
+    reply.value = { verdict: "weak", quote: "Бельгия, 1917 год.", quote_kind: "context" };
+    const r = await reviewQuote(item, cfg, base, undefined, subject);
+    expect(r.rewritten).toBe(false);
+    expect(r.caption).toEqual(base);
+  });
+
+  it("промпт запрещает штабные сводки и требует фактов только из справок", () => {
+    const prompt = buildPrompt(item, base, undefined, subject);
+    expect(prompt).toContain("штабная сводка");
+    expect(prompt).toContain("СТРОГО из метаданных и справок");
+    expect(prompt).toContain("Привязной аэростат");
+    expect(buildPrompt(item, base)).toContain("Справки о предмете в кадре нет");
+  });
+});
