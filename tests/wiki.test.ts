@@ -57,3 +57,15 @@ describe("справка о предмете в кадре", () => {
     expect(await subjectReference("Observation balloon")).toBeUndefined();
   });
 });
+
+describe("Википедия: вежливость к лимиту", () => {
+  it("после 429 - пауза: следующие запросы не уходят вовсе", async () => {
+    const calls = vi.fn(async () => new Response("slow down", { status: 429 }));
+    vi.stubGlobal("fetch", calls);
+    expect(await subjectReference("Observation balloon")).toBeUndefined();
+    const after = calls.mock.calls.length;
+    expect(await subjectReference("Tiger I")).toBeUndefined();
+    // в паузе Википедию не дёргаем - лимит не продлеваем
+    expect(calls.mock.calls.length).toBe(after);
+  });
+});

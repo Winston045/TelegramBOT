@@ -15,6 +15,12 @@ const UA = "story-team-bot/0.1 (Telegram history channel; contact via t.me/Story
 const INTRO_LIMIT = 1200;
 const RETRIES = 1;
 const RETRY_DELAY_MS = 2_000;
+/** Пауза между запросами к Википедии: датацентровым адресам лимит строже. */
+const MIN_GAP_MS = 1_000;
+/** Сколько молчать после 429. */
+const COOLDOWN_MS = 60_000;
+let lastRequestAt = 0;
+let cooldownUntil = 0;
 
 /** Страница-развилка («может означать», «may refer to») - не справка. */
 const DISAMBIGUATION = /may refer to|may also refer to|может означать|может относиться/i;
@@ -39,10 +45,15 @@ async function fetchPage(lang: string, title: string, withRuLink: boolean): Prom
   url.searchParams.set("titles", title);
   if (withRuLink) url.searchParams.set("lllang", "ru");
 
-  // Википедия с датацентровых адресов иногда отвечает 429 и 5xx: прогон
-  // 22.10 нашёл справку об ИСУ-152 в первый раз и не нашёл во второй. Один
-  // повтор с паузой; дальше - без справки, кадр от этого не страдает
+  // Вежливый темп и пауза после отказа. Полный сбор 22.10: Википедия
+  // отвечала 429 на десятки запросов подряд - справка о событии перебирала
+  // по восемь статей на кадр и выжигала лимит, и до справки о предмете в
+  // кадре (ради неё всё и затевалось) очередь не доходила
+  if (Date.now() < cooldownUntil) return undefined;
   for (let attempt = 0; ; attempt++) {
+    const wait = lastRequestAt + MIN_GAP_MS - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    lastRequestAt = Date.now();
     try {
       const res = await fetch(url, {
         headers: { "user-agent": UA },
@@ -52,8 +63,13 @@ async function fetchPage(lang: string, title: string, withRuLink: boolean): Prom
         const body = (await res.json()) as { query?: { pages?: WikiPage[] } };
         return body.query?.pages?.[0];
       }
-      if (res.status !== 429 && res.status < 500) return undefined;
-      // причина видна в логе сбора: справка ИСУ-152 то находилась, то нет
+      if (res.status === 429) {
+        // повтор через пару секунд только продлит отказ - пауза на минуту
+        cooldownUntil = Date.now() + COOLDOWN_MS;
+        console.warn(`  википедия: 429 на «${title}» - пауза ${COOLDOWN_MS / 1000} с`);
+        return undefined;
+      }
+      if (res.status < 500) return undefined;
       if (attempt >= RETRIES) console.warn(`  википедия ${lang}: «${title}» → HTTP ${res.status}`);
     } catch (err) {
       if (attempt >= RETRIES) {

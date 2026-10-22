@@ -16,6 +16,9 @@ import { wikiIntro } from "../wiki.js";
 
 const API = "https://commons.wikimedia.org/w/api.php";
 
+/** Сколько тем файла пробуем как справку о событии. */
+const MAX_EVENT_TOPICS = 2;
+
 /** Без места нужен хотя бы такой длины текст описания — иначе брак. */
 const MIN_DESC_WITHOUT_PLACE = 60;
 
@@ -205,7 +208,10 @@ export function commonsAdapter(name: string): SourceAdapter {
     try {
       const topics = await fileTopics(item.sourceId, item.title);
       if (!topics.length) return undefined;
-      for (const topic of topics) {
+      // не больше двух статей о событии: лимит Википедии нужнее справке о
+      // предмете в кадре (subject_wiki), а перебор восьми тем на кадр его
+      // выжигал (полный сбор 22.10 - десятки 429 подряд)
+      for (const topic of topics.slice(0, MAX_EVENT_TOPICS)) {
         const intro = (await wikiIntro("ru", topic)) ?? (await wikiIntro("en", topic));
         if (intro && intro.length >= 200) {
           // справка о СОБЫТИИ или месте - фон, а не изюминка: из неё
