@@ -53,8 +53,13 @@ async function fetchPage(lang: string, title: string, withRuLink: boolean): Prom
         return body.query?.pages?.[0];
       }
       if (res.status !== 429 && res.status < 500) return undefined;
+      // причина видна в логе сбора: справка ИСУ-152 то находилась, то нет
+      if (attempt >= RETRIES) console.warn(`  википедия ${lang}: «${title}» → HTTP ${res.status}`);
     } catch (err) {
-      if (attempt >= RETRIES) throw err;
+      if (attempt >= RETRIES) {
+        console.warn(`  википедия ${lang}: «${title}» → ${(err as Error).message}`);
+        throw err;
+      }
     }
     if (attempt >= RETRIES) return undefined;
     await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));

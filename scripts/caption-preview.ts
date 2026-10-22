@@ -17,7 +17,7 @@ import { reviewQuote } from "../src/critic.js";
 import { assembleCaptionHtml } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
 import { subjectReference } from "../src/wiki.js";
-import { guardNumbers } from "../src/factcheck.js";
+import { guardCopies, guardNumbers } from "../src/factcheck.js";
 import type { RawItem } from "../src/sources/types.js";
 
 type Row = {
@@ -100,9 +100,17 @@ async function main() {
       console.log(`ПЕРВЫЙ ЗАХОД:\n  ${plain(assembleCaptionHtml(a, item, cfg.channel))}`);
       const reviewed = await reviewQuote(item, cfg, a, extra, subject);
       const sources = [item.title, item.description, item.place, extra, subject].filter(Boolean).join("\n");
-      const numbers = guardNumbers(reviewed, a, sources);
-      if (numbers.outcome !== "ok") console.log(`  ! числа не из источников: ${numbers.bad.join(", ")} (${numbers.outcome})`);
-      reviewed.caption = numbers.caption;
+      // страховки по очереди: каждая видит итог предыдущей
+      const guards = [
+        (r: typeof reviewed) => guardNumbers(r, a, sources),
+        (r: typeof reviewed) => guardCopies(r, a),
+      ];
+      for (const guard of guards) {
+        const check = guard(reviewed);
+        if (check.outcome === "ok") continue;
+        console.log(`  ! ${check.bad.join(", ")} (${check.outcome})`);
+        reviewed.caption = check.caption;
+      }
       const html = assembleCaptionHtml(reviewed.caption, item, cfg.channel);
       const context = [extra, subject].filter(Boolean).join("\n");
       const check = validateCaption(html, { ...item, context: context || undefined });

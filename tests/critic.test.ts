@@ -92,3 +92,25 @@ describe("редактор цитаты: изюминка о предмете в
     expect(buildPrompt(item, base)).toContain("Справки о предмете в кадре нет");
   });
 });
+
+describe("копия примера из промпта", async () => {
+  const { copiesExample, guardCopies } = await import("../src/factcheck.js");
+  const copied =
+    "Таран был только половиной плана. В носу старого эсминца замуровали в бетон больше четырёх тонн взрывчатки с часовыми взрывателями. Немцы ходили по застрявшему кораблю, когда наутро он взорвался.";
+  const own = "До рейда эсминец успел послужить в трёх флотах: американском, британском и нидерландском.";
+
+  it("почти дословный пересказ примера - копия, своя изюминка - нет", () => {
+    expect(copiesExample(copied)).toBe(true);
+    expect(copiesExample(own)).toBe(false);
+    expect(copiesExample("Сен-Назер, Франция, март 1942 года.")).toBe(false);
+  });
+
+  it("копия первого захода уступает своей правке редактора, иначе - место и год", () => {
+    const first = { caption: "Эсминец.", quote: copied, quote_place: "Сен-Назер, 1942 год.", quote_kind: "context" as const };
+    expect(guardCopies({ caption: { ...first, quote: own }, rewritten: true }, first).outcome).toBe("ok");
+    expect(guardCopies({ caption: first, rewritten: false }, first)).toMatchObject({
+      outcome: "quote_dropped",
+      caption: { quote: "Сен-Назер, 1942 год." },
+    });
+  });
+});
