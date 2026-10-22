@@ -268,11 +268,44 @@ async function loadModelNames(): Promise<string[]> {
  * список моделей читается один раз за прогон), поэтому, как только
  * лучшая модель отдохнула, бот к ней и возвращается.
  */
+/**
+ * Ключ, на котором прямо сейчас есть свободная ПОЛНОЦЕННАЯ модель.
+ *
+ * Суточная квота - на модель в проекте ключа, перегрузка (503) - у самой
+ * модели. Полный сбор 22.10: на ключе #1 кончилась квота трёх лучших
+ * моделей, ещё три лежали на скамейке от 503 - и бот спустился на
+ * облегчённую этого же ключа, разобрав ею 21 кадр из 28. А у ключа #2
+ * те три лучшие были свежими. Правило «ключ меняем, когда полноценных на
+ * нём не осталось» считало отдыхающие модели оставшимися.
+ */
+function keyWithFreeFullModel(names: string[], now: number): number | undefined {
+  const keys = env.geminiApiKeys;
+  for (let step = 1; step < keys.length; step++) {
+    const k = (keyIdx + step) % keys.length;
+    if (deadKeys.has(k)) continue;
+    const unavailable = new Set([...deadModels, ...(exhaustedByKey.get(k) ?? [])]);
+    if ("model" in chooseModel(names, unavailable, benchedUntil, now, true)) return k;
+  }
+  return undefined;
+}
+
 async function resolveModel(deadline: number, fullOnly = false): Promise<string> {
   if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;
   const names = await loadModelNames();
+  const lite = new Set(liteModels(names));
   for (;;) {
-    const choice = chooseModel(names, unavailableHere(), benchedUntil, Date.now(), fullOnly);
+    let choice = chooseModel(names, unavailableHere(), benchedUntil, Date.now(), fullOnly);
+    // облегчённая этого ключа - только если ни у одного ключа нет
+    // свободной полноценной; полноценная на соседнем ключе лучше
+    const wouldDegrade = ("model" in choice && lite.has(choice.model)) || !("model" in choice);
+    if (wouldDegrade) {
+      const other = keyWithFreeFullModel(names, Date.now());
+      if (other !== undefined) {
+        keyIdx = other;
+        console.log(`gemini: на ключе #${other + 1} есть свободная полноценная модель - переключаюсь на него`);
+        choice = chooseModel(names, unavailableHere(), benchedUntil, Date.now(), fullOnly);
+      }
+    }
     if ("model" in choice) {
       if (choice.model !== currentModel) {
         console.log(`gemini: выбрана модель ${choice.model}`);

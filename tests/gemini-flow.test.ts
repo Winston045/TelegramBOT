@@ -139,6 +139,26 @@ describe("сквозной выбор модели", () => {
     expect(g.quotaTripped()).toBe(false);
   });
 
+  it("квота лучших кончилась, остальные полноценные лежат - соседний ключ, а не облегчённая", async () => {
+    // полный сбор 22.10: 21 кадр из 28 ушёл облегчённой модели ключа #1,
+    // хотя у ключа #2 лучшие модели были свежими
+    process.env.GEMINI_API_KEYS = "k1,k2";
+    const calls = stubGemini(
+      ["gemini-flash-latest", "gemini-3.6-flash", "gemini-flash-lite-latest"],
+      (key, model) => {
+        if (model.includes("lite")) return "ok";
+        if (model === "gemini-flash-latest") return key === "k1" ? "day429" : "ok";
+        return "503";
+      },
+    );
+    const g = await gemini();
+    const r = await settle(g.geminiJson<{ model: string }>([{ text: "x" }]));
+    expect(r.error).toBeUndefined();
+    expect(r.value?.model).toBe("gemini-flash-latest");
+    expect(calls.some((c) => c.key === "k2" && c.model === "gemini-flash-latest")).toBe(true);
+    expect(calls.some((c) => c.model.includes("lite"))).toBe(false);
+  });
+
   it("вернувшаяся со скамейки модель получает одну пробу, а не две", async () => {
     process.env.GEMINI_API_KEYS = "k1";
     const calls = stubGemini(["gemini-flash-latest", "gemini-flash-lite-latest"], (_k, m) =>
