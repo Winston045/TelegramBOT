@@ -32,7 +32,7 @@ import { passesGate } from "../src/scoring.js";
 import { reviewQuote } from "../src/critic.js";
 import { assembleCaptionHtml, descriptiveSentences, type GeneratedCaption } from "../src/caption.js";
 import { validateCaption } from "../src/validate.js";
-import { guardCopies, guardNumbers } from "../src/factcheck.js";
+import { guardCopies, guardNumbers, withoutQuote } from "../src/factcheck.js";
 import { rubricCaptionFlaw, rubricOf } from "../src/rubrics.js";
 import { subjectReference } from "../src/wiki.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
@@ -601,11 +601,25 @@ async function main() {
         );
       }
 
-      const captionHtml = assembleCaptionHtml(reviewed.caption, item, cfg.channel);
+      let captionHtml = assembleCaptionHtml(reviewed.caption, item, cfg.channel);
       // контекст (описание с карточки, вики-справка) - легальный источник
       // фактов для изюминки, его годы валидатор тоже должен знать
       const context = [extraContext, subjectContext].filter(Boolean).join("\n");
-      const check = validateCaption(captionHtml, { ...item, context: context || undefined });
+      const meta = { ...item, context: context || undefined };
+      let check = validateCaption(captionHtml, meta);
+      // год не из источников в изюминке - снимаем изюминку, а не весь кадр
+      if (!check.ok) {
+        for (const alt of withoutQuote(reviewed.caption)) {
+          if (rubric && rubricCaptionFlaw(rubric, alt)) break;
+          const altHtml = assembleCaptionHtml(alt, item, cfg.channel);
+          if (!validateCaption(altHtml, meta).ok) continue;
+          console.warn(`  ${check.reason} - изюминка снята: [${item.source}] ${item.sourceId}`);
+          reviewed.caption = alt;
+          captionHtml = altHtml;
+          check = { ok: true };
+          break;
+        }
+      }
       const { error } = await db.from("candidates").upsert(
         check.ok
           ? {

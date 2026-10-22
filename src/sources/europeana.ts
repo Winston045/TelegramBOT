@@ -26,6 +26,9 @@ export function upsizeIiif(url: string): string {
   return url.replace(/\/full\/(?:\d+,\d*|,\d+|!\d+,\d+)\/0\/default\.jpg/, "/full/1600,/0/default.jpg");
 }
 
+/** Хосты, отдающие файлы только с авторизацией. */
+const CLOSED_HOSTS = /\/\/[^/]*zetcom\.app\//i;
+
 export const europeana: SourceAdapter = {
   name: "europeana",
 
@@ -78,6 +81,9 @@ export const europeana: SourceAdapter = {
         // просим крупнее сами - тот же сервер отдаёт любой размер
         const imageUrl = upsizeIiif(r.edmIsShownBy[0]);
         if (/thumbnail/i.test(imageUrl)) continue;
+        // файлы, закрытые авторизацией: финские музеи (zetcom) на каждый
+        // запрос отвечают 401 - сборы 22.10 дважды тратили на них слот
+        if (CLOSED_HOSTS.test(imageUrl)) continue;
         const rights = r.rights?.[0] ?? "";
         // берём только открытые лицензии, и без NC/ND даже при сбое фильтра API
         if (!/publicdomain|creativecommons/.test(rights) || /\/by-(nc|nd)|\/by-sa-nc|-nc-|-nd\b/.test(rights)) continue;

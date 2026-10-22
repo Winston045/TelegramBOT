@@ -172,3 +172,23 @@ describe("числа изюминки - только из источников",
     });
   });
 });
+
+describe("изюминка с годом не из источников", async () => {
+  const { withoutQuote } = await import("../src/factcheck.js");
+  const base = {
+    caption: "Палубный истребитель F-14 дозаправляется в воздухе.",
+    quote: "В 1991 году такие машины прикрывали авианосцы в Персидском заливе.",
+    quote_place: "Персидский залив, 1990 год",
+    quote_kind: "context" as const,
+  };
+
+  it("сперва строка места, потом пост без цитаты", () => {
+    const alts = withoutQuote(base as never);
+    expect(alts.map((a) => a.quote)).toEqual(["Персидский залив, 1990 год", ""]);
+    expect(alts.every((a) => a.caption === base.caption)).toBe(true);
+  });
+
+  it("без цитаты - запасных нет", () => {
+    expect(withoutQuote({ ...base, quote: "" } as never)).toEqual([]);
+  });
+});

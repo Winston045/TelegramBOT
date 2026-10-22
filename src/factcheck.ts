@@ -96,3 +96,21 @@ export function guardCopies(
     bad: ["копия примера"],
   };
 }
+
+/**
+ * Запасные варианты подписи без изюминки - для кадра, чья подпись не
+ * прошла проверку лет. Сбор 22.10: два годных кадра (дозаправка F-14,
+ * посадка в поезд) ушли в брак целиком из-за года в изюминке, которого
+ * нет в источниках, хотя тело поста было чистым. Сперва пробуем оставить
+ * строку места и даты, потом - пост без цитаты. Если год сидит в самом
+ * теле, не поможет ни один - и кадр уходит в брак, как раньше.
+ */
+export function withoutQuote(caption: GeneratedCaption): GeneratedCaption[] {
+  if (!caption.quote) return [];
+  const out: GeneratedCaption[] = [];
+  if (caption.quote_place && caption.quote_place !== caption.quote) {
+    out.push({ ...caption, quote: caption.quote_place, quote_place: undefined, quote_kind: "context" });
+  }
+  out.push({ ...caption, quote: "", quote_place: undefined });
+  return out;
+}

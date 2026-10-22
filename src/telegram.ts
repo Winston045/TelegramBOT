@@ -1,5 +1,7 @@
 import { Api, InputFile } from "grammy";
+import sharp from "sharp";
 import { env } from "./env.js";
+import { WIKIMEDIA_UA } from "./wiki.js";
 
 let api: Api | undefined;
 
@@ -68,22 +70,48 @@ export async function sendPhotoHtml(
   }
 }
 
-/** Скачивание картинки в память для повторной отправки файлом. */
+/** Лимиты Телеграма на фото: 10 МБ и сумма сторон до 10000 px. */
+const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+const PHOTO_MAX_SIDE = 2560;
+
+/**
+ * Скачивание картинки в память для повторной отправки файлом.
+ *
+ * Сбор 22.10: карточка #494 (mandadb.hu) ушла в брак, хотя сбор этот
+ * файл скачал и разобрал. Архив отдаёт полноразмерный скан, который
+ * Телеграм не принимает ни ссылкой, ни файлом. Такой файл ужимаем в
+ * памяти до 2560 px - он по-прежнему нигде не хранится.
+ */
 async function downloadImage(url: string): Promise<Buffer | undefined> {
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(45_000),
-      headers: {
-        "user-agent":
-          "story-team-bot/0.1 (Telegram history channel; contact via t.me/Story_Teams)",
-        accept: "image/*",
-      },
+      headers: { "user-agent": WIKIMEDIA_UA, accept: "image/*" },
     });
-    if (!res.ok) return undefined;
+    if (!res.ok) {
+      console.warn(`  архив не отдал файл: HTTP ${res.status} - ${url}`);
+      return undefined;
+    }
     const buffer = Buffer.from(await res.arrayBuffer());
-    // лимит Телеграма на фото - 10 МБ; больше отдавать бессмысленно
-    return buffer.length && buffer.length <= 10 * 1024 * 1024 ? buffer : undefined;
-  } catch {
+    if (!buffer.length) return undefined;
+    const meta = await sharp(buffer).metadata().catch(() => undefined);
+    const tooBig =
+      buffer.length > PHOTO_MAX_BYTES ||
+      (meta?.width ?? 0) > PHOTO_MAX_SIDE ||
+      (meta?.height ?? 0) > PHOTO_MAX_SIDE ||
+      (meta?.format !== undefined && meta.format !== "jpeg" && meta.format !== "png");
+    if (!tooBig) return buffer;
+    const small = await sharp(buffer)
+      .rotate()
+      .resize(PHOTO_MAX_SIDE, PHOTO_MAX_SIDE, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 88 })
+      .toBuffer();
+    console.warn(
+      `  файл архива ужат для Телеграма: ${meta?.width}x${meta?.height} ${meta?.format}, ${Math.round(buffer.length / 1024)} КБ -> ${Math.round(small.length / 1024)} КБ`,
+    );
+    return small.length <= PHOTO_MAX_BYTES ? small : undefined;
+  } catch (err) {
+    console.warn(`  архив не отдал файл: ${(err as Error).message} - ${url}`);
     return undefined;
   }
 }
@@ -104,7 +132,7 @@ export async function sendMessageHtml(
  * сбой Телеграма. Такого кандидата надо помечать браком, а не ретраить.
  */
 export function isDeadImageError(message: string): boolean {
-  return /failed to get http url content|wrong type of the web page content|wrong file identifier|photo_invalid/i.test(
+  return /failed to get http url content|wrong type of the web page content|wrong file identifier|photo_invalid|image_process_failed/i.test(
     message,
   );
 }
