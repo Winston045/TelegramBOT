@@ -177,6 +177,19 @@ export const NATION_SHARE_SOFT = 0.2;
 export const NATION_SHARE_PENALTY = 60;
 
 /**
+ * «Своё» - СССР и Россия до него. Решение редакции 26.10: аудитория
+ * русскоязычная, ей интереснее про своё. Разбор 45 постов 11-26.10: СССР
+ * в 9% ленты, и то глазами чужих архивов (пленные у финнов, брошенный
+ * ИС-2), а США - 27%. Правила выше уравнивали все страны; для своей
+ * страны они мягче: не два поста подряд (а не раз в три), доля до 40%
+ * недели (а не 20%), и при равном качестве свой кадр идёт первым.
+ */
+export const HOME_NATION = "ussr";
+export const HOME_NATION_WINDOW = 1;
+export const HOME_SHARE_SOFT = 0.4;
+export const HOME_BONUS = 10;
+
+/**
  * О какой стране пост - по тексту подписи, а не по архиву. Правило по
  * архиву не видело американцев в чужих архивах: плакат США с Commons
  * («WWII posters»), «американские солдаты» в британском IWM. Берём
@@ -190,6 +203,9 @@ const NATION_WORDS: Array<[RegExp, string]> = [
   [/британ|английск|Королевск\S* (?:ВВС|флот)/i, "uk"],
   [/немецк|германск|вермахт|люфтваффе|кригсмарине/i, "germany"],
   [/советск|Красн\S* арми|(?<!\p{L})(?:СССР|РККА)(?!\p{L})/iu, "ussr"],
+  // Россия до 1917-го и после 1991-го - тоже своё: «русские солдаты на
+  // Юго-Западном фронте», «российские десантники»
+  [/русск|российск|(?<!\p{L})Росси[ия]/iu, "ussr"],
   [/японск/i, "japan"],
   [/французск|\bФранци/i, "france"],
   [/польск/i, "poland"],
@@ -263,6 +279,10 @@ const ARCHIVE_NATIONS: Record<string, string> = {
   "national library of ireland": "ireland",
   usaf: "usa",
   "soviet posters": "ussr",
+  // своё, 26.10: фронтовые фотографы СССР на Commons
+  "евгений халдей": "ussr",
+  "георгий зельма": "ussr",
+  "аркадий шайхет": "ussr",
 };
 
 /**
@@ -323,9 +343,13 @@ export function rank(
   const civilian = c.tags?.military === false ? CIVILIAN_PENALTY : 0;
   const leader = c.tags?.subject === "leader" ? LEADER_PENALTY : 0;
   // недельный перекос: архив, занявший больше четверти ленты, уступает
+  // своя страна живёт в основном в РИА Новости - её архиву планка выше,
+  // иначе потолок архива срезал бы и долю своего
+  const nation = postNation(c);
+  const home = nation === HOME_NATION;
   const share = archiveShare?.[archiveKey(c.attribution) || (c.source ?? "")] ?? 0;
-  const overshare =
-    share > ARCHIVE_SHARE_SOFT ? (share - ARCHIVE_SHARE_SOFT) * ARCHIVE_SHARE_PENALTY : 0;
+  const archiveSoft = home ? HOME_SHARE_SOFT : ARCHIVE_SHARE_SOFT;
+  const overshare = share > archiveSoft ? (share - archiveSoft) * ARCHIVE_SHARE_PENALTY : 0;
   // и эпоха, занявшая больше половины недели, тоже - иначе при резерве
   // из одной ВМВ прочие эпохи не выходят из хвоста очереди неделями
   const pShare = c.tags?.period ? (periodShare?.[c.tags.period] ?? 0) : 0;
@@ -337,12 +361,12 @@ export function rank(
     sShare > SUBJECT_SHARE_SOFT ? (sShare - SUBJECT_SHARE_SOFT) * SUBJECT_SHARE_PENALTY : 0;
   // и страна поста: американцы на трети недели - перекос, даже если
   // соседние посты честно чередуются
-  const nation = postNation(c);
   const nShare = nation ? (nationShare?.[nation] ?? 0) : 0;
-  const nationOver =
-    nShare > NATION_SHARE_SOFT ? (nShare - NATION_SHARE_SOFT) * NATION_SHARE_PENALTY : 0;
+  const nationSoft = home ? HOME_SHARE_SOFT : NATION_SHARE_SOFT;
+  const nationOver = nShare > nationSoft ? (nShare - nationSoft) * NATION_SHARE_PENALTY : 0;
   return (
     (c.score ?? 0) +
+    (home ? HOME_BONUS : 0) +
     quote +
     color -
     staticShot -
@@ -584,9 +608,10 @@ export function planAuto(
       }
       // то же по стране архива - иначе перекос просто меняет флаг
       const nation = postNation(c);
+      const nationWindow = nation === HOME_NATION ? HOME_NATION_WINDOW : NATION_WINDOW;
       if (
         nation &&
-        nations.slice(0, NATION_WINDOW).filter((n) => n === nation).length >=
+        nations.slice(0, nationWindow).filter((n) => n === nation).length >=
           MAX_SAME_NATION_IN_WINDOW
       ) {
         return false;

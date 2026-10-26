@@ -96,8 +96,34 @@ sources:
         attribution: "РИА Новости"
         lang: "ru"
         # названия файлов RIAN - английские описания: ищем военные прицельно,
-        # а не листаем вслепую (советская доля в ленте растёт)
-        terms: ["war", "front", "battle", "tank", "soldiers", "aviation"]
+        # а не листаем вслепую. Проба 26.10: «Great Patriotic War» - 12
+        # записей 1941-1945, «Soviet Army» и «Kursk» - снимки ТАСС в
+        # общественном достоянии (Озерский, Дебабов) с русскими подписями;
+        # «Red Army», «partisans», «sailors» - пусто, «Leningrad» - Путин
+        terms: ["Great Patriotic War", "war", "Soviet Army", "front", "Kursk", "battle",
+                "tank", "soldiers", "aviation"]
+      # ---- Своё: фронтовые фотографы СССР (решение редакции 26.10) ----
+      # Аудитория русскоязычная, а СССР был в 9% ленты, и то глазами
+      # чужих архивов. Проба 26.10 (deepcat): Халдей - флаг над Рейхстагом,
+      # Керчь, Мурманск 1942, Далянь 1945; Зельма - Сталинград; Шайхет -
+      # баррикады 1941, «сын полка», ОТ-34. Лицензии - общественное
+      # достояние и CC BY / BY-SA (дар РИА Новости). Альперт и Бальтерманц
+      # под такими именами категорий пусты
+      - category: "Photographs by Yevgeny Khaldei"
+        attribution: "Евгений Халдей"
+        lang: "ru"
+        deep: true
+        terms: [""]
+      - category: "Photographs by Georgy Zelma"
+        attribution: "Георгий Зельма"
+        lang: "ru"
+        deep: true
+        terms: [""]
+      - category: "Photographs by Arkady Shaikhet"
+        attribution: "Аркадий Шайхет"
+        lang: "ru"
+        deep: true
+        terms: [""]
       - category: "Images from the National Archives and Records Administration"
         attribution: "NARA"
         lang: "en"

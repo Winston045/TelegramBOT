@@ -127,3 +127,37 @@ describe("одобрение стареет вместе с резервом", a
     expect(pick?.id).toBe(2);
   });
 });
+
+describe("своё - СССР и Россия (решение редакции 26.10)", () => {
+  it("русская армия до 1917-го и российская после - тоже своё", () => {
+    expect(captionNation(cap("Русские солдаты на Юго-Западном фронте."))).toBe("ussr");
+    expect(captionNation(cap("Российские десантники на учениях."))).toBe("ussr");
+  });
+
+  it("свой пост может идти через один, чужой - раз в три", () => {
+    const pool = [
+      post(1, "Бойцы Красной армии в Сталинграде.", "РИА Новости"),
+      post(2, "Финские лыжники на привале.", "SA-kuva"),
+    ];
+    // два поста назад был советский - для своего это не помеха
+    const [pick] = planAuto(pool, { subjects: [], civilian: false, nations: ["germany", "ussr"] }, 1);
+    expect(pick?.id).toBe(1);
+    // но не два своих подряд
+    const [next] = planAuto(pool, { subjects: [], civilian: false, nations: ["ussr"] }, 1);
+    expect(next?.id).toBe(2);
+  });
+
+  it("при равном качестве своё идёт первым", () => {
+    const soviet = post(1, "Советские танкисты у Т-34.", "РИА Новости");
+    const us = post(2, "Американские танкисты у «Шермана».", "Library of Congress");
+    expect(rank(soviet)).toBeGreaterThan(rank(us));
+  });
+
+  it("недельная доля своего мягче: штраф только после 40%", () => {
+    const soviet = post(1, "Советские танкисты у Т-34.", "РИА Новости");
+    const us = post(2, "Американские танкисты у «Шермана».", "Library of Congress");
+    const share = { ussr: 0.35, usa: 0.35 };
+    expect(rank(soviet, {}, {}, {}, share) - rank(soviet)).toBe(0);
+    expect(rank(us, {}, {}, {}, share)).toBeLessThan(rank(us));
+  });
+});

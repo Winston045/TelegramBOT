@@ -15,7 +15,7 @@
  * добираются придержанными кадрами - неполная очередь хуже перекошенной.
  */
 import type { RawItem } from "./sources/types.js";
-import { archiveKey, archiveNation } from "./plan.js";
+import { archiveKey, archiveNation, HOME_NATION } from "./plan.js";
 
 /** Доля очереди, больше которой один архив не занимает (LOC брал 7 из 30). */
 export const MAX_ARCHIVE_SHARE = 1 / 6;
@@ -26,6 +26,8 @@ export const MAX_ARCHIVE_SHARE = 1 / 6;
  * американцы в 29% постов). Четверть - и сырья хватает, и перекоса нет.
  */
 export const MAX_NATION_SHARE = 1 / 4;
+/** Своей стране - половина очереди (решение редакции 26.10). */
+export const MAX_HOME_SHARE = 1 / 2;
 
 /** Доля очереди для кадров ВМВ: половина - как мягкая доля эпохи в ленте. */
 export const MAX_WW2_SHARE = 1 / 2;
@@ -79,6 +81,7 @@ export function buildAnalysisQueue<T extends RawItem & { source: string }>(
 ): { queue: T[]; cuts: QueueCuts } {
   const cuts: QueueCuts = { duplicates: 0, archiveCapped: 0, ww2Capped: 0, rubricCapped: 0, nationCapped: 0 };
   const nationCap = Math.max(2, Math.floor(limit * MAX_NATION_SHARE));
+  const homeCap = Math.max(2, Math.floor(limit * MAX_HOME_SHARE));
   const byNation = new Map<string, number>();
   const archiveCap = Math.max(2, Math.ceil(limit * MAX_ARCHIVE_SHARE));
   const ww2Cap = Math.max(2, Math.ceil(limit * MAX_WW2_SHARE));
@@ -115,7 +118,7 @@ export function buildAnalysisQueue<T extends RawItem & { source: string }>(
       continue;
     }
     const nation = archiveNation(item.attribution, item.source);
-    if (nation && (byNation.get(nation) ?? 0) >= nationCap) {
+    if (nation && (byNation.get(nation) ?? 0) >= (nation === HOME_NATION ? homeCap : nationCap)) {
       cuts.nationCapped++;
       held.push(item);
       continue;

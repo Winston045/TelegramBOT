@@ -10,6 +10,23 @@
  * обещанием вполне может оказаться отличным - он просто ждёт своей очереди.
  */
 import type { RawItem } from "./sources/types.js";
+import { archiveNation, HOME_NATION } from "./plan.js";
+
+/**
+ * Своё - СССР и Россия (решение редакции 26.10: аудитория русскоязычная).
+ * Узнаём по архиву (РИА Новости) или по описанию на любом из языков пула:
+ * советский танк у финнов, русская пехота у Bain - тоже своё.
+ */
+const HOME_WORDS =
+  /\b(soviet|red army|u\.?s\.?s\.?r|russian?s?|russia|moscow|leningrad|stalingrad|sowjet\w*|russisch\w*|russland|rote armee|neuvosto\w*|venäl\w*|radziec\w*|rosyj\w*|sovjet\w*|russische?)\b|советск|красноарме|красн\S* арми|(?<!\p{L})(ссср|ркка)(?!\p{L})|русск|российск|росси[ия]/iu;
+
+/** Про своё ли кадр - по архиву или по описанию. */
+export function isHome(item: RawItem & { source?: string }): boolean {
+  return (
+    archiveNation(item.attribution, item.source) === HOME_NATION ||
+    HOME_WORDS.test(`${item.title ?? ""} ${item.description ?? ""}`)
+  );
+}
 
 /**
  * Слова, которыми архивы описывают то, ради чего мы и берём кадр:
@@ -85,6 +102,9 @@ export function promise(item: RawItem): number {
   if (isDull(text)) score -= 4;
   // известное место - меньше шансов, что подпись выйдет безликой
   if (item.place) score += 1;
+  // своё - вперёд очереди: слотов анализа мало, и раньше советский кадр
+  // ждал наравне с американскими, которых в сырье втрое больше
+  if (isHome(item)) score += 3;
 
   return score;
 }
