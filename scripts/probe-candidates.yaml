@@ -8,14 +8,32 @@
 # (эстонские музеи, польские библиотеки, Баден-Вюртемберг, Страсбург), но
 # и шум: марки, часы, значки, превью 512 px.
 # Проба 6 - те же запросы в тематических коллекциях: ww1 и photography.
-europeana:
-  - { q: "soldiers 1916", theme: "ww1" }
-  - { q: "trench", theme: "ww1" }
-  - { q: "tank", theme: "ww1" }
-  - { q: "soldiers 1944", theme: "photography" }
-  - { q: "partisans", theme: "photography" }
-  - { q: "Wehrmacht", theme: "photography" }
-  - { q: "Red Army", theme: "photography" }
-  - { q: "1956 revolution", theme: "photography" }
-  - { q: "Prague 1968", theme: "photography" }
-  - { q: "Soviet", theme: "photography" }
+# Проба 7 (26.10): советское и российское - решение редакции «больше
+# своего, аудитория русскоязычная». Разбор 45 постов 11-26.10: СССР в 9%,
+# и то чаще глазами чужих архивов (пленные у финнов, брошенный ИС-2);
+# от РИА Новости - один пост. Ищем источники с советской стороны.
+commons:
+  - category: "Images from RIA Novosti"
+    lang: "ru"
+    terms: ["Red Army", "Great Patriotic War", "Soviet Army", "partisans", "Stalingrad", "Leningrad", "Afghanistan", "Kursk", "Berlin 1945", "sailors"]
+  - { category: "Mil.ru", lang: "ru" }
+  - { category: "Images from Mil.ru", lang: "ru" }
+  - { category: "Photographs by Yevgeny Khaldei", lang: "ru", deep: true }
+  - { category: "Photographs by Max Alpert", lang: "ru", deep: true }
+  - { category: "Photographs by Georgy Zelma", lang: "ru", deep: true }
+  - { category: "Photographs by Dmitri Baltermants", lang: "ru", deep: true }
+  - { category: "Photographs by Arkady Shaikhet", lang: "ru", deep: true }
+  - { category: "Red Army in World War II", lang: "en", deep: true }
+  - { category: "Soviet–Afghan War", lang: "en", deep: true }
+  - { category: "Soviet war in Afghanistan", lang: "en", deep: true }
+  - { category: "Imperial Russian Army in World War I", lang: "en", deep: true }
+  - { category: "Russian Empire in World War I", lang: "en", deep: true }
+  - { category: "Russian Civil War", lang: "en", deep: true }
+  - { category: "Battle of Stalingrad", lang: "en", deep: true }
+  - { category: "Siege of Leningrad", lang: "en", deep: true }
+  - { category: "Soviet Navy", lang: "en", deep: true }
+loc:
+  - "prokudin-gorskii"
+  - "russia 1916 photograph"
+  - "russian army 1917"
+  - "soviet union 1945 photograph"
