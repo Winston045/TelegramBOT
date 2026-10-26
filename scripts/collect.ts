@@ -20,7 +20,7 @@ import {
 import { reportHealth } from "../src/health.js";
 import { minWidthFor, prefilter } from "../src/prefilter.js";
 import sharp from "sharp";
-import { byPromise, promise } from "../src/promise.js";
+import { byPromise, isHome, promise } from "../src/promise.js";
 import { buildAnalysisQueue } from "../src/queue.js";
 import { hiResLocUrl } from "../src/sources/loc.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
@@ -328,6 +328,7 @@ async function main() {
   );
   const minScore = cfg.collect.min_score ?? 45;
   const hooklessMinScore = cfg.collect.hookless_min_score ?? 85;
+  const homeHooklessMinScore = cfg.collect.home_hookless_min_score ?? 70;
   let written = 0;
   let failed = 0;
   let quotaFailed = 0;
@@ -463,7 +464,13 @@ async function main() {
       };
       tagRubric(a);
       const gateMin = rubric?.minScore ?? minScore;
-      const gateHookless = rubric?.hooklessMinScore ?? hooklessMinScore;
+      // своё (СССР, Россия) интересно русскоязычному читателю само по
+      // себе - узнаваемость и есть крючок. Сбор 26.10: «встреча
+      // освободителей» с оценкой 72 ушла в отсев как «без крючка»
+      const gateHookless = Math.min(
+        rubric?.hooklessMinScore ?? hooklessMinScore,
+        isHome(item) ? homeHooklessMinScore : Infinity,
+      );
       let verdict = passesGate(a, { minScore: gateMin, hooklessMinScore: gateHookless });
       // Второе мнение: отказ облегчённой модели перепроверяет полноценная.
       // Аудит 22.10 (scripts/gate-audit.ts): облегчённая ставила «45, без

@@ -61,6 +61,8 @@ export type AppConfig = {
      * скучен, каким бы качественным ни был снимок.
      */
     hookless_min_score?: number;
+    /** порог «без крючка» для своего - СССР и России (решение 26.10) */
+    home_hookless_min_score?: number;
     /** отказ облегчённой модели перепроверять полноценной (по умолчанию да) */
     second_opinion?: boolean;
   };
