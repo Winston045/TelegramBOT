@@ -680,13 +680,26 @@ export function planAuto(
         otherSubject,
         otherArchive,
       ];
+      // США в окне соседства не выходят и аварийным добором: резерв
+      // 27.10 был наполовину из одобренных Signal Corps, и добор ставил
+      // американцев через пост. Лучше пустой слот и сигнал сторожу
+      // собрать свежего, чем снова «канал про США»
+      const blocked = (c: PlanCandidate) => {
+        if (overCap(c)) return true;
+        const n = postNation(c);
+        return (
+          Boolean(LIMITED_NATIONS[n]) &&
+          nations.slice(0, nationWindow(n)).filter((x) => x === n).length >= MAX_SAME_NATION_IN_WINDOW
+        );
+      };
       let other = -1;
       for (const pref of prefs) {
-        other = pool.findIndex((c) => !overCap(c) && pref(c));
+        other = pool.findIndex((c) => !blocked(c) && pref(c));
         if (other !== -1) break;
       }
-      idx = other === -1 ? pool.findIndex((c) => !overCap(c)) : other;
-      // в пуле остались только рубрики сверх потолка - слот лучше оставить
+      idx = other === -1 ? pool.findIndex((c) => !blocked(c)) : other;
+      // в пуле остались только рубрики сверх потолка или США в окне -
+      // слот лучше оставить
       if (idx === -1) break;
     }
     const [pick] = pool.splice(idx, 1);

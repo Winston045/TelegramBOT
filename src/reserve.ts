@@ -9,7 +9,7 @@
 import type { AppConfig } from "./config.js";
 import { getDb } from "./db.js";
 import { loadPublishTimes } from "./settings.js";
-import { RESERVE_TTL_DAYS } from "./plan.js";
+import { LIMITED_NATIONS, postNation, RESERVE_TTL_DAYS } from "./plan.js";
 
 /**
  * На сколько дней публикаций держим готовые посты.
@@ -84,26 +84,32 @@ export function quotaDay(now: Date): string {
 export async function countAvailable(now = new Date()): Promise<number> {
   const db = getDb();
   const freshSince = new Date(now.getTime() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString();
-  const [reserve, approved] = await Promise.all([
-    db
-      .from("candidates")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["new", "shown"])
-      .not("caption_html", "is", null)
-      .gte("created_at", freshSince),
-    db
-      .from("candidates")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "approved")
-      .not("caption_html", "is", null)
-      // одобрение стареет вместе с резервом (approvedPriority): старые
-      // одобренные выйдут, но запасом не считаются - иначе сторож не
-      // собирал свежего, и лента жила остатками сентябрьской очереди
-      .gte("created_at", freshSince),
-  ]);
-  if (reserve.error) throw new Error(`чтение резерва: ${reserve.error.message}`);
-  if (approved.error) throw new Error(`чтение очереди: ${approved.error.message}`);
-  return (reserve.count ?? 0) + (approved.count ?? 0);
+  // одобрение стареет вместе с резервом (approvedPriority): старые
+  // одобренные выйдут, но запасом не считаются - иначе сторож не
+  // собирал свежего, и лента жила остатками сентябрьской очереди
+  const { data, error } = await db
+    .from("candidates")
+    .select("id, attribution, source, caption_html")
+    .in("status", ["new", "shown", "approved"])
+    .not("caption_html", "is", null)
+    .gte("created_at", freshSince);
+  if (error) throw new Error(`чтение резерва: ${error.message}`);
+  return usableCount(data ?? []);
+}
+
+/**
+ * Сколько постов резерва реально выйдет. Американский пост выходит не
+ * чаще раза в пять (LIMITED_NATIONS), поэтому сверх четверти от прочих
+ * он запасом не считается: резерв 27.10 - 8 из 15 США, и сторож не
+ * собирал свежего, хотя выйти без перекоса могли только 9 постов.
+ */
+export function usableCount(
+  rows: Array<{ attribution?: string | null; source?: string | null; caption_html?: string | null }>,
+): number {
+  let limited = 0;
+  for (const r of rows) if (LIMITED_NATIONS[postNation(r)]) limited++;
+  const others = rows.length - limited;
+  return others + Math.min(limited, Math.ceil(others / 4));
 }
 
 export async function planReserve(cfg: AppConfig): Promise<ReservePlan> {

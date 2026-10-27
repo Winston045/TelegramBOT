@@ -184,3 +184,22 @@ describe("США - отдельная планка (редакция 27.10: «о
     expect(rank(uk, {}, {}, {}, { uk: 0.15 })).toBe(rank(uk));
   });
 });
+
+describe("США и аварийный добор", () => {
+  it("резерв из одних американцев не выпускает их подряд - слот остаётся пустым", () => {
+    const pool = [
+      post(1, "Американские пехотинцы в Арденнах.", "US Army Signal Corps"),
+      post(2, "Американские танкисты у «Шермана».", "Library of Congress"),
+    ];
+    const picks = planAuto(pool, { subjects: [], civilian: false, nations: ["uk", "usa"] }, 2);
+    expect(picks).toHaveLength(0);
+  });
+
+  it("сторож считает американцев сверх четверти от прочих не запасом", async () => {
+    const { usableCount } = await import("../src/reserve.js");
+    const us = (i: number) => ({ caption_html: cap(`Американские солдаты ${i}.`), attribution: "NARA" });
+    const other = (i: number) => ({ caption_html: cap(`Финские лыжники ${i}.`), attribution: "SA-kuva" });
+    // 7 прочих + 8 американцев: выйти без перекоса могут 7 + 2
+    expect(usableCount([...Array.from({ length: 8 }, (_, i) => us(i)), ...Array.from({ length: 7 }, (_, i) => other(i))])).toBe(9);
+  });
+});
