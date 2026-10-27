@@ -28,6 +28,8 @@ export const MAX_ARCHIVE_SHARE = 1 / 6;
 export const MAX_NATION_SHARE = 1 / 4;
 /** Своей стране - половина очереди (решение редакции 26.10). */
 export const MAX_HOME_SHARE = 1 / 2;
+/** США - восьмая часть очереди (редакция 27.10: «очень много США»). */
+export const MAX_USA_SHARE = 1 / 8;
 
 /** Доля очереди для кадров ВМВ: половина - как мягкая доля эпохи в ленте. */
 export const MAX_WW2_SHARE = 1 / 2;
@@ -82,6 +84,9 @@ export function buildAnalysisQueue<T extends RawItem & { source: string }>(
   const cuts: QueueCuts = { duplicates: 0, archiveCapped: 0, ww2Capped: 0, rubricCapped: 0, nationCapped: 0 };
   const nationCap = Math.max(2, Math.floor(limit * MAX_NATION_SHARE));
   const homeCap = Math.max(2, Math.floor(limit * MAX_HOME_SHARE));
+  const usaCap = Math.max(1, Math.floor(limit * MAX_USA_SHARE));
+  const capFor = (nation: string) =>
+    nation === HOME_NATION ? homeCap : nation === "usa" ? usaCap : nationCap;
   const byNation = new Map<string, number>();
   const archiveCap = Math.max(2, Math.ceil(limit * MAX_ARCHIVE_SHARE));
   const ww2Cap = Math.max(2, Math.ceil(limit * MAX_WW2_SHARE));
@@ -118,7 +123,7 @@ export function buildAnalysisQueue<T extends RawItem & { source: string }>(
       continue;
     }
     const nation = archiveNation(item.attribution, item.source);
-    if (nation && (byNation.get(nation) ?? 0) >= (nation === HOME_NATION ? homeCap : nationCap)) {
+    if (nation && (byNation.get(nation) ?? 0) >= capFor(nation)) {
       cuts.nationCapped++;
       held.push(item);
       continue;
@@ -139,8 +144,13 @@ export function buildAnalysisQueue<T extends RawItem & { source: string }>(
 
   // добор: материала других эпох и архивов не хватило - лучше заполнить
   // очередь придержанными, чем жечь день на неполной партии
+  // Добор не возвращает США сверх их доли: иначе придержанные потолком
+  // американские кадры возвращались в хвост и съедали недобор (27.10)
   for (const item of held) {
     if (queue.length >= limit) break;
+    const nation = archiveNation(item.attribution, item.source);
+    if (nation === "usa" && (byNation.get(nation) ?? 0) >= usaCap) continue;
+    if (nation) byNation.set(nation, (byNation.get(nation) ?? 0) + 1);
     queue.push(item);
   }
 

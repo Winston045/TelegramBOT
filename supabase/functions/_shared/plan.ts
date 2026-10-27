@@ -190,6 +190,30 @@ export const HOME_SHARE_SOFT = 0.4;
 export const HOME_BONUS = 10;
 
 /**
+ * США - отдельная планка (редакция 27.10: «очень много США»). Разборы
+ * 22.10 и 26.10: американцы 27-29% ленты при общем правиле «раз в три
+ * поста, до 20% недели». Американских поставщиков больше всех (LOC,
+ * NARA, Signal Corps, флот, ВВС, плакаты), и общее правило их не держит:
+ * кадров много, и они честно занимают каждое третье место. Для США -
+ * не чаще раза в пять постов и не больше десятой части недели.
+ */
+export const LIMITED_NATIONS: Record<string, { window: number; softShare: number }> = {
+  usa: { window: 5, softShare: 0.1 },
+};
+
+/** Окно соседства для страны: своё - через пост, США - раз в пять. */
+export function nationWindow(nation: string): number {
+  if (nation === HOME_NATION) return HOME_NATION_WINDOW;
+  return LIMITED_NATIONS[nation]?.window ?? NATION_WINDOW;
+}
+
+/** Доля недели без штрафа для страны. */
+export function nationSoftShare(nation: string): number {
+  if (nation === HOME_NATION) return HOME_SHARE_SOFT;
+  return LIMITED_NATIONS[nation]?.softShare ?? NATION_SHARE_SOFT;
+}
+
+/**
  * О какой стране пост - по тексту подписи, а не по архиву. Правило по
  * архиву не видело американцев в чужих архивах: плакат США с Commons
  * («WWII posters»), «американские солдаты» в британском IWM. Берём
@@ -362,7 +386,7 @@ export function rank(
   // и страна поста: американцы на трети недели - перекос, даже если
   // соседние посты честно чередуются
   const nShare = nation ? (nationShare?.[nation] ?? 0) : 0;
-  const nationSoft = home ? HOME_SHARE_SOFT : NATION_SHARE_SOFT;
+  const nationSoft = nation ? nationSoftShare(nation) : NATION_SHARE_SOFT;
   const nationOver = nShare > nationSoft ? (nShare - nationSoft) * NATION_SHARE_PENALTY : 0;
   return (
     (c.score ?? 0) +
@@ -608,10 +632,9 @@ export function planAuto(
       }
       // то же по стране архива - иначе перекос просто меняет флаг
       const nation = postNation(c);
-      const nationWindow = nation === HOME_NATION ? HOME_NATION_WINDOW : NATION_WINDOW;
       if (
         nation &&
-        nations.slice(0, nationWindow).filter((n) => n === nation).length >=
+        nations.slice(0, nationWindow(nation)).filter((n) => n === nation).length >=
           MAX_SAME_NATION_IN_WINDOW
       ) {
         return false;

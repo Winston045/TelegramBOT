@@ -50,16 +50,29 @@ describe("buildAnalysisQueue", () => {
 
   it("один архив не занимает больше своей доли, его лишнее уступает другим", () => {
     // LOC брал 7 мест из 30 при трети сырья - другие архивы ждали в хвосте
+    // (архив без страны - у американских теперь своя, более тесная планка)
     const loc = Array.from({ length: 10 }, (_, i) =>
-      make({ attribution: "Library of Congress", title: `loc ${i}` }),
+      make({ attribution: "Big Archive", title: `loc ${i}` }),
     );
     const others = Array.from({ length: 10 }, (_, i) =>
       make({ attribution: `archive-${i}`, title: `other ${i}` }),
     );
     const { queue } = buildAnalysisQueue([...loc, ...others], 12);
-    const locCount = queue.filter((i) => i.attribution === "Library of Congress").length;
+    const locCount = queue.filter((i) => i.attribution === "Big Archive").length;
     expect(locCount).toBe(2); // ceil(12/6)
     expect(queue).toHaveLength(12);
+  });
+
+  it("США - восьмая часть очереди, и добор её не раздувает (редакция 27.10)", () => {
+    const us = ["Library of Congress", "NARA", "US Army Signal Corps", "NHHC", "USAF"].flatMap((a, j) =>
+      Array.from({ length: 4 }, (_, i) => make({ attribution: a, title: `us ${j}-${i}` })),
+    );
+    const others = Array.from({ length: 10 }, (_, i) =>
+      make({ attribution: `archive-${i}`, title: `other ${i}` }),
+    );
+    const { queue } = buildAnalysisQueue([...us, ...others], 24);
+    const usCount = queue.filter((i) => !i.attribution?.startsWith("archive-")).length;
+    expect(usCount).toBe(3); // floor(24/8)
   });
 
   it("ВМВ не занимает больше половины очереди, пока есть другие эпохи", () => {

@@ -161,3 +161,26 @@ describe("своё - СССР и Россия (решение редакции 2
     expect(rank(us, {}, {}, {}, share)).toBeLessThan(rank(us));
   });
 });
+
+describe("США - отдельная планка (редакция 27.10: «очень много США»)", () => {
+  it("американский пост - не чаще раза в пять", () => {
+    const pool = [
+      post(1, "Американские пехотинцы в Арденнах.", "NARA"),
+      post(2, "Финские лыжники на привале.", "SA-kuva"),
+    ];
+    pool[0]!.score = 95;
+    const [pick] = planAuto(
+      pool,
+      { subjects: [], civilian: false, nations: ["germany", "uk", "ussr", "usa"] },
+      1,
+    );
+    expect(pick?.id).toBe(2);
+  });
+
+  it("штраф за долю недели у США начинается с 10%", () => {
+    const us = post(1, "Американские танкисты у «Шермана».", "Library of Congress");
+    expect(rank(us, {}, {}, {}, { usa: 0.15 })).toBeLessThan(rank(us));
+    const uk = post(2, "Британские танкисты у «Кромвеля».", "IWM");
+    expect(rank(uk, {}, {}, {}, { uk: 0.15 })).toBe(rank(uk));
+  });
+});
