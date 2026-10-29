@@ -98,7 +98,7 @@ async function main() {
       console.log(`предмет: ${a.subject_wiki ?? "-"}${subject ? " (справка найдена)" : a.subject_wiki ? " (справки нет)" : ""}`);
       // первый заход отдельно: видно, кто сделал изюминку, а кто её снял
       console.log(`ПЕРВЫЙ ЗАХОД:\n  ${plain(assembleCaptionHtml(a, item, cfg.channel))}`);
-      const reviewed = await reviewQuote(item, cfg, a, extra, subject);
+      const reviewed = await reviewQuote(item, cfg, a, extra, subject, { people: a.people });
       const sources = [item.title, item.description, item.place, extra, subject].filter(Boolean).join("\n");
       // страховки по очереди: каждая видит итог предыдущей
       const guards = [
