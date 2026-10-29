@@ -23,6 +23,11 @@ export type Analysis = VisionScore &
      * а не о событии вокруг.
      */
     subject_wiki?: string;
+    /**
+     * Люди, названные в тексте поста по имени. По нему редактор цитат
+     * проверяет, объяснено ли читателю, кто это (правило 10 подписи).
+     */
+    people?: string[];
   };
 
 export function buildAnalysisPrompt(
@@ -57,9 +62,15 @@ Campbeltown (I42)», «Higgins boat»). Только если предмет н�
 метаданных или однозначно узнаётся; общие сцены (солдаты, улица,
 построение) и сомнения - пустая строка. По этому названию редакция
 достанет справку: выдуманное название даст чужую статью.
+Если главное в кадре - человек, названный в метаданных (генерал,
+лётчик, артист), subject_wiki - статья о нём («George S. Patton»):
+по ней редакция объяснит читателю, кто это и чем он интересен.
+
+people - имена людей, которых ты назвал в caption (как написано в
+caption: «Джордж Паттон»); никого не назвал - пустой список.
 
 Верни строго JSON без обёрток и без markdown:
-{${SCORE_FIELDS_SCHEMA}, "subject_wiki": "<название статьи или пустая строка>", "caption": "...", "quote": "<обычный пост: место и год короткой строкой; изюминка: факт-справка>", "quote_place": "<у изюминки место и дата ВСЕГДА здесь - отдельной второй цитатой после факта; у обычного поста пустая строка>", "quote_kind": "observation" | "context"}`;
+{${SCORE_FIELDS_SCHEMA}, "subject_wiki": "<название статьи или пустая строка>", "people": ["<имя из caption>"], "caption": "...", "quote": "<обычный пост: место и год короткой строкой; изюминка: факт-справка>", "quote_place": "<у изюминки место и дата ВСЕГДА здесь - отдельной второй цитатой после факта; у обычного поста пустая строка>", "quote_kind": "observation" | "context"}`;
 }
 
 export async function analyzeImage(
@@ -93,5 +104,8 @@ export async function analyzeImage(
     quote_place: result.quote_place?.trim() || undefined,
     quote_kind: result.quote_kind === "observation" ? "observation" : "context",
     subject_wiki: typeof result.subject_wiki === "string" ? result.subject_wiki.trim().slice(0, 120) || undefined : undefined,
+    people: Array.isArray(result.people)
+      ? result.people.filter((p): p is string => typeof p === "string" && p.trim().length > 0).slice(0, 6)
+      : undefined,
   };
 }

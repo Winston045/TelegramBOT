@@ -14,6 +14,20 @@ export type NumbersVerdict = {
 };
 
 /**
+ * Отклонённая правка цитаты откатывает ТОЛЬКО цитату: текст поста мог
+ * быть исправлен редактором по правилу ЛЮДИ (пояснил, кто назван), и эта
+ * правка проверена отдельно (acceptBody).
+ */
+function firstPassQuote(reviewed: GeneratedCaption, firstPass: GeneratedCaption): GeneratedCaption {
+  return {
+    ...reviewed,
+    quote: firstPass.quote,
+    quote_place: firstPass.quote_place,
+    quote_kind: firstPass.quote_kind,
+  };
+}
+
+/**
  * Числа изюминки должны быть в источниках. Не прошла правка редактора -
  * берём версию первого захода; не прошла и она - пост обычный, с местом
  * и годом: лучше без изюминки, чем с выдумкой.
@@ -26,7 +40,7 @@ export function guardNumbers(
   const bad = unsupportedNumbers(reviewed.caption.quote, sources);
   if (!bad.length) return { caption: reviewed.caption, outcome: "ok", bad };
   if (reviewed.rewritten && !unsupportedNumbers(firstPass.quote, sources).length) {
-    return { caption: firstPass, outcome: "editor_rejected", bad };
+    return { caption: firstPassQuote(reviewed.caption, firstPass), outcome: "editor_rejected", bad };
   }
   return {
     caption: {
@@ -83,7 +97,7 @@ export function guardCopies(
 ): NumbersVerdict {
   if (!copiesExample(reviewed.caption.quote)) return { caption: reviewed.caption, outcome: "ok", bad: [] };
   if (reviewed.rewritten && !copiesExample(firstPass.quote)) {
-    return { caption: firstPass, outcome: "editor_rejected", bad: ["копия примера"] };
+    return { caption: firstPassQuote(reviewed.caption, firstPass), outcome: "editor_rejected", bad: ["копия примера"] };
   }
   return {
     caption: {

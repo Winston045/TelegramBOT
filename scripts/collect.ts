@@ -566,7 +566,7 @@ async function main() {
         enoughTime && a.subject_wiki ? await subjectReference(a.subject_wiki) : undefined;
       if (subjectContext) console.log(`  справка о предмете: «${a.subject_wiki}» [${item.source}] ${item.sourceId}`);
       const reviewed = enoughTime
-        ? await reviewWithWait(() => reviewQuote(item, cfg, a, extraContext, subjectContext, { throwBusy: true }), a)
+        ? await reviewWithWait(() => reviewQuote(item, cfg, a, extraContext, subjectContext, { throwBusy: true, people: a.people }), a)
         : { caption: a, rewritten: false };
       if (reviewed.rewritten) {
         console.log(`  цитата переписана редактором: [${item.source}] ${item.sourceId}`);

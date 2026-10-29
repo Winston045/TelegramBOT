@@ -13,7 +13,8 @@
  */
 import type { AppConfig } from "./config.js";
 import type { GeneratedCaption } from "./caption.js";
-import { isBarePlaceDate, metadataBlock } from "./caption.js";
+import { descriptiveSentences, isBarePlaceDate, metadataBlock } from "./caption.js";
+import { unsupportedNumbers, validateYears } from "./validate.js";
 
 export { isBarePlaceDate };
 import type { RawItem } from "./sources/types.js";
@@ -23,6 +24,8 @@ type Verdict = {
   verdict: "ok" | "weak";
   quote?: string;
   quote_kind?: "observation" | "context";
+  /** новый текст поста - только ради правила ЛЮДИ */
+  caption?: string;
 };
 
 export function buildPrompt(
@@ -30,18 +33,22 @@ export function buildPrompt(
   generated: GeneratedCaption,
   extraContext?: string,
   subjectContext?: string,
+  people?: string[],
 ): string {
+  const peopleBlock = people?.length
+    ? `\nВ тексте поста названы люди: ${people.join(", ")}.\n`
+    : "";
   const placeLine = generated.quote_place
     ? `\nОтдельной строкой после цитаты уже стоит место и дата: ${generated.quote_place}`
     : "";
   const subject = subjectContext
     ? `\n${subjectContext}\n`
     : "\nСправки о предмете в кадре нет.\n";
-  return `Ты редактор телеграм-канала о военной истории. Твоя зона - ТОЛЬКО
-цитата под фотографией: блок, который идёт отдельной строкой после
-основного текста.
+  return `Ты редактор телеграм-канала о военной истории. Твоя зона - цитата
+под фотографией (блок отдельной строкой после основного текста) и одно
+правило в тексте поста: люди, названные по имени.
 
-${metadataBlock(item, extraContext)}${subject}
+${metadataBlock(item, extraContext)}${subject}${peopleBlock}
 Текст поста: ${generated.caption}
 Цитата: ${generated.quote || "(пусто)"}${placeLine}
 
@@ -94,6 +101,22 @@ ${metadataBlock(item, extraContext)}${subject}
    положи место и год короткой строкой («СССР, 1943 год.») и убедись,
    что дата не дублирует текст поста.
 
+ЛЮДИ В ТЕКСТЕ ПОСТА. Читатель русскоязычный: иностранных генералов,
+чиновников и артистов он не знает, да и своих - далеко не всех. Имя без
+пояснения - пустой звук («Трубач Адо Бродбом и саксофонист Джек Селс
+выступают...» - брак). Проверь каждого названного человека:
+- его знает каждый (Сталин, Черчилль, Гитлер, Жуков, Гагарин,
+  Эйзенхауэр, «Битлз») - всё в порядке;
+- иначе в тексте должно быть понятно, КТО ОН и ЧЕМ ИНТЕРЕСЕН. Нет -
+  перепиши текст поста: добавь короткое пояснение по метаданным и
+  справкам («Джордж Паттон, генерал, чьи танки первыми вышли к Рейну»)
+  или, если о человеке в материале ничего, кроме фамилии и должности, -
+  замени имя ролью («американский генерал», «голландские джазмены»);
+- несколько фамилий подряд - оставь одного главного или замени ролью.
+Новый текст поста - ровно ОДНО предложение, без даты и без места,
+которое уже стоит в цитате; всё остальное в нём сохрани. Текст поста в
+порядке - не трогай его.
+
 Жёсткие правила:
 - факты СТРОГО из метаданных и справок выше; не досочинять даже то, что
   «все знают», - за выдумку канал теряет доверие читателей;
@@ -104,8 +127,43 @@ ${metadataBlock(item, extraContext)}${subject}
   markdown; длинное тире не использовать - только обычный дефис.
 
 Верни строго JSON без обёрток, ровно одну из двух форм:
-- ничего не менять: {"verdict": "ok"}
-- новая цитата: {"verdict": "weak", "quote": "...", "quote_kind": "observation" | "context"}`;
+- цитату не менять: {"verdict": "ok"}
+- новая цитата: {"verdict": "weak", "quote": "...", "quote_kind": "observation" | "context"}
+Если по правилу ЛЮДИ нужно исправить текст поста, добавь в любую из форм
+поле "caption": "<новый текст поста>"; иначе поля caption не должно быть.`;
+}
+
+/**
+ * Принимать ли новый текст поста от редактора. Ему разрешено только
+ * пояснить, кто назван, или заменить имя ролью, - поэтому новый текст
+ * обязан остаться одним предложением, а его годы и числа должны найтись
+ * в источниках или в прежнем тексте. Иначе остаётся старый текст.
+ */
+export function acceptBody(
+  proposed: string | undefined,
+  current: string,
+  item: RawItem,
+  context: Array<string | undefined>,
+): string | undefined {
+  const body = plainDashes(proposed?.trim() ?? "");
+  if (!body || body === current.trim()) return undefined;
+  if (body.length > 300 || /<[^>]+>/.test(body)) return undefined;
+  if (descriptiveSentences(body) > 1) return undefined;
+  const sources = [item.title, item.description, item.place, current, ...context].filter(Boolean).join("\n");
+  if (unsupportedNumbers(body, sources).length) return undefined;
+  const years = validateYears(body, {
+    title: item.title,
+    description: item.description,
+    year: item.year,
+    place: item.place,
+    context: [current, ...context].filter(Boolean).join("\n"),
+  });
+  return years.ok ? body : undefined;
+}
+
+/** Длинные тире - в обычный дефис, как во всём, что уходит в канал. */
+function plainDashes(text: string): string {
+  return text.replace(/[\u2012\u2013\u2014\u2015\u2212]/g, "-");
 }
 
 /**
@@ -137,23 +195,35 @@ export async function reviewQuote(
    * ожиданием 196-240 с, и изюминки облегчённой модели ушли в резерв
    * без вычитки, хотя времени дождаться было больше десяти минут.
    */
-  opts: { throwBusy?: boolean } = {},
+  opts: {
+    throwBusy?: boolean;
+    /** люди, названные в тексте поста: с ними редактор смотрит и обычный пост */
+    people?: string[];
+  } = {},
 ): Promise<{ caption: GeneratedCaption; rewritten: boolean }> {
   // пустую цитату и штатное «место, год» без справки о предмете не
   // проверяем - экономим квоту: сделать из них изюминку не из чего.
   // Справка о предмете в кадре - ровно тот материал, которого не было у
   // первого захода, поэтому с ней редактор смотрит и обычный пост
   const plain = !generated.quote || isBarePlaceDate(generated.quote);
-  if (plain && !subjectContext) {
+  const people = opts.people?.filter((p) => p.trim()) ?? [];
+  if (plain && !subjectContext && !people.length) {
     return { caption: generated, rewritten: false };
   }
   try {
     const res = await geminiJson<Verdict>(
-      [{ text: buildPrompt(item, generated, extraContext, subjectContext) }],
+      [{ text: buildPrompt(item, generated, extraContext, subjectContext, people) }],
       { fullOnly: true },
     );
+    // правка текста поста по правилу ЛЮДИ - со своими страховками
+    const body = acceptBody(res.caption, generated.caption, item, [extraContext, subjectContext]);
+    const bodyChanged = body !== undefined;
+    if (body !== undefined) {
+      console.log(`  текст поста поправлен (люди): «${generated.caption}» → «${body}»`);
+      generated = { ...generated, caption: body };
+    }
     if (res.verdict !== "weak") {
-      return { caption: generated, rewritten: false };
+      return { caption: generated, rewritten: bodyChanged };
     }
     const quote = res.quote?.trim() ?? "";
     if (!quote) {
@@ -169,7 +239,7 @@ export async function reviewQuote(
     // ДВЕ цитаты места подряд
     if (isBarePlaceDate(quote)) {
       // обычный пост и так был обычным - менять нечего
-      if (plain) return { caption: generated, rewritten: false };
+      if (plain) return { caption: generated, rewritten: bodyChanged };
       const finalQuote =
         generated.quote_place && isBarePlaceDate(generated.quote_place)
           ? generated.quote_place
