@@ -11,6 +11,8 @@
  * выдуманными.
  */
 
+import { isBlocked, noteRateLimit } from "./hostguard.js";
+
 /**
  * Подпись для всех запросов к Викимедиа. Правила их API требуют в
  * User-Agent контакт - ссылку или почту; клиентов без контакта
@@ -55,7 +57,7 @@ async function fetchPage(lang: string, title: string, withRuLink: boolean): Prom
   // отвечала 429 на десятки запросов подряд - справка о событии перебирала
   // по восемь статей на кадр и выжигала лимит, и до справки о предмете в
   // кадре (ради неё всё и затевалось) очередь не доходила
-  if (Date.now() < cooldownUntil) return undefined;
+  if (Date.now() < cooldownUntil || isBlocked(url)) return undefined;
   for (let attempt = 0; ; attempt++) {
     const wait = lastRequestAt + MIN_GAP_MS - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -70,8 +72,10 @@ async function fetchPage(lang: string, title: string, withRuLink: boolean): Prom
         return body.query?.pages?.[0];
       }
       if (res.status === 429) {
-        // повтор через пару секунд только продлит отказ - пауза на минуту
+        // повтор через пару секунд только продлит отказ - пауза на минуту,
+        // а второй отказ после паузы - Википедия до конца прогона отдыхает
         cooldownUntil = Date.now() + COOLDOWN_MS;
+        noteRateLimit(url);
         console.warn(`  википедия: 429 на «${title}» - пауза ${COOLDOWN_MS / 1000} с`);
         return undefined;
       }

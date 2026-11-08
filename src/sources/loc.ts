@@ -6,6 +6,7 @@
  */
 import { locQueries, type SourceConfig } from "../config.js";
 import type { RawItem, SourceAdapter } from "./types.js";
+import { isBlocked, noteRateLimit } from "../hostguard.js";
 
 type LocResult = {
   id?: string;
@@ -130,7 +131,9 @@ export async function fetchQuery(query: string, count: number, page: number): Pr
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (res.status === 429) {
-        // лимит loc.gov: повтор той же секундой лишь продлевает блокировку
+        // лимит loc.gov: повтор той же секундой лишь продлевает блокировку,
+        // и бан общий для поиска, карточек и картинок (tile.loc.gov)
+        noteRateLimit(url, { now: true });
         throw new LocRateLimitError(`loc: ${url} → HTTP 429`);
       }
       if (!res.ok) throw new Error(`loc: ${url} → HTTP ${res.status}`);
@@ -149,8 +152,11 @@ export const loc: SourceAdapter = {
 
   /** Полное описание с карточки предмета — контекст для подписи. */
   async details(item: RawItem): Promise<string | undefined> {
+    const itemUrl = `https://www.loc.gov/item/${item.sourceId}/?fo=json`;
+    // loc.gov отдыхает после 429 - карточку не просим, кадр обойдётся без неё
+    if (isBlocked(itemUrl)) return undefined;
     try {
-      const res = await fetch(`https://www.loc.gov/item/${item.sourceId}/?fo=json`, {
+      const res = await fetch(itemUrl, {
         headers: {
           accept: "application/json",
           "user-agent":
@@ -158,6 +164,7 @@ export const loc: SourceAdapter = {
         },
         signal: AbortSignal.timeout(30_000),
       });
+      if (res.status === 429) noteRateLimit(itemUrl, { now: true });
       if (!res.ok) return undefined;
       const body = (await res.json()) as {
         item?: { description?: string[]; notes?: string[]; summary?: string[] };
@@ -201,6 +208,7 @@ export const loc: SourceAdapter = {
         console.warn(`  loc: бюджет времени исчерпан, собрано ${items.length} - остальные запросы пропущены`);
         break;
       }
+      if (isBlocked("https://www.loc.gov/")) break;
       // курсор — номер страницы прошлого запуска; 0 значит «ещё не ходили»
       const page = Math.max(1, (await cursors.get("loc", q)) + 1);
       let results: LocResult[];

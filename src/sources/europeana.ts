@@ -7,6 +7,7 @@ import { locQueries, type SourceConfig } from "../config.js";
 import type { RawItem, SourceAdapter } from "./types.js";
 import type { CursorStore } from "../cursors.js";
 import { parseYear } from "./loc.js";
+import { isBlocked, noteRateLimit } from "../hostguard.js";
 
 const API = "https://api.europeana.eu/record/v2/search.json";
 
@@ -60,12 +61,15 @@ export const europeana: SourceAdapter = {
       url.searchParams.set("start", String(start));
       url.searchParams.set("profile", "rich");
 
+      if (isBlocked(url)) break;
       const res = await fetch(url, {
         headers: { accept: "application/json" },
         signal: AbortSignal.timeout(30_000),
       });
       if (!res.ok) {
         console.warn(`europeana: "${q}" → HTTP ${res.status}`);
+        // лимит ключа: остальные запросы его только продлят
+        if (res.status === 429 && noteRateLimit(url, { now: true })) break;
         continue;
       }
       const body = (await res.json()) as { items?: EuropeanaItem[] };

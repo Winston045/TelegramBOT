@@ -13,6 +13,7 @@ import type { RawItem, SourceAdapter } from "./types.js";
 import type { CursorStore } from "../cursors.js";
 import { mapCommonsPage, type CommonsPage } from "./bundesarchiv.js";
 import { WIKIMEDIA_UA, wikiIntro } from "../wiki.js";
+import { isBlocked, noteOk, noteRateLimit } from "../hostguard.js";
 
 const API = "https://commons.wikimedia.org/w/api.php";
 
@@ -21,6 +22,9 @@ const MAX_EVENT_TOPICS = 2;
 
 /** Без места нужен хотя бы такой длины текст описания — иначе брак. */
 const MIN_DESC_WITHOUT_PLACE = 60;
+
+/** Викисклад отказал серией 429 - до конца прогона его не трогаем. */
+export class CommonsBlockedError extends Error {}
 
 /** Пауза между запросами к API, чтобы не собирать 429 на ровном месте. */
 export const POLITE_GAP_MS = 1_200;
@@ -69,6 +73,7 @@ export async function searchCategory(
   // подряд за три секунды - все девять архивов получили 429, и партия
   // осталась без Commons целиком. Поэтому вежливый темп и ретраи.
   for (let attempt = 0; ; attempt++) {
+    if (isBlocked(url)) throw new CommonsBlockedError(`commons: ${category} - Викисклад отдыхает после 429`);
     const res = await fetch(url, {
       headers: {
         "user-agent": WIKIMEDIA_UA,
@@ -77,10 +82,17 @@ export async function searchCategory(
       signal: AbortSignal.timeout(30_000),
     });
     if (res.ok) {
+      noteOk(url);
       const body = (await res.json()) as { query?: { pages?: CommonsPage[] } };
       return body.query?.pages ?? [];
     }
     const delay = RETRY_DELAYS_MS[attempt];
+    if (res.status === 429 && delay === undefined) {
+      // три ожидания (3, 12, 30 с) не помогли - бан всерьёз: Викисклад
+      // до конца прогона не трогаем, иначе следующие архивы его продлят
+      noteRateLimit(url, { now: true });
+      throw new CommonsBlockedError(`commons: ${category} → HTTP 429`);
+    }
     if (res.status !== 429 || delay === undefined) {
       throw new Error(`commons: ${category} → HTTP ${res.status}`);
     }
@@ -150,6 +162,9 @@ export function commonsAdapter(name: string): SourceAdapter {
         pages = await searchCategory(archive.category, term, perArchive, offset, archive.deep);
       } catch (err) {
         console.warn(`  ${name}: ${archive.attribution} — ${(err as Error).message}`);
+        // Викисклад отказал всерьёз - остальные архивы того же сервера
+        // только продлят бан; собранное до этого остаётся
+        if (err instanceof CommonsBlockedError) break;
         continue;
       }
       if (pages.length === 0 && offset === 0) {
@@ -266,11 +281,14 @@ async function fileTopics(pageId: string, title?: string): Promise<string[]> {
   url.searchParams.set("cllimit", "50");
   url.searchParams.set("clshow", "!hidden");
 
+  if (isBlocked(url)) return [];
   const res = await fetch(url, {
     headers: { "user-agent": WIKIMEDIA_UA },
     signal: AbortSignal.timeout(20_000),
   });
+  if (res.status === 429) noteRateLimit(url);
   if (!res.ok) return [];
+  noteOk(url);
   const body = (await res.json()) as {
     query?: { pages?: Array<{ categories?: Array<{ title: string }> }> };
   };

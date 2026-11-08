@@ -31,6 +31,7 @@ import { analyzeImage } from "../src/analyze.js";
 import { passesGate } from "../src/scoring.js";
 import type { GeneratedCaption } from "../src/caption.js";
 import { finishCaption } from "../src/pipeline.js";
+import { isBlocked, noteOk, noteRateLimit } from "../src/hostguard.js";
 import { rubricOf } from "../src/rubrics.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 import { env } from "../src/env.js";
@@ -142,6 +143,12 @@ let politeDelayMs = 800; // после первого 429 темп снижае�
 let consecutive429 = 0;
 
 async function fetchImage(url: string): Promise<Response | null> {
+  // хост, отказавший серией 429, до конца прогона не трогаем: каждый
+  // следующий запрос только продлевает бан (src/hostguard.ts)
+  if (isBlocked(url)) {
+    console.warn(`  пропуск (хост отдыхает после 429): ${url}`);
+    return null;
+  }
   // после серии банов не тратим время на ретраи - одна попытка и дальше
   const delays = consecutive429 >= 3 ? [] : [2_000, 20_000, 45_000];
   for (let attempt = 0; ; attempt++) {
@@ -154,11 +161,16 @@ async function fetchImage(url: string): Promise<Response | null> {
     });
     if (res.ok) {
       consecutive429 = 0;
+      noteOk(url);
       return res;
     }
     if (res.status === 429) {
       politeDelayMs = 3_000;
       consecutive429++;
+      if (noteRateLimit(url)) {
+        console.warn(`  пропуск (HTTP 429, хост отдыхает): ${url}`);
+        return null;
+      }
     }
     const retriable = res.status === 429 || res.status >= 500;
     const delay = delays[attempt];
