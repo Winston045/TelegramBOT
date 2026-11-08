@@ -127,3 +127,20 @@ describe("одно событие - раз в неделю", () => {
     expect(picks.map((p) => p.id)).toEqual([2, 3]);
   });
 });
+
+describe("что считать событием кадра (предпросмотр 08.11)", async () => {
+  const { GENERIC_EVENT } = await import("../src/analyze.js");
+  it("войны, кампании и театры - не событие: их справка даёт учебный обзор", () => {
+    for (const t of ["World War II", "Winter War", "Korean War", "Mesopotamian campaign", "Pacific War", "Eastern Front (World War II)"]) {
+      expect(GENERIC_EVENT.test(t), t).toBe(true);
+    }
+  });
+  it("обозримое событие - событие", () => {
+    for (const t of ["Warsaw Pact invasion of Czechoslovakia", "Terra Nova Expedition", "Battle of Stalingrad", "Hungarian Revolution of 1956", "Hindenburg disaster"]) {
+      expect(GENERIC_EVENT.test(t), t).toBe(false);
+    }
+  });
+  it("перечень применений - тоже пересказ энциклопедии", () => {
+    expect(clicheIn("Этот самолёт применялся не только для разведки и связи, но и для патрулирования моря.")).toBeTruthy();
+  });
+});

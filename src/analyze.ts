@@ -33,11 +33,13 @@ export type Analysis = VisionScore &
   };
 
 /**
- * Война целиком - не событие кадра: её справка - учебник, из которого
- * выходят прописные истины («Вторая мировая шла с 1939 по 1945 год»).
+ * Война целиком, кампания и театр - не событие кадра: их справка - учебник,
+ * из которого выходят прописные истины. Предпросмотр 08.11: по «Mesopotamian
+ * campaign» редактор написал к кадру с пушкой обзор кампании («взяли
+ * Багдад и заняли почти всю Месопотамию») - ход операций, а не ставки.
  */
-const GENERIC_EVENT =
-  /^(world war (i|ii|one|two)|(first|second) world war|cold war|(eastern|western) front( \(world war (i|ii)\))?)$/i;
+export const GENERIC_EVENT =
+  /^(world war (i|ii|one|two)|(first|second) world war|cold war|(eastern|western) front( \(world war (i|ii)\))?)$|\bcampaign\b|\bthea(tre|ter)\b|^(the )?[\w-]+( [\w-]+)? war$/i;
 
 export function buildAnalysisPrompt(
   item: RawItem,
@@ -79,7 +81,11 @@ event_wiki - статья АНГЛИЙСКОЙ Википедии о ЗНАКО�
 которого был кадр, если оно названо в метаданных или однозначно следует
 из них: «Warsaw Pact invasion of Czechoslovakia», «Terra Nova
 Expedition», «Battle of Stalingrad», «Hungarian Revolution of 1956».
-Обычная война в целом («World War II») - не событие: пустая строка. Как
+Война целиком, кампания и театр военных действий («World War II»,
+«Winter War», «Mesopotamian campaign», «Pacific War») - не событие:
+их справка даёт учебный обзор, а не ставки. Событие - одно и обозримое:
+битва, осада, вторжение, восстание, экспедиция, катастрофа. Иначе -
+пустая строка. Как
 и с subject_wiki, выдуманное название даст чужую статью - сомневаешься,
 оставь пустым.
 
