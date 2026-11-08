@@ -67,3 +67,20 @@ describe("ротация запросов LOC", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("лимит loc.gov", () => {
+  it("после 429 источник не стучится дальше и не повторяет запрос", async () => {
+    // сбор 08.11: 429 на всех шестнадцати запросах подряд
+    const { vi } = await import("vitest");
+    const { loc } = await import("../src/sources/loc.js");
+    const { memoryCursorStore } = await import("../src/cursors.js");
+    const calls = vi.fn(async () => new Response("slow down", { status: 429 }));
+    vi.stubGlobal("fetch", calls);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const items = await loc.fetch(3, { enabled: true, weight: 1, queries: ["a", "b", "c"] }, memoryCursorStore());
+    expect(items).toEqual([]);
+    expect(calls).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+});

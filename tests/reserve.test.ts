@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DAYS_OF_BUFFER, MIN_BATCH, planFromCounts, quotaDay } from "../src/reserve.js";
+import { DAYS_OF_BUFFER, MIN_BATCH, MIN_TARGET, planFromCounts, quotaDay } from "../src/reserve.js";
 
 const PREFILTER_KEEP = 30;
 const plan = (available: number, slots = 5) =>
@@ -33,7 +33,7 @@ describe("planFromCounts", () => {
   });
 
   it("редкое расписание не опускает запас ниже минимального", () => {
-    expect(plan(0, 1).target).toBe(MIN_BATCH);
+    expect(plan(0, 1).target).toBe(MIN_TARGET);
   });
 });
 

@@ -102,6 +102,9 @@ export function mapLocResult(r: LocResult): RawItem | undefined {
   };
 }
 
+/** loc.gov ответил 429: до конца прогона его лучше не трогать. */
+export class LocRateLimitError extends Error {}
+
 /** Один запрос к поиску LOC. Экспортирован для проверки источников. */
 export async function fetchQuery(query: string, count: number, page: number): Promise<LocResult[]> {
   const url = new URL("https://www.loc.gov/photos/");
@@ -126,10 +129,15 @@ export async function fetchQuery(query: string, count: number, page: number): Pr
         },
         signal: AbortSignal.timeout(timeoutMs),
       });
+      if (res.status === 429) {
+        // лимит loc.gov: повтор той же секундой лишь продлевает блокировку
+        throw new LocRateLimitError(`loc: ${url} → HTTP 429`);
+      }
       if (!res.ok) throw new Error(`loc: ${url} → HTTP ${res.status}`);
       const body = (await res.json()) as { results?: LocResult[] };
       return body.results ?? [];
     } catch (err) {
+      if (err instanceof LocRateLimitError) throw err;
       lastErr = err;
     }
   }
@@ -203,6 +211,13 @@ export const loc: SourceAdapter = {
         // loc.gov отвечает 404, и без сброса курсора источник умирал
         // насовсем (живой случай: «loc: сбор упал» каждый день)
         const message = (err as Error).message;
+        // 429 - лимит на адрес, а не беда одного запроса. Сбор 08.11
+        // продолжал стучаться и получил 429 на всех шестнадцати запросах
+        // подряд: LOC отдал 1 кадр из 16. Остальным запросам - до завтра
+        if (err instanceof LocRateLimitError) {
+          console.warn(`  loc: лимит запросов (429) на «${q}» - источник отдыхает до следующего прогона`);
+          break;
+        }
         console.warn(`  loc: «${q}» стр. ${page} — ${message}`);
         // но только 404 - это конец выдачи. Таймаут, 520 или обрыв - это
         // медленный loc.gov, и раньше они тоже откатывали запрос на первую

@@ -21,8 +21,16 @@ import { LIMITED_NATIONS, postNation, RESERVE_TTL_DAYS } from "./plan.js";
  * остаются далеко внутри срока годности ссылок (RESERVE_TTL_DAYS = 10).
  */
 export const DAYS_OF_BUFFER = 4;
-/** Меньше этого партию собирать не стоит: накладные расходы те же. */
-export const MIN_BATCH = 6;
+/**
+ * Меньше этого партию собирать не стоит. Было 6, но при выходе 25-35%
+ * такая партия - лотерея: утро 08.11 дало 1 кадр из 5, потому что все
+ * шесть слотов достались случайно слабому материалу (пляжный семейный
+ * снимок, пустой стенд выставки, разворот альбома). Десяти слотам
+ * хватает, чтобы один неудачный архив не обнулял день.
+ */
+export const MIN_BATCH = 10;
+/** Запас не ниже этого даже при редком расписании (один слот в день). */
+export const MIN_TARGET = 6;
 /**
  * Запас на выбраковку: сколько кадров отдать на анализ на каждый
  * недостающий пост.
@@ -50,7 +58,7 @@ export function planFromCounts(
   slotsPerDay: number,
   prefilterKeep: number,
 ): ReservePlan {
-  const target = Math.max(MIN_BATCH, slotsPerDay * DAYS_OF_BUFFER);
+  const target = Math.max(MIN_TARGET, slotsPerDay * DAYS_OF_BUFFER);
   const deficit = target - available;
   const keep =
     deficit <= 0 ? 0 : Math.min(prefilterKeep, Math.max(MIN_BATCH, deficit * OVERSHOOT));
