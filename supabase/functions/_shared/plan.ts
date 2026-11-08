@@ -19,6 +19,8 @@ export type PlanTags = {
   color?: boolean;
   /** Рубрика вне военного ядра (см. RUBRIC_WEEKLY_CAP); у ядра её нет. */
   rubric?: string;
+  /** Статья о знаковом событии кадра (analyze.ts): ключ правила «событие раз в неделю». */
+  event_wiki?: string;
 } | null;
 
 export type PlanCandidate = {
@@ -405,6 +407,34 @@ export function rank(
 }
 
 /**
+ * Строки места, которые называют страну, фронт или стихию, а не место
+ * события: «СССР, 1942 год» - это сотни разных кадров, а не одно событие.
+ */
+const BROAD_PLACE =
+  /^(ссср|сша|россия|германия|франция|италия|польша|финляндия|великобритания|англия|нидерланды|бельгия|венгрия|австрия|австро-венгрия|чехословакия|югославия|румыния|греция|норвегия|дания|япония|китай|корея|вьетнам|бирма|индия|египет|ливия|тунис|израиль|канада|австралия|антарктида|арктика|европа|азия|африка|северная африка|восточная европа|карелия|прибалтика|украина|белоруссия)$|фронт|океан|море|залив|пролив/;
+
+/**
+ * Ключ события кадра: статья о событии, а без неё - город и год из
+ * строки места («будапешт|1956»). Редакция 08.11: три поста про
+ * Будапешт-1956 за неделю - ИС-3, БТР-40 и гаубица; правила ленты
+ * чередовали страны, эпохи и темы, но одно событие не видели.
+ */
+export function eventKey(c: { tags?: PlanTags; caption_html?: string | null }): string {
+  const wiki = c.tags?.event_wiki?.trim().toLowerCase();
+  if (wiki) return wiki;
+  const quotes = [...(c.caption_html ?? "").matchAll(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/g)]
+    .map((m) => (m[1] ?? "").replace(/<[^>]+>/g, "").trim())
+    // строка места - короткая и с годом; изюминка длинная
+    .filter((q) => q.length <= 70 && /(1[89]|20)\d{2}/.test(q));
+  const line = quotes.at(-1);
+  if (!line) return "";
+  const year = line.match(/(1[89]|20)\d{2}/)?.[0];
+  const place = (line.split(/[,.]/)[0] ?? "").trim().toLowerCase().replace(/ё/g, "е");
+  if (!year || !place || /\d/.test(place) || BROAD_PLACE.test(place)) return "";
+  return `${place}|${year}`;
+}
+
+/**
  * Недельные доли осей разнообразия по выборке вышедших постов - общий
  * счётчик для публикатора и симуляции, чтобы предпросмотр не расходился
  * с боевым отбором (диагностика 04.09 поймала именно такое расхождение
@@ -423,6 +453,7 @@ export function weekShares(
   subjectShare: Record<string, number>;
   nationShare: Record<string, number>;
   rubricWeek: Record<string, number>;
+  weekEvents: string[];
 } {
   const archiveShare: Record<string, number> = {};
   const periodShare: Record<string, number> = {};
@@ -430,7 +461,10 @@ export function weekShares(
   const nationShare: Record<string, number> = {};
   // рубрики считаем штуками, а не долями: потолок у них недельный и в постах
   const rubricWeek: Record<string, number> = {};
+  const weekEvents: string[] = [];
   for (const p of rows) {
+    const event = eventKey(p);
+    if (event) weekEvents.push(event);
     if (p.tags?.rubric) rubricWeek[p.tags.rubric] = (rubricWeek[p.tags.rubric] ?? 0) + 1;
     const key = archiveKey(p.attribution) || (p.source ?? "");
     if (key) archiveShare[key] = (archiveShare[key] ?? 0) + 1;
@@ -444,7 +478,7 @@ export function weekShares(
       share[key] = (share[key] ?? 0) / Math.max(1, rows.length);
     }
   }
-  return { archiveShare, periodShare, subjectShare, nationShare, rubricWeek };
+  return { archiveShare, periodShare, subjectShare, nationShare, rubricWeek, weekEvents };
 }
 
 export type RecentContext = {
@@ -482,6 +516,8 @@ export type RecentContext = {
   rubrics?: string[];
   /** Сколько постов каждой рубрики вышло за неделю: {"poster": 1}. */
   rubricWeek?: Record<string, number>;
+  /** Ключи событий постов за неделю (eventKey): одно событие - раз в неделю. */
+  weekEvents?: string[];
 };
 
 /**
@@ -581,6 +617,8 @@ export function planAuto(
   // рубрики: недельный счётчик растёт и от постов этого же плана
   const rubrics = [...(recent.rubrics ?? [])];
   const rubricWeek: Record<string, number> = { ...(recent.rubricWeek ?? {}) };
+  // события недели: план не повторяет ни их, ни свои же
+  const events = new Set(recent.weekEvents ?? []);
   // рубрика, выбравшая недельный потолок, не выходит НИКАК - ни по
   // правилам, ни аварийным добором: плакат дважды за неделю - это уже не
   // рубрика, а смена профиля канала
@@ -601,6 +639,9 @@ export function planAuto(
     const civiliansInWindow = civiliansWindow.slice(0, RECENT_WINDOW).filter(Boolean).length;
     const fits = (c: PlanCandidate) => {
       if (overCap(c)) return false;
+      // одно событие - не чаще раза в неделю (три Будапешта-1956 за 7 дней)
+      const event = eventKey(c);
+      if (event && events.has(event)) return false;
       // две рубрики подряд не идут: между ними - военное ядро
       if (c.tags?.rubric && rubrics[0]) return false;
       const subject = c.tags?.subject;
@@ -714,6 +755,8 @@ export function planAuto(
     longsWindow.unshift(quoteLength(pick.caption_html ?? null) >= LONG_QUOTE);
     rubrics.unshift(pick.tags?.rubric ?? "");
     if (pick.tags?.rubric) rubricWeek[pick.tags.rubric] = (rubricWeek[pick.tags.rubric] ?? 0) + 1;
+    const pickedEvent = eventKey(pick);
+    if (pickedEvent) events.add(pickedEvent);
   }
   return chosen;
 }

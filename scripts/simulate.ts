@@ -29,6 +29,7 @@ import {
   quoteLength,
   rank,
   weekShares,
+  eventKey,
   type PlanCandidate,
 } from "../src/plan.js";
 import { passesGate } from "../src/scoring.js";
@@ -174,6 +175,8 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
     pool.splice(pool.indexOf(row), 1);
     window.unshift(row);
     if (row.tags?.rubric) shares.rubricWeek[row.tags.rubric] = (shares.rubricWeek[row.tags.rubric] ?? 0) + 1;
+    const event = eventKey(row);
+    if (event) shares.weekEvents.push(event);
   }
 
   feed.forEach((row, i) => {

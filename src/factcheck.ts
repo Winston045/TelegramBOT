@@ -112,6 +112,44 @@ export function guardCopies(
 }
 
 /**
+ * Штампы пересказа энциклопедии: оценка вместо истории. Промпт подписи и
+ * редактор их запрещают (правило 8), а это страховка на случай, если
+ * модель всё же их пропустила: изюминка без поворота хуже обычного поста.
+ * Живой брак 11.2026: «стала становым хребтом британской артиллерии»,
+ * «эксперты считают её одной из лучших», «рабочая лошадка люфтваффе».
+ */
+const CLICHE =
+  /эксперты (считают|называют|полагают)|одн(ой|им|а|у|ою) из (самых )?лучших|рабоч(ей|ая|ую|ими?) лошадк|превосход(ил|ила|ило|или) (своих )?(основных )?(конкурентов|аналог)|активно использовал|сыграл[аои]? (важную|ключевую|огромную|значительную) роль|стал[аои]? (настоящим )?символом|становы[мй] хребт/i;
+
+/** Какой штамп нашёлся в цитате - для лога; undefined - чисто. */
+export function clicheIn(quote: string): string | undefined {
+  return quote.match(CLICHE)?.[0];
+}
+
+/** Изюминка-штамп: правка редактора уступает первому заходу, штамп первого захода снимается. */
+export function guardCliches(
+  reviewed: { caption: GeneratedCaption; rewritten: boolean },
+  firstPass: GeneratedCaption,
+): NumbersVerdict {
+  const hit = clicheIn(reviewed.caption.quote);
+  if (!hit) return { caption: reviewed.caption, outcome: "ok", bad: [] };
+  const bad = [`штамп «${hit}»`];
+  if (reviewed.rewritten && firstPass.quote !== reviewed.caption.quote && !clicheIn(firstPass.quote)) {
+    return { caption: firstPassQuote(reviewed.caption, firstPass), outcome: "editor_rejected", bad };
+  }
+  return {
+    caption: {
+      ...reviewed.caption,
+      quote: reviewed.caption.quote_place ?? "",
+      quote_place: undefined,
+      quote_kind: "context",
+    },
+    outcome: "quote_dropped",
+    bad,
+  };
+}
+
+/**
  * Запасные варианты подписи без изюминки - для кадра, чья подпись не
  * прошла проверку лет. Сбор 22.10: два годных кадра (дозаправка F-14,
  * посадка в поезд) ушли в брак целиком из-за года в изюминке, которого

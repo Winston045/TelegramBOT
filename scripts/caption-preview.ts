@@ -7,17 +7,20 @@
  * о предмете в кадре и редактора цитаты - ровно как в сборе.
  *
  * Запуск: npx tsx scripts/caption-preview.ts 445,419,446
+ * или по номерам постов канала: npx tsx scripts/caption-preview.ts msg:7187,7179
  * (без номеров - шесть свежих кадров резерва с подписью).
+ *
+ * Доводка подписи - тот же конвейер, что у сбора (src/pipeline.ts): что
+ * показал предпросмотр, то и уйдёт в канал.
  */
 import { loadConfig } from "../src/config.js";
 import { getDb } from "../src/db.js";
 import { ADAPTERS } from "../src/sources/index.js";
 import { analyzeImage } from "../src/analyze.js";
-import { reviewQuote } from "../src/critic.js";
 import { assembleCaptionHtml } from "../src/caption.js";
-import { validateCaption } from "../src/validate.js";
-import { subjectReference } from "../src/wiki.js";
-import { guardCopies, guardNumbers } from "../src/factcheck.js";
+import { GeminiBusyError } from "../src/gemini.js";
+import { finishCaption } from "../src/pipeline.js";
+import { rubricOf } from "../src/rubrics.js";
 import type { RawItem } from "../src/sources/types.js";
 
 type Row = {
@@ -53,7 +56,11 @@ const plain = (html: string | null) => {
 async function main() {
   const cfg = loadConfig();
   const db = getDb();
-  const ids = (process.argv[2] ?? "")
+  const arg = process.argv[2] ?? "";
+  // msg:7187,7179 - номера постов канала, а не кадров в базе
+  const byMessage = arg.startsWith("msg:");
+  const ids = arg
+    .replace(/^msg:/, "")
     .split(",")
     .map((s) => Number(s.trim()))
     .filter((n) => Number.isFinite(n) && n > 0);
@@ -64,7 +71,7 @@ async function main() {
     )
     .not("caption_html", "is", null);
   const { data, error } = ids.length
-    ? await query.in("id", ids)
+    ? await query.in(byMessage ? "channel_msg_id" : "id", ids)
     : await query.in("status", ["new", "shown", "approved"]).order("id", { ascending: false }).limit(6);
   if (error) throw new Error(error.message);
 
@@ -94,28 +101,33 @@ async function main() {
       const image = Buffer.from(await res.arrayBuffer());
       const extra = await ADAPTERS[r.source]?.details?.(item).catch(() => undefined);
       const a = await analyzeImage(item, cfg, image, extra);
-      const subject = a.subject_wiki ? await subjectReference(a.subject_wiki) : undefined;
-      console.log(`предмет: ${a.subject_wiki ?? "-"}${subject ? " (справка найдена)" : a.subject_wiki ? " (справки нет)" : ""}`);
+      console.log(
+        `предмет: ${a.subject_wiki ?? "-"}; событие: ${a.event_wiki ?? "-"}; люди: ${a.people?.join(", ") || "-"}`,
+      );
       // первый заход отдельно: видно, кто сделал изюминку, а кто её снял
       console.log(`ПЕРВЫЙ ЗАХОД:\n  ${plain(assembleCaptionHtml(a, item, cfg.channel))}`);
-      const reviewed = await reviewQuote(item, cfg, a, extra, subject, { people: a.people });
-      const sources = [item.title, item.description, item.place, extra, subject].filter(Boolean).join("\n");
-      // страховки по очереди: каждая видит итог предыдущей
-      const guards = [
-        (r: typeof reviewed) => guardNumbers(r, a, sources),
-        (r: typeof reviewed) => guardCopies(r, a),
-      ];
-      for (const guard of guards) {
-        const check = guard(reviewed);
-        if (check.outcome === "ok") continue;
-        console.log(`  ! ${check.bad.join(", ")} (${check.outcome})`);
-        reviewed.caption = check.caption;
-      }
-      const html = assembleCaptionHtml(reviewed.caption, item, cfg.channel);
-      const context = [extra, subject].filter(Boolean).join("\n");
-      const check = validateCaption(html, { ...item, context: context || undefined });
-      console.log(`СТАЛО${reviewed.rewritten ? " (редактор переписал)" : ""}:\n  ${plain(html)}`);
-      if (!check.ok) console.log(`  ! валидатор не пропустил бы: ${check.reason}`);
+      const done = await finishCaption({
+        item: { ...item, source: r.source },
+        cfg,
+        analysis: a,
+        extraContext: extra,
+        rubric: rubricOf(item.rubric),
+        full: true,
+        // занятые модели в предпросмотре не ждём: так и пишем
+        review: async (call, generated) => {
+          try {
+            return await call();
+          } catch (err) {
+            if (!(err instanceof GeminiBusyError)) throw err;
+            console.log("  ! редактор пропущен: полноценные модели заняты");
+            return { caption: generated, rewritten: false };
+          }
+        },
+        log: (m) => console.log(m),
+      });
+      console.log(`СТАЛО${done.rewritten ? " (редактор переписал)" : ""}:\n  ${plain(done.html)}`);
+      if (done.rubricFlaw) console.log(`  ! рубрика не пропустила бы: ${done.rubricFlaw}`);
+      if (!done.check.ok) console.log(`  ! валидатор не пропустил бы: ${done.check.reason}`);
     } catch (err) {
       console.log(`  сбой: ${(err as Error).message}`);
     }

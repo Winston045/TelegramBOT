@@ -106,12 +106,11 @@ export async function wikiIntro(lang: string, title: string): Promise<string | u
 }
 
 /**
- * Справка о предмете в кадре по английскому названию статьи. Русская
- * версия, если она есть, точнее в терминах («привязной аэростат», а не
- * калька), поэтому сначала идём по межъязыковой ссылке, потом берём
- * английскую. Сбой сети - не повод ронять кадр: справки просто не будет.
+ * Вступление статьи по английскому названию: русская версия, если она
+ * есть (точнее в терминах: «привязной аэростат», а не калька), иначе
+ * английская. Сбой сети - не повод ронять кадр: справки просто не будет.
  */
-export async function subjectReference(enTitle: string): Promise<string | undefined> {
+async function reference(enTitle: string): Promise<{ name: string; text: string } | undefined> {
   const title = enTitle.trim();
   if (!title || title.length > 120) return undefined;
   try {
@@ -120,9 +119,30 @@ export async function subjectReference(enTitle: string): Promise<string | undefi
     if (!enText) return undefined; // развилка или не та статья - лучше без справки
     const ruTitle = en?.langlinks?.find((l) => l.lang === "ru")?.title;
     const ruText = ruTitle ? await wikiIntro("ru", ruTitle) : undefined;
-    const name = ruText ? ruTitle : en?.title ?? title;
-    return `Справка из Википедии о предмете в кадре («${name}»), использовать только если она точно про то, что на фото:\n${ruText ?? enText}`;
+    return { name: (ruText ? ruTitle : en?.title) ?? title, text: ruText ?? enText };
   } catch {
     return undefined;
   }
+}
+
+/** Справка о предмете в кадре: технике, корабле, явлении или человеке. */
+export async function subjectReference(enTitle: string): Promise<string | undefined> {
+  const ref = await reference(enTitle);
+  return ref
+    ? `Справка из Википедии о предмете в кадре («${ref.name}»), использовать только если она точно про то, что на фото:\n${ref.text}`
+    : undefined;
+}
+
+/**
+ * Справка о знаковом событии, частью которого был кадр (Пражская весна,
+ * экспедиция Скотта, Сталинградская битва). Редакция 08.11: «Барк «Терра
+ * Нова» во льдах. Антарктида, 1910» - пост без ставок, хотя из этой
+ * экспедиции Скотт не вернулся. Справка нужна для одной-двух фраз о том,
+ * что это было и чем кончилось для людей в кадре, - не для штабной сводки.
+ */
+export async function eventReference(enTitle: string): Promise<string | undefined> {
+  const ref = await reference(enTitle);
+  return ref
+    ? `Справка из Википедии о событии, частью которого был кадр («${ref.name}»): для одной-двух фраз о том, что это было и чем кончилось для людей в кадре; не для пересказа хода операций:\n${ref.text}`
+    : undefined;
 }

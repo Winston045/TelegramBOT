@@ -28,7 +28,16 @@ export type Analysis = VisionScore &
      * проверяет, объяснено ли читателю, кто это (правило 10 подписи).
      */
     people?: string[];
+    /** Английское название статьи о знаковом событии, частью которого был кадр. */
+    event_wiki?: string;
   };
+
+/**
+ * Война целиком - не событие кадра: её справка - учебник, из которого
+ * выходят прописные истины («Вторая мировая шла с 1939 по 1945 год»).
+ */
+const GENERIC_EVENT =
+  /^(world war (i|ii|one|two)|(first|second) world war|cold war|(eastern|western) front( \(world war (i|ii)\))?)$/i;
 
 export function buildAnalysisPrompt(
   item: RawItem,
@@ -66,11 +75,19 @@ Campbeltown (I42)», «Higgins boat»). Только если предмет н�
 лётчик, артист), subject_wiki - статья о нём («George S. Patton»):
 по ней редакция объяснит читателю, кто это и чем он интересен.
 
+event_wiki - статья АНГЛИЙСКОЙ Википедии о ЗНАКОВОМ СОБЫТИИ, частью
+которого был кадр, если оно названо в метаданных или однозначно следует
+из них: «Warsaw Pact invasion of Czechoslovakia», «Terra Nova
+Expedition», «Battle of Stalingrad», «Hungarian Revolution of 1956».
+Обычная война в целом («World War II») - не событие: пустая строка. Как
+и с subject_wiki, выдуманное название даст чужую статью - сомневаешься,
+оставь пустым.
+
 people - имена людей, которых ты назвал в caption (как написано в
 caption: «Джордж Паттон»); никого не назвал - пустой список.
 
 Верни строго JSON без обёрток и без markdown:
-{${SCORE_FIELDS_SCHEMA}, "subject_wiki": "<название статьи или пустая строка>", "people": ["<имя из caption>"], "caption": "...", "quote": "<обычный пост: место и год короткой строкой; изюминка: факт-справка>", "quote_place": "<у изюминки место и дата ВСЕГДА здесь - отдельной второй цитатой после факта; у обычного поста пустая строка>", "quote_kind": "observation" | "context"}`;
+{${SCORE_FIELDS_SCHEMA}, "subject_wiki": "<название статьи или пустая строка>", "people": ["<имя из caption>"], "event_wiki": "<название статьи о событии или пустая строка>", "caption": "...", "quote": "<обычный пост: место и год короткой строкой; изюминка: факт-справка>", "quote_place": "<у изюминки место и дата ВСЕГДА здесь - отдельной второй цитатой после факта; у обычного поста пустая строка>", "quote_kind": "observation" | "context"}`;
 }
 
 export async function analyzeImage(
@@ -104,6 +121,10 @@ export async function analyzeImage(
     quote_place: result.quote_place?.trim() || undefined,
     quote_kind: result.quote_kind === "observation" ? "observation" : "context",
     subject_wiki: typeof result.subject_wiki === "string" ? result.subject_wiki.trim().slice(0, 120) || undefined : undefined,
+    event_wiki:
+      typeof result.event_wiki === "string" && !GENERIC_EVENT.test(result.event_wiki.trim())
+        ? result.event_wiki.trim().slice(0, 120) || undefined
+        : undefined,
     people: Array.isArray(result.people)
       ? result.people.filter((p): p is string => typeof p === "string" && p.trim().length > 0).slice(0, 6)
       : undefined,

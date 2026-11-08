@@ -566,6 +566,7 @@ describe("weekShares", () => {
       subjectShare: {},
       nationShare: {},
       rubricWeek: {},
+      weekEvents: [],
     });
   });
 });

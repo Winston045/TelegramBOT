@@ -29,12 +29,9 @@ import { getDb, loadKnownHashes, selectAll } from "../src/db.js";
 import { GeminiBusyError, GeminiQuotaError, isLiteModel, lastUsedModel, quotaTripped } from "../src/gemini.js";
 import { analyzeImage } from "../src/analyze.js";
 import { passesGate } from "../src/scoring.js";
-import { reviewQuote } from "../src/critic.js";
-import { assembleCaptionHtml, descriptiveSentences, type GeneratedCaption } from "../src/caption.js";
-import { validateCaption } from "../src/validate.js";
-import { guardCopies, guardNumbers, withoutQuote } from "../src/factcheck.js";
-import { rubricCaptionFlaw, rubricOf } from "../src/rubrics.js";
-import { subjectReference } from "../src/wiki.js";
+import type { GeneratedCaption } from "../src/caption.js";
+import { finishCaption } from "../src/pipeline.js";
+import { rubricOf } from "../src/rubrics.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 import { env } from "../src/env.js";
 import { sendMessageHtml } from "../src/telegram.js";
@@ -548,85 +545,45 @@ async function main() {
           ...(model ? { model } : {}),
           // о чём справка: по нему видно, откуда в изюминке факт
           ...(a.subject_wiki ? { subject_wiki: a.subject_wiki } : {}),
+          // о каком событии кадр: по нему планировщик не ставит одно
+          // событие чаще раза в неделю (три Будапешта-1956 за 7 дней)
+          ...(a.event_wiki ? { event_wiki: a.event_wiki } : {}),
         },
         score: a.score,
         license: item.license,
         attribution: item.attribution ?? null,
       };
 
-      // второй заход: редактор выбраковывает пустые цитаты. Стоит один
-      // запрос на кандидата, но только на тех, кто прошёл порог оценки.
-      // На исходе бюджета пропускаем: кадр с цитатой как есть лучше, чем
-      // job, убитый таймаутом воркфлоу посреди записи
-      // справка о самом предмете в кадре (аэростат, эсминец, танк) - из
-      // неё редактор строит изюминку, а не из статьи о событии вокруг.
-      // Сбой Википедии - не беда: тогда редактор работает как раньше
-      const enoughTime = timeLeftMs() > 3 * 60_000;
-      const subjectContext =
-        enoughTime && a.subject_wiki ? await subjectReference(a.subject_wiki) : undefined;
-      if (subjectContext) console.log(`  справка о предмете: «${a.subject_wiki}» [${item.source}] ${item.sourceId}`);
-      const reviewed = enoughTime
-        ? await reviewWithWait(() => reviewQuote(item, cfg, a, extraContext, subjectContext, { throwBusy: true, people: a.people }), a)
-        : { caption: a, rewritten: false };
-      if (reviewed.rewritten) {
-        console.log(`  цитата переписана редактором: [${item.source}] ${item.sourceId}`);
-        rewritten++;
-      }
-
-      // числа изюминки должны быть в источниках (src/factcheck.ts)
-      const sources = [item.title, item.description, item.place, extraContext, subjectContext]
-        .filter(Boolean)
-        .join("\n");
-      // страховки по очереди: каждая видит итог предыдущей
-      const guards = [
-        (r: typeof reviewed) => guardNumbers(r, a, sources),
-        (r: typeof reviewed) => guardCopies(r, a),
-      ];
-      for (const guard of guards) {
-        const check = guard(reviewed);
-        if (check.outcome === "ok") continue;
-        const what = check.outcome === "editor_rejected" ? "правка редактора отклонена" : "изюминка снята";
-        console.warn(`  ${check.bad.join(", ")} - ${what}: [${item.source}] ${item.sourceId}`);
-        reviewed.caption = check.caption;
-      }
-
-      // кадр рубрики обязан быть видимо рубрикой: повседневность - только
-      // изюминкой, плакат - названным плакатом. Не дотянул - не в резерв
-      const flaw = rubric ? rubricCaptionFlaw(rubric, reviewed.caption) : undefined;
-      if (flaw) {
+      // доводка подписи - общий конвейер со справками, редактором и
+      // страховками (src/pipeline.ts); тот же, что у предпросмотра. На
+      // исходе бюджета - без справок и редактора: кадр с цитатой как есть
+      // лучше, чем job, убитый таймаутом воркфлоу посреди записи
+      const done = await finishCaption({
+        item,
+        cfg,
+        analysis: a,
+        extraContext,
+        rubric,
+        full: timeLeftMs() > 3 * 60_000,
+        review: reviewWithWait,
+        log: (m) => console.log(m),
+      });
+      if (done.rewritten) rewritten++;
+      if (done.rubricFlaw) {
         rubricFlawed++;
-        console.log(`  рубрика ${item.rubric}: ${flaw} - [${item.source}] ${item.sourceId}`);
+        console.log(`  рубрика ${item.rubric}: ${done.rubricFlaw} - [${item.source}] ${item.sourceId}`);
         await rememberRejected(item, a, `rubric:${item.rubric}`, model);
         continue;
       }
-
-      const sentences = descriptiveSentences(reviewed.caption.caption);
-      if (sentences > 1) {
+      if (done.sentences > 1) {
         longBody++;
         console.warn(
-          `  тело в ${sentences} предложения: [${item.source}] ${item.sourceId} - «${reviewed.caption.caption.replace(/\n/g, " ")}»`,
+          `  тело в ${done.sentences} предложения: [${item.source}] ${item.sourceId} - «${done.caption.caption.replace(/\n/g, " ")}»`,
         );
       }
-
-      let captionHtml = assembleCaptionHtml(reviewed.caption, item, cfg.channel);
-      // контекст (описание с карточки, вики-справка) - легальный источник
-      // фактов для изюминки, его годы валидатор тоже должен знать
-      const context = [extraContext, subjectContext].filter(Boolean).join("\n");
-      const meta = { ...item, context: context || undefined };
-      let check = validateCaption(captionHtml, meta);
-      // год не из источников в изюминке - снимаем изюминку, а не весь кадр
-      if (!check.ok) {
-        for (const alt of withoutQuote(reviewed.caption)) {
-          if (rubric && rubricCaptionFlaw(rubric, alt)) break;
-          const altHtml = assembleCaptionHtml(alt, item, cfg.channel);
-          if (!validateCaption(altHtml, meta).ok) continue;
-          console.warn(`  ${check.reason} - изюминка снята: [${item.source}] ${item.sourceId}`);
-          reviewed.caption = alt;
-          captionHtml = altHtml;
-          check = { ok: true };
-          break;
-        }
-      }
+      const captionHtml = done.html;
+      const check = done.check;
+      const reviewed = { caption: done.caption };
       const { error } = await db.from("candidates").upsert(
         check.ok
           ? {

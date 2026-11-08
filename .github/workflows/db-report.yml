@@ -86,7 +86,7 @@ jobs:
             preview)
               # подписи на текущих промптах по готовым кадрам: было → стало,
               # без записи в базу; ids:445,419 - какие кадры взять
-              ids=$(grep -oP 'ids:\K[0-9,]+' .github/report.trigger || true)
+              ids=$(grep -oP 'ids:\K(msg:)?[0-9,]+' .github/report.trigger || true)
               npx tsx scripts/caption-preview.ts "$ids" ;;
             probe)
               # кандидаты в источники до включения: образцы, годы, размеры
