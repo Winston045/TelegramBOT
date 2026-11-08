@@ -70,7 +70,9 @@ jobs:
           bot_info=$(curl -s --max-time 20 "https://api.telegram.org/bot$BOT_TOKEN/getMe" \
             | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["result"]))' 2>/dev/null || true)
           echo "BOT_INFO: ${bot_info:-'(getMe недоступен, функция возьмёт запасной вариант)'}"
-          supabase secrets set --project-ref "${{ steps.ref.outputs.ref }}" \
+          # --yes: свежий CLI Supabase (11.2026) без терминала спрашивает
+          # подтверждение и молча ничего не меняет - деплой 08.11 упал на этом
+          supabase secrets set --yes --project-ref "${{ steps.ref.outputs.ref }}" \
             BOT_INFO="$bot_info" \
             BOT_TOKEN="$BOT_TOKEN" \
             CHANNEL_ID="$CHANNEL_ID" \
@@ -83,15 +85,15 @@ jobs:
             GH_BRANCH="${{ github.ref_name }}" \
             GH_PAT="${{ secrets.GH_PAT }}"
       - name: Деплой tg-webhook
-        run: supabase functions deploy tg-webhook --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
+        run: supabase functions deploy tg-webhook --yes --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
       # пинг-функция без зависимостей: отделяет проблемы платформы от кода
       - name: Деплой health-пинга
-        run: supabase functions deploy health --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
+        run: supabase functions deploy health --yes --no-verify-jwt --project-ref "${{ steps.ref.outputs.ref }}"
       # следы диагностики инцидента 27.07 — сносим, если ещё остались
       - name: Удалить диагностические функции
         run: |
           for fn in bisect1 bisect2 bisect3 bisect4 npmprobe tg-webhook2; do
-            supabase functions delete "$fn" --project-ref "${{ steps.ref.outputs.ref }}" >/dev/null 2>&1 \
+            supabase functions delete "$fn" --yes --project-ref "${{ steps.ref.outputs.ref }}" >/dev/null 2>&1 \
               && echo "$fn удалена" || true
           done
       - name: Статус платформы и пинг
