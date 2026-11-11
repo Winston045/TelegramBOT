@@ -76,7 +76,11 @@ async function fetchPage(slug: string, before?: number): Promise<string> {
 }
 
 async function main() {
-  const slug = channelSlug(loadConfig().channel.id);
+  // --channel tgHisto - чужой публичный канал (посмотреть, чем он живёт),
+  // по умолчанию - свой из config.yaml
+  const ci = process.argv.indexOf("--channel");
+  const other = ci !== -1 ? process.argv[ci + 1]?.replace(/^@/, "") : undefined;
+  const slug = other && /^[A-Za-z0-9_]{4,64}$/.test(other) ? other : channelSlug(loadConfig().channel.id);
   const month = monthArg();
   const range = rangeArgs();
   const found: Array<{ id: number; date: string; text: string }> = [];

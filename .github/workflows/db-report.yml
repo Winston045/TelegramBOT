@@ -103,6 +103,8 @@ jobs:
             style)
               before=$(grep -oP 'before:\K\d+' .github/report.trigger || true)
               month=$(grep -oP 'month:\K\d{4}-\d{2}' .github/report.trigger || true)
-              npx tsx scripts/channel-posts.ts 30 ${before:+--before $before} ${month:+--month $month} ;;
+              # channel:tgHisto - чужой публичный канал вместо своего
+              channel=$(grep -oP 'channel:@?\K[A-Za-z0-9_]+' .github/report.trigger || true)
+              npx tsx scripts/channel-posts.ts 40 ${before:+--before $before} ${month:+--month $month} ${channel:+--channel $channel} ;;
             *) npm run review-captions -- 15 ;;
           esac
