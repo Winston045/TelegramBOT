@@ -54,6 +54,35 @@ async function main() {
     console.log(text || "(без текста)");
   }
 
+  // пригласительные ссылки из постов - открываем карточки (без вступления):
+  // название, описание, подписчики, и есть ли у канала публичное имя
+  const invites = [...new Set([...feed.html.matchAll(/https:\/\/t\.me\/(?:joinchat\/|\+)[A-Za-z0-9_-]+/g)].map((m) => m[0]))];
+  for (const link of invites) {
+    const page = await get(link);
+    const meta = (prop: string) =>
+      strip(page.html.match(new RegExp(`<meta property="${prop}" content="([^"]*)"`))?.[1] ?? "");
+    const extra = strip(page.html.match(/tgme_page_extra[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "");
+    const domain = page.html.match(/tg:\/\/resolve\?domain=([A-Za-z0-9_]+)/)?.[1];
+    console.log(`\nприглашение ${link}:`);
+    console.log(`  название: ${meta("og:title") || "-"}`);
+    console.log(`  описание: ${meta("og:description") || "-"}`);
+    console.log(`  подпись: ${extra || "-"}`);
+    console.log(`  публичное имя: ${domain ? "@" + domain : "нет - закрытый"}`);
+    // у публичного канала можно прочитать и ленту
+    if (domain && domain.toLowerCase() !== slug.toLowerCase()) {
+      const inner = await get(`https://t.me/s/${domain}`);
+      const posts = inner.html.split('class="tgme_widget_message_wrap').slice(1).slice(-15);
+      for (const c of posts) {
+        const id = c.match(/data-post="[^/"]+\/(\d+)"/)?.[1];
+        const date = c.match(/datetime="(\d{4}-\d{2}-\d{2})/)?.[1] ?? "?";
+        const text = strip(c.match(/tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "");
+        const photo = /tgme_widget_message_photo|tgme_widget_message_grouped/.test(c) ? " [фото]" : "";
+        console.log(`\n  ── @${domain} #${id} ${date}${photo}`);
+        console.log(`  ${(text || "(без текста)").replace(/\n/g, "\n  ")}`);
+      }
+    }
+  }
+
   // лента пуста - пробуем отдельные посты: у части каналов t.me/s закрыт,
   // а встраивание постов работает
   if (!ids.length) {
