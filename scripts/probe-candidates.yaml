@@ -8,32 +8,30 @@
 # (эстонские музеи, польские библиотеки, Баден-Вюртемберг, Страсбург), но
 # и шум: марки, часы, значки, превью 512 px.
 # Проба 6 - те же запросы в тематических коллекциях: ww1 и photography.
-# Проба 7 (26.10): советское и российское - решение редакции «больше
-# своего, аудитория русскоязычная». Разбор 45 постов 11-26.10: СССР в 9%,
-# и то чаще глазами чужих архивов (пленные у финнов, брошенный ИС-2);
-# от РИА Новости - один пост. Ищем источники с советской стороны.
+# Проба 8 (11.11): разнообразие материала - редакция: «у соседнего
+# паблика материал разнообразнее и интереснее». Подлинный цвет (автохромы
+# ПМВ, Прокудин-Горский), отобранные лучшие снимки Викисклада, странности
+# войны (звукоуловители, «ослепляющий» камуфляж, животные, макеты),
+# ранние войны (Крым, русско-японская), женщины на войне.
 commons:
-  - category: "Images from RIA Novosti"
-    lang: "ru"
-    terms: ["Red Army", "Great Patriotic War", "Soviet Army", "partisans", "Stalingrad", "Leningrad", "Afghanistan", "Kursk", "Berlin 1945", "sailors"]
-  - { category: "Mil.ru", lang: "ru" }
-  - { category: "Images from Mil.ru", lang: "ru" }
-  - { category: "Photographs by Yevgeny Khaldei", lang: "ru", deep: true }
-  - { category: "Photographs by Max Alpert", lang: "ru", deep: true }
-  - { category: "Photographs by Georgy Zelma", lang: "ru", deep: true }
-  - { category: "Photographs by Dmitri Baltermants", lang: "ru", deep: true }
-  - { category: "Photographs by Arkady Shaikhet", lang: "ru", deep: true }
-  - { category: "Red Army in World War II", lang: "en", deep: true }
-  - { category: "Soviet–Afghan War", lang: "en", deep: true }
-  - { category: "Soviet war in Afghanistan", lang: "en", deep: true }
-  - { category: "Imperial Russian Army in World War I", lang: "en", deep: true }
-  - { category: "Russian Empire in World War I", lang: "en", deep: true }
-  - { category: "Russian Civil War", lang: "en", deep: true }
-  - { category: "Battle of Stalingrad", lang: "en", deep: true }
-  - { category: "Siege of Leningrad", lang: "en", deep: true }
-  - { category: "Soviet Navy", lang: "en", deep: true }
+  - { category: "Autochromes by Paul Castelnau", lang: "fr", deep: true }
+  - { category: "Autochromes by Fernand Cuville", lang: "fr", deep: true }
+  - { category: "Autochromes of World War I", lang: "fr", deep: true }
+  - { category: "Prokudin-Gorskii collection", lang: "ru", deep: true }
+  - { category: "Photographs by Sergey Prokudin-Gorsky", lang: "ru", deep: true }
+  - { category: "Featured pictures of World War I", lang: "en", deep: true }
+  - { category: "Featured pictures of World War II", lang: "en", deep: true }
+  - { category: "Restored images by Adam Cuerden", lang: "en", deep: true }
+  - { category: "Acoustic location", lang: "en", deep: true }
+  - { category: "Dazzle camouflage", lang: "en", deep: true }
+  - { category: "War pigeons", lang: "en", deep: true }
+  - { category: "Dogs in World War I", lang: "en", deep: true }
+  - { category: "Dummy tanks", lang: "en", deep: true }
+  - { category: "Photographs by Roger Fenton", lang: "en", deep: true }
+  - { category: "Russo-Japanese War photographs", lang: "en", deep: true }
+  - { category: "Soviet women in World War II", lang: "ru", deep: true }
+  - { category: "Women in World War I", lang: "en", deep: true }
+  - { category: "Gas masks for animals", lang: "en", deep: true }
 loc:
-  - "prokudin-gorskii"
-  - "russia 1916 photograph"
-  - "russian army 1917"
-  - "soviet union 1945 photograph"
+  - "autochrome"
+  - "prokudin-gorskii collection"
