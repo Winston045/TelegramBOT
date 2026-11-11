@@ -141,6 +141,34 @@ async function main() {
   }
   const scope = month ? ` за ${month}` : range ? ` за ${range.from}..${range.to}` : "";
   console.log(`\nвсего с текстом: ${unique.length}${scope}`);
+  // пусто - разбираемся, что это за имя: закрытый канал, бот или
+  // пользователь (у них нет ленты t.me/s), а не «канал без постов»
+  if (!unique.length) await describeName(slug);
+}
+
+/** Карточка t.me/<имя>: заголовок, описание и вид - канал, бот, человек. */
+async function describeName(slug: string): Promise<void> {
+  try {
+    const res = await fetch(`https://t.me/${slug}`, { signal: AbortSignal.timeout(30_000) });
+    const html = await res.text();
+    const meta = (prop: string) =>
+      html.match(new RegExp(`<meta property="${prop}" content="([^"]*)"`))?.[1]?.replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+    const extra = html.match(/tgme_page_extra[^>]*>([\s\S]*?)<\/div>/)?.[1]?.replace(/<[^>]+>/g, "").trim();
+    console.log(`\nкарточка t.me/${slug} (HTTP ${res.status}):`);
+    console.log(`  название: ${meta("og:title") ?? "-"}`);
+    console.log(`  описание: ${meta("og:description") ?? "-"}`);
+    console.log(`  подпись: ${extra ?? "-"}`);
+    const kind = /tgme_action_button_new[^>]*>\s*Start Bot/i.test(html) || /\bbot\b/i.test(extra ?? "")
+      ? "бот"
+      : /subscribers|подписчик/i.test(extra ?? "")
+        ? "канал (лента t.me/s закрыта или постов с текстом нет)"
+        : /members|участник/i.test(extra ?? "")
+          ? "группа"
+          : "пользователь или имя не найдено";
+    console.log(`  похоже на: ${kind}`);
+  } catch (err) {
+    console.log(`карточка t.me/${slug} не открылась: ${(err as Error).message}`);
+  }
 }
 
 main().catch((err) => {
