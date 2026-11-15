@@ -22,6 +22,7 @@ import { minWidthFor, prefilter } from "../src/prefilter.js";
 import sharp from "sharp";
 import { byPromise, isHome, promise } from "../src/promise.js";
 import { buildAnalysisQueue } from "../src/queue.js";
+import { WIKIMEDIA_UA } from "../src/wiki.js";
 import { loadArchiveWeights, YIELD_DAYS } from "../src/yield.js";
 import { hiResLocUrl } from "../src/sources/loc.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
@@ -32,7 +33,14 @@ import { analyzeImage } from "../src/analyze.js";
 import { passesGate } from "../src/scoring.js";
 import type { GeneratedCaption } from "../src/caption.js";
 import { finishCaption } from "../src/pipeline.js";
-import { isBlocked, noteOk, noteRateLimit } from "../src/hostguard.js";
+import {
+  hostFamily,
+  isBlocked,
+  noteOk,
+  noteRateLimit,
+  retryAfterMs,
+  WIKIMEDIA_MEDIA_FAMILY,
+} from "../src/hostguard.js";
 import { rubricOf } from "../src/rubrics.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 import { env } from "../src/env.js";
@@ -143,6 +151,16 @@ async function reviewWithWait<T extends { caption: GeneratedCaption; rewritten: 
 }
 let politeDelayMs = 800; // после первого 429 темп снижается
 let consecutive429 = 0;
+/**
+ * Раздача файлов Викимедиа режет частые скачивания: сбор 15.11 качал
+ * превью подряд с паузой 0.8 с и получил 429 на третьей минуте. Между
+ * запросами к ней - не меньше трёх секунд, после отказа - шесть.
+ */
+const MEDIA_GAP_MS = 3_000;
+let mediaGapMs = MEDIA_GAP_MS;
+let lastMediaAt = 0;
+/** Сколько раз ждём по Retry-After, прежде чем записать отказ хосту. */
+const MAX_429_WAITS = 2;
 
 async function fetchImage(url: string): Promise<Response | null> {
   // хост, отказавший серией 429, до конца прогона не трогаем: каждый
@@ -151,13 +169,20 @@ async function fetchImage(url: string): Promise<Response | null> {
     console.warn(`  пропуск (хост отдыхает после 429): ${url}`);
     return null;
   }
+  const media = hostFamily(url) === WIKIMEDIA_MEDIA_FAMILY;
   // после серии банов не тратим время на ретраи - одна попытка и дальше
   const delays = consecutive429 >= 3 ? [] : [2_000, 20_000, 45_000];
+  let waits429 = 0;
   for (let attempt = 0; ; attempt++) {
+    if (media) {
+      const gap = lastMediaAt + mediaGapMs - Date.now();
+      if (gap > 0) await sleepMs(gap);
+      lastMediaAt = Date.now();
+    }
     const res = await fetch(url, {
       signal: AbortSignal.timeout(60_000),
       headers: {
-        "user-agent": "story-team-bot/0.1 (Telegram history channel; contact via t.me/Story_Teams)",
+        "user-agent": WIKIMEDIA_UA,
         accept: "image/*",
       },
     });
@@ -168,6 +193,17 @@ async function fetchImage(url: string): Promise<Response | null> {
     }
     if (res.status === 429) {
       politeDelayMs = 3_000;
+      if (media) mediaGapMs = MEDIA_GAP_MS * 2;
+      // сервер сам говорит, сколько ждать: ждём и пробуем снова, пока
+      // позволяет бюджет прогона, - и только потом записываем отказ.
+      // Раньше второй же 429 закрывал хост, и кадр терялся
+      const wait = retryAfterMs(res.headers.get("retry-after"));
+      if (waits429 < MAX_429_WAITS && timeLeftMs() - wait > 10 * 60_000) {
+        waits429++;
+        console.log(`  429 от ${hostFamily(url)}: жду ${Math.round(wait / 1000)} с и повторяю`);
+        await sleepMs(wait);
+        continue;
+      }
       consecutive429++;
       if (noteRateLimit(url)) {
         console.warn(`  пропуск (HTTP 429, хост отдыхает): ${url}`);

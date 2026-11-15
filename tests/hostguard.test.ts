@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { hostFamily, isBlocked, noteOk, noteRateLimit, resetHostGuard } from "../src/hostguard.js";
+import { hostFamily, isBlocked, noteOk, noteRateLimit, resetHostGuard, retryAfterMs } from "../src/hostguard.js";
 
 /**
  * Редакция 08.11: «бот стучался в ресурсы беспрерывно, от чего они его
@@ -28,8 +28,29 @@ describe("предохранитель хостов", () => {
     noteOk(u);
     expect(noteRateLimit(u)).toBe(false);
     expect(noteRateLimit(u)).toBe(true);
-    expect(isBlocked("https://commons.wikimedia.org/w/api.php")).toBe(true);
+    expect(isBlocked("https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a.jpg/1920px-a.jpg")).toBe(true);
     expect(isBlocked("https://tile.loc.gov/x.jpg")).toBe(false);
+  });
+
+  it("раздача файлов Викимедиа и API Викисклада - разные семейства (сбор 15.11)", () => {
+    expect(hostFamily("https://upload.wikimedia.org/a.jpg")).toBe("upload.wikimedia.org");
+    expect(hostFamily("https://thumb.wikimedia.org/x/1920px-a.jpg")).toBe("upload.wikimedia.org");
+    expect(hostFamily("https://commons.wikimedia.org/w/api.php")).toBe("wikimedia.org");
+    // отказ API не закрывает картинки, и наоборот
+    noteRateLimit("https://commons.wikimedia.org/w/api.php", { now: true });
+    expect(isBlocked("https://upload.wikimedia.org/a.jpg")).toBe(false);
+    noteRateLimit("https://upload.wikimedia.org/a.jpg", { now: true });
+    expect(isBlocked("https://upload.wikimedia.org/b.jpg")).toBe(true);
+  });
+
+  it("Retry-After: секунды, дата, без заголовка - в разумных рамках", () => {
+    expect(retryAfterMs("30")).toBe(30_000);
+    expect(retryAfterMs("1")).toBe(5_000);
+    expect(retryAfterMs("3600")).toBe(60_000);
+    expect(retryAfterMs(null)).toBe(20_000);
+    const now = Date.parse("2026-11-15T05:00:00Z");
+    expect(retryAfterMs("Sun, 15 Nov 2026 05:00:40 GMT", now)).toBe(40_000);
+    expect(retryAfterMs("мусор")).toBe(20_000);
   });
 
   it("loc.gov блокируется с первого отказа", () => {

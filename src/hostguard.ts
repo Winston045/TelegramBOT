@@ -20,6 +20,15 @@ const STRIKES_TO_BLOCK = 2;
 const strikes = new Map<string, number>();
 const blocked = new Set<string>();
 
+/**
+ * Серверы файлов Викимедиа (upload, thumb) - отдельное семейство от API
+ * Викисклада. Сбор 15.11: один 429 при запросах к API и один при
+ * скачивании превью закрыли всё «wikimedia.org», и 16 кадров из 40 ушли
+ * мимо анализа. Лимиты у API и у раздачи файлов разные.
+ */
+const WIKIMEDIA_MEDIA = /^(upload|thumb)\.wikimedia\.org$/;
+export const WIKIMEDIA_MEDIA_FAMILY = "upload.wikimedia.org";
+
 /** Семейство хоста: «tile.loc.gov» → «loc.gov», «ru.wikipedia.org» → «wikipedia.org». */
 export function hostFamily(url: string | URL): string {
   let host: string;
@@ -28,7 +37,30 @@ export function hostFamily(url: string | URL): string {
   } catch {
     return "";
   }
+  if (WIKIMEDIA_MEDIA.test(host)) return WIKIMEDIA_MEDIA_FAMILY;
   return host.split(".").slice(-2).join(".");
+}
+
+/**
+ * Сколько ждать по заголовку Retry-After: секунды или дата. Без заголовка
+ * - fallbackMs. Результат зажат в [minMs, maxMs]: ни долбить сразу, ни
+ * съесть весь бюджет прогона одной паузой.
+ */
+export function retryAfterMs(
+  header: string | null | undefined,
+  now = Date.now(),
+  { fallbackMs = 20_000, minMs = 5_000, maxMs = 60_000 } = {},
+): number {
+  let ms = fallbackMs;
+  const raw = header?.trim();
+  if (raw) {
+    if (/^\d+$/.test(raw)) ms = Number(raw) * 1000;
+    else {
+      const at = Date.parse(raw);
+      if (Number.isFinite(at)) ms = at - now;
+    }
+  }
+  return Math.min(maxMs, Math.max(minMs, ms));
 }
 
 /** Отдыхает ли хост до конца прогона. */
