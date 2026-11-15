@@ -36,6 +36,25 @@ import { parseCandidateId } from "../_shared/service_line.ts";
 import { draftTag, replaceBody, replaceQuote } from "../_shared/edit_caption.ts";
 import { CAPTION_LIMIT, validateHtml, visibleLength } from "../_shared/validate.ts";
 import {
+  MAIN_KEYBOARD,
+  RESERVE_PAGE,
+  TOAST,
+  backFor,
+  deleteAskScreen,
+  homeScreen,
+  itemScreen,
+  menuByText,
+  publishedScreen,
+  queueScreen,
+  reserveScreen,
+  settingsScreen,
+  shortTitle,
+  tidyScreen,
+  whenScreen,
+  type ListItem,
+  type Screen,
+} from "../_shared/menu.ts";
+import {
   EVENT_MEMORY_DAYS,
   HISTORY_WINDOW,
   LONG_QUOTE,
@@ -116,9 +135,8 @@ async function setAutoPublish(on: boolean): Promise<void> {
 
 function autoPanelText(on: boolean): string {
   return on
-    ? "Автопостинг ВКЛЮЧЁН: посты уходят в канал по расписанию без одобрения.\n" +
-        "Карточки в чат приходят как обычно - кнопкой 'Мимо' можно снять кандидата до публикации."
-    : "Автопостинг выключен: в канал уходят только одобренные посты.";
+    ? "Автопостинг включён: всё, что собрано и не удалено, выходит само по расписанию."
+    : "Автопостинг выключен: выходят только посты «следующим» и на время.";
 }
 
 function autoPanelKeyboard(on: boolean) {
@@ -487,10 +505,311 @@ async function renderPanel(
 ): Promise<void> {
   try {
     await ctx.editMessageText(schedulePanelText(times), {
+      parse_mode: "HTML",
       reply_markup: { inline_keyboard: panelKeyboard(times) },
     });
   } catch {
     // "message is not modified" при повторном нажатии - не ошибка
+  }
+}
+
+// ---------- меню (_shared/menu.ts) ----------
+
+type PanelCtx = {
+  chat?: { id: number };
+  reply: (text: string, other?: object) => Promise<{ message_id: number; chat: { id: number } }>;
+};
+
+/**
+ * Открыть панель новым сообщением. Прежняя панель этого чата удаляется:
+ * в чате всегда одна живая панель, а не лента из старых сводок.
+ */
+async function showPanel(ctx: PanelCtx, screen: Screen): Promise<void> {
+  const m = await ctx.reply(screen.text, {
+    parse_mode: "HTML",
+    reply_markup: screen.keyboard,
+    link_preview_options: { is_disabled: true },
+  });
+  const key = `menu_panel:${m.chat.id}`;
+  try {
+    const { data } = await db.from("settings").select("value").eq("key", key).maybeSingle();
+    const prev = Number(data?.value);
+    if (Number.isFinite(prev) && prev > 0 && prev !== m.message_id) {
+      await bot.api.deleteMessage(m.chat.id, prev).catch(() => {});
+    }
+    await db.from("settings").upsert({ key, value: m.message_id, updated_at: new Date().toISOString() });
+  } catch {
+    // уборка старой панели - удобство, не функция
+  }
+}
+
+/** Перерисовать панель на месте (после нажатия кнопки). */
+async function editPanel(
+  ctx: { editMessageText: (text: string, other?: object) => Promise<unknown> },
+  screen: Screen,
+): Promise<void> {
+  try {
+    await ctx.editMessageText(screen.text, {
+      parse_mode: "HTML",
+      reply_markup: screen.keyboard,
+      link_preview_options: { is_disabled: true },
+    });
+  } catch {
+    // «message is not modified» при повторном нажатии - не ошибка
+  }
+}
+
+const freshSinceIso = () =>
+  new Date(Date.now() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString();
+
+async function buildQueue(): Promise<Screen> {
+  const plan = await currentPlan(5);
+  const items: ListItem[] = plan.map((e) => ({
+    id: e.candidate.id,
+    when: e.when,
+    title: shortTitle(e.candidate.caption_html),
+    mark: e.kind === "auto" ? undefined : planMark(e.kind),
+  }));
+  return queueScreen(items, await getAutoPublish());
+}
+
+async function buildReserve(page: number): Promise<Screen> {
+  const now = new Date();
+  const base = () =>
+    db
+      .from("candidates")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["new", "shown", "approved"])
+      .is("scheduled_at", null)
+      .not("caption_html", "is", null);
+  const [{ count: total }, { count: stale }, { data, error }] = await Promise.all([
+    base().gte("created_at", freshSinceIso()),
+    base().lt("created_at", freshSinceIso()),
+    db
+      .from("candidates")
+      .select("id, caption_html, score, created_at, status")
+      .in("status", ["new", "shown", "approved"])
+      .is("scheduled_at", null)
+      .not("caption_html", "is", null)
+      .gte("created_at", freshSinceIso())
+      .order("score", { ascending: false })
+      .order("id", { ascending: false })
+      .range(page * RESERVE_PAGE, page * RESERVE_PAGE + RESERVE_PAGE - 1),
+  ]);
+  if (error) throw new Error(error.message);
+  const items: ListItem[] = (data ?? []).map((c) => ({
+    id: c.id,
+    title: shortTitle(c.caption_html),
+    mark:
+      `оценка ${c.score ?? "?"}, собран ${ageWords(c.created_at, now)}` +
+      (c.status === "approved" ? ", следующим" : ""),
+  }));
+  return reserveScreen(items, page, total ?? 0, stale ?? 0);
+}
+
+async function buildPublished(): Promise<Screen> {
+  const { data, error } = await db
+    .from("candidates")
+    .select("id, caption_html, published_at")
+    .eq("status", "published")
+    .order("published_at", { ascending: false })
+    .limit(5);
+  if (error) throw new Error(error.message);
+  return publishedScreen(
+    (data ?? []).map((c) => ({ id: c.id, when: moscowTime(c.published_at), title: shortTitle(c.caption_html) })),
+  );
+}
+
+async function buildSettings(): Promise<Screen> {
+  const [autoOn, times, tidyHours] = await Promise.all([
+    getAutoPublish(),
+    getPublishTimes(),
+    getTidyTtlHours(),
+  ]);
+  return settingsScreen({ autoOn, times, tidyHours });
+}
+
+async function buildItem(id: number, from: string): Promise<Screen | undefined> {
+  const { data: c, error } = await db
+    .from("candidates")
+    .select("id, caption_html, status, score, created_at, scheduled_at, published_at, channel_msg_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!c) return undefined;
+  const now = new Date();
+  const stale = new Date(c.created_at).getTime() < Date.now() - RESERVE_TTL_DAYS * 24 * 3600 * 1000;
+  let whenLine: string | undefined;
+  if (c.status === "published") whenLine = `Вышел ${moscowTime(c.published_at)}.`;
+  else if (c.scheduled_at) whenLine = `Выйдет ${moscowTime(c.scheduled_at)}.`;
+  else if (c.status === "approved") whenLine = "Выйдет следующим.";
+  else if (c.status === "rejected") whenLine = "Удалён, в канал не выйдет.";
+  else if (!stale) whenLine = "Ждёт своей очереди в резерве.";
+  return itemScreen(
+    {
+      id: c.id,
+      title: shortTitle(c.caption_html, 200),
+      status: c.status,
+      whenLine,
+      score: c.score,
+      ageLine: c.status === "published" ? undefined : `собран ${ageWords(c.created_at, now)}`,
+      stale,
+      scheduled: Boolean(c.scheduled_at),
+      channelUrl: c.channel_msg_id ? `https://t.me/${CHANNEL_SLUG}/${c.channel_msg_id}` : undefined,
+    },
+    from,
+  );
+}
+
+/** Экран, куда вернуться после действия над постом. */
+async function buildBack(from: string): Promise<Screen> {
+  const target = backFor(from);
+  if (target === "m:queue") return buildQueue();
+  if (target === "m:pub") return buildPublished();
+  return buildReserve(Number(target.split(":")[2]) || 0);
+}
+
+type CbCtx = {
+  callbackQuery: { data: string };
+  from: { first_name?: string };
+  answerCallbackQuery: (other?: object) => Promise<unknown>;
+  editMessageText: (text: string, other?: object) => Promise<unknown>;
+};
+
+/** Нажатие в панели меню: m:раздел[:аргументы]. */
+async function handleMenu(ctx: CbCtx, parts: string[]): Promise<void> {
+  const [screen, a, b, c] = parts;
+  const toast = (text?: string) => ctx.answerCallbackQuery(text ? { text } : undefined);
+  switch (screen) {
+    case "home":
+      await editPanel(ctx, await buildHome());
+      return void (await toast());
+    case "queue":
+      await editPanel(ctx, await buildQueue());
+      return void (await toast());
+    case "res":
+      await editPanel(ctx, await buildReserve(Math.max(0, Number(a) || 0)));
+      return void (await toast());
+    case "pub":
+      await editPanel(ctx, await buildPublished());
+      return void (await toast());
+    case "set":
+      await editPanel(ctx, await buildSettings());
+      return void (await toast());
+    case "sched": {
+      const times = await getPublishTimes();
+      await editPanel(ctx, { text: schedulePanelText(times), keyboard: { inline_keyboard: panelKeyboard(times) } });
+      return void (await toast());
+    }
+    case "tidy":
+      await editPanel(ctx, tidyScreen(await getTidyTtlHours()));
+      return void (await toast());
+    case "tidyset": {
+      const hours = Number(a);
+      if (!Number.isFinite(hours) || hours < 0) return void (await toast());
+      const { error } = await db.from("settings").upsert({
+        key: "chat_ttl_hours",
+        value: hours,
+        updated_at: new Date().toISOString(),
+      });
+      if (error) throw new Error(`сохранение автоочистки: ${error.message}`);
+      if (hours === 0) await db.from("chat_cleanup").delete().gte("message_id", 0);
+      await editPanel(ctx, await buildSettings());
+      return void (await toast(TOAST.saved));
+    }
+    case "auto": {
+      const on = a === "on";
+      await setAutoPublish(on);
+      await editPanel(ctx, await buildSettings());
+      return void (await toast(on ? TOAST.autoOn : TOAST.autoOff));
+    }
+    case "more": {
+      const r = await triggerCollect();
+      return void (await ctx.answerCallbackQuery({ text: collectReply(r), show_alert: r !== "ok" }));
+    }
+    case "item": {
+      const item = await buildItem(Number(a), b ?? "q");
+      if (!item) return void (await toast(TOAST.gone));
+      await editPanel(ctx, item);
+      return void (await toast());
+    }
+    case "now": {
+      const url = await publishCandidate(Number(a));
+      if (!url) return void (await toast(TOAST.gone));
+      const item = await buildItem(Number(a), b ?? "q");
+      if (item) await editPanel(ctx, item);
+      return void (await toast(TOAST.published));
+    }
+    case "next": {
+      const result = await approve(Number(a));
+      if (!result) return void (await toast(TOAST.gone));
+      const item = await buildItem(Number(a), b ?? "q");
+      if (item) await editPanel(ctx, item);
+      return void (await toast(result.includes(" МСК") ? result.replace(/^Пост #\d+ /, "").replace(/\.$/, "") : TOAST.next));
+    }
+    case "drop": {
+      const { data } = await db
+        .from("candidates")
+        .update({ status: "rejected" })
+        .eq("id", Number(a))
+        .in("status", ["new", "shown", "approved"])
+        .select("id");
+      if (!data?.length) return void (await toast(TOAST.gone));
+      await editPanel(ctx, await buildBack(b ?? "q"));
+      return void (await toast(TOAST.dropped));
+    }
+    case "when": {
+      const { data } = await db.from("candidates").select("caption_html").eq("id", Number(a)).maybeSingle();
+      const slots = upcomingSlots(6, await getPublishTimes());
+      await editPanel(ctx, whenScreen(Number(a), shortTitle(data?.caption_html), slots, b ?? "q"));
+      return void (await toast());
+    }
+    case "at": {
+      // m:at:id:from:YYYY-MM-DDTHH - двоеточие времени съела разбивка
+      const isoShort = `${c}:${parts[4] ?? "00"}`;
+      const scheduledAt = new Date(`${isoShort}:00${TZ_OFFSET}`).toISOString();
+      if (new Date(scheduledAt).getTime() <= Date.now()) {
+        return void (await ctx.answerCallbackQuery({ text: "Это время уже прошло, выберите другое", show_alert: true }));
+      }
+      const { data } = await db
+        .from("candidates")
+        .update({ scheduled_at: scheduledAt, status: "approved" })
+        .eq("id", Number(a))
+        .in("status", ["approved", "new", "shown"])
+        .select("id");
+      if (!data?.length) return void (await toast(TOAST.gone));
+      const item = await buildItem(Number(a), b ?? "q");
+      if (item) await editPanel(ctx, item);
+      return void (await toast(`Выйдет ${moscowTime(scheduledAt)}`));
+    }
+    case "delask": {
+      const { data } = await db.from("candidates").select("caption_html").eq("id", Number(a)).maybeSingle();
+      await editPanel(ctx, deleteAskScreen(Number(a), shortTitle(data?.caption_html), b ?? "p"));
+      return void (await toast());
+    }
+    case "delyes": {
+      const id = Number(a);
+      const { data, error } = await db
+        .from("candidates")
+        .update({ status: "rejected" })
+        .eq("id", id)
+        .eq("status", "published")
+        .not("channel_msg_id", "is", null)
+        .select("id, channel_msg_id");
+      if (error) throw new Error(error.message);
+      const row = data?.[0];
+      if (!row) return void (await toast(TOAST.gone));
+      try {
+        await deleteChannelPost(Number(row.channel_msg_id));
+      } catch (err) {
+        await db.from("candidates").update({ status: "published" }).eq("id", id).eq("status", "rejected");
+        throw err;
+      }
+      await editPanel(ctx, await buildPublished());
+      return void (await toast(TOAST.deleted));
+    }
+    default:
+      return void (await toast());
   }
 }
 
@@ -501,6 +820,10 @@ bot.on("callback_query:data", async (ctx) => {
 
   try {
     switch (action) {
+      case "m": {
+        await handleMenu(ctx, ctx.callbackQuery.data.split(":").slice(1));
+        return;
+      }
       case "ok": {
         const result = await approve(id);
         if (!result) {
@@ -508,10 +831,10 @@ bot.on("callback_query:data", async (ctx) => {
           return;
         }
         const label = result.includes("опубликован")
-          ? `Опубликовано - ${who}`
+          ? `Опубликовано − ${who}`
           : result.includes(" МСК")
-            ? `${result.replace(/^Пост #\d+ /, "").replace(/\.$/, "")} - ${who}`
-            : `Следующим - ${who}`;
+            ? `${result.replace(/^Пост #\d+ /, "").replace(/\.$/, "")} − ${who}`
+            : `Следующим − ${who}`;
         await ctx.editMessageReplyMarkup({ reply_markup: doneKeyboard(label) });
         await ctx.answerCallbackQuery({ text: label });
         if (result.includes("https://")) await ctx.reply(result);
@@ -533,7 +856,7 @@ bot.on("callback_query:data", async (ctx) => {
           await ctx.deleteMessage();
         } catch {
           await ctx.editMessageReplyMarkup({
-            reply_markup: doneKeyboard(`Удалено - ${who}`),
+            reply_markup: doneKeyboard(`Удалено − ${who}`),
           });
         }
         await ctx.answerCallbackQuery({ text: "Удалено: в канал не выйдет" });
@@ -562,7 +885,7 @@ bot.on("callback_query:data", async (ctx) => {
         // выпустил бы ближайшим заходом, мимо любого слота
         if (new Date(scheduledAt).getTime() <= Date.now()) {
           await ctx.answerCallbackQuery({
-            text: "Это время уже прошло - нажмите «Перенести» ещё раз",
+            text: "Это время уже прошло − нажмите «Перенести» ещё раз",
             show_alert: true,
           });
           return;
@@ -582,7 +905,7 @@ bot.on("callback_query:data", async (ctx) => {
         const label = isoShort.slice(5, 16).replace("-", ".").replace("T", " ");
         const [mm, rest] = [label.slice(0, 2), label.slice(3)];
         await ctx.editMessageReplyMarkup({
-          reply_markup: doneKeyboard(`Выйдет ${rest.slice(0, 2)}.${mm} в ${rest.slice(3)} - ${who}`),
+          reply_markup: doneKeyboard(`Выйдет ${rest.slice(0, 2)}.${mm} в ${rest.slice(3)} − ${who}`),
         });
         await ctx.answerCallbackQuery({ text: "Запланировано" });
         return;
@@ -628,7 +951,7 @@ bot.on("callback_query:data", async (ctx) => {
             { parse_mode: "HTML" },
           );
           await ctx.answerCallbackQuery({
-            text: "Архив не отдаёт фото - прислал текст и ссылку",
+            text: "Архив не отдаёт фото − прислал текст и ссылку",
           });
         }
         return;
@@ -640,7 +963,7 @@ bot.on("callback_query:data", async (ctx) => {
           return;
         }
         await ctx.editMessageReplyMarkup({
-          reply_markup: doneKeyboard(`Опубликовано - ${who}`),
+          reply_markup: doneKeyboard(`Опубликовано − ${who}`),
         });
         await ctx.answerCallbackQuery({ text: "Опубликовано" });
         await ctx.reply(`Пост #${id} опубликован: ${url}`);
@@ -659,7 +982,7 @@ bot.on("callback_query:data", async (ctx) => {
           return;
         }
         await ctx.editMessageReplyMarkup({
-          reply_markup: doneKeyboard(`Убрано из очереди - ${who}`),
+          reply_markup: doneKeyboard(`Убрано из очереди − ${who}`),
         });
         await ctx.answerCallbackQuery({ text: "Убрано из очереди" });
         return;
@@ -695,11 +1018,11 @@ bot.on("callback_query:data", async (ctx) => {
           .select("id");
         if (updErr) throw new Error(updErr.message);
         if (!applied?.length) {
-          await ctx.answerCallbackQuery({ text: "Пост уже вышел или снят - правка не применена", show_alert: true });
+          await ctx.answerCallbackQuery({ text: "Пост уже вышел или снят − правка не применена", show_alert: true });
           return;
         }
         await ctx.editMessageReplyMarkup({
-          reply_markup: doneKeyboard(`Подпись заменена - ${who}`),
+          reply_markup: doneKeyboard(`Подпись заменена − ${who}`),
         });
         await ctx.answerCallbackQuery({ text: "Подпись заменена" });
         return;
@@ -747,7 +1070,7 @@ bot.on("callback_query:data", async (ctx) => {
           throw err;
         }
         await ctx.editMessageReplyMarkup({
-          reply_markup: doneKeyboard(`Удалено из канала - ${who}`),
+          reply_markup: doneKeyboard(`Удалено из канала − ${who}`),
         });
         await ctx.answerCallbackQuery({ text: "Удалено из канала" });
         return;
@@ -818,7 +1141,7 @@ bot.on("callback_query:data", async (ctx) => {
         return;
       }
       case "tadd": {
-        await ctx.editMessageText("Новый слот - выберите час (МСК):", {
+        await ctx.editMessageText("Новый слот − выберите час (МСК):", {
           reply_markup: { inline_keyboard: hourKeyboard() },
         });
         await ctx.answerCallbackQuery();
@@ -831,7 +1154,7 @@ bot.on("callback_query:data", async (ctx) => {
           return;
         }
         await ctx.editMessageText(
-          `Час ${String(hour).padStart(2, "0")} - выберите минуты (МСК):`,
+          `Час ${String(hour).padStart(2, "0")} − выберите минуты (МСК):`,
           { reply_markup: { inline_keyboard: minuteKeyboard(hour) } },
         );
         await ctx.answerCallbackQuery();
@@ -877,7 +1200,7 @@ bot.on("callback_query:data", async (ctx) => {
         return;
       }
       case "keep": {
-        await ctx.editMessageReplyMarkup({ reply_markup: doneKeyboard(`Оставлено - ${who}`) });
+        await ctx.editMessageReplyMarkup({ reply_markup: doneKeyboard(`Оставлено − ${who}`) });
         await ctx.answerCallbackQuery({ text: "Пост остаётся в канале" });
         return;
       }
@@ -895,7 +1218,11 @@ bot.on("callback_query:data", async (ctx) => {
 
 // ---------- команды ----------
 
-bot.command("status", async (ctx) => {
+/**
+ * Сводка - главный экран меню (src: _shared/menu.ts). Раньше это был
+ * ответ на /status с канцелярским полотном; теперь панель с кнопками.
+ */
+async function buildHome(): Promise<Screen> {
   const now = new Date();
   const twoDaysAgo = new Date(now.getTime() - 48 * 3600 * 1000).toISOString();
 
@@ -946,7 +1273,6 @@ bot.command("status", async (ctx) => {
   const freshReserve = reserve.filter((r) => new Date(r.created_at).getTime() >= staleBefore);
   const staleCount = reserve.length - freshReserve.length;
   const scheduledCount = pool.length - reserve.length;
-  const hooks = topThree(freshReserve.map((r) => r.tags?.hook ?? "без крючка"));
   const oldestMs = reserve.length
     ? Math.max(...reserve.map((r) => now.getTime() - new Date(r.created_at).getTime()))
     : 0;
@@ -956,7 +1282,6 @@ bot.command("status", async (ctx) => {
   // время. Раньше в счёт шли и просроченные - «27 готовых» при восьми живых
   const ready = freshReserve.length + scheduledCount;
   const perDay = Math.max(1, times.length);
-  const runway = (ready / perDay).toFixed(1);
 
   // ---- сбор: воронка последнего прогона
   const run = runRes.data as {
@@ -975,62 +1300,46 @@ bot.command("status", async (ctx) => {
   const beat = (job: string) => beats.find((b) => b.job === job);
 
   const [next] = plan;
-  const nextPost = next
-    ? `${next.when}, #${next.candidate.id} (${planMark(next.kind)})`
-    : "нечего публиковать";
 
   // Тревоги: строка появляется, ТОЛЬКО когда с показателем что-то не так.
   // Иначе сводка распухает до полотна, которое перестают читать - а
   // молчание блока само по себе значит «здесь порядок».
   const alerts: string[] = [];
   if (run && (run.quota_failed ?? 0) > 0) {
-    alerts.push(`Партию оборвал лимит Gemini: ${run.quota_failed} кадров. Сброс в полночь по Калифорнии (10:00 МСК летом, 11:00 зимой)`);
+    alerts.push(`Последний сбор упёрся в лимит Gemini, ${run.quota_failed} ${plural(run.quota_failed ?? 0, "кадр остался", "кадра остались", "кадров остались")} без разбора. Лимит обновится в 11:00.`);
   }
   if (passed > publishedToday) {
-    alerts.push(`Слот прошёл, а пост не вышел: ${publishedToday} из ${passed}`);
+    alerts.push(`По расписанию уже должно было выйти ${passed}, а вышло ${publishedToday}.`);
   }
-  if (ready < perDay) alerts.push("Готового меньше, чем постов на день - нужен /more");
+  if (ready < perDay) alerts.push("Готовых постов меньше, чем нужно на день. Стоит нажать «Собрать ещё».");
   const pubBeat = beat("publisher");
   const pubSilent = pubBeat?.last_ok
     ? now.getTime() - new Date(pubBeat.last_ok).getTime() > 2 * 3600 * 1000
     : true;
-  if (pubSilent) alerts.push(`Публикатор молчит с ${moscowTime(pubBeat?.last_ok ?? null)}`);
+  if (pubSilent) alerts.push(`Публикатор не отзывается с ${moscowTime(pubBeat?.last_ok ?? null)}.`);
   const colBeat = beat("collector");
-  if (colBeat?.last_error) alerts.push("Последний сбор закончился ошибкой");
+  if (colBeat?.last_error) alerts.push("Последний сбор закончился ошибкой.");
   // просроченные - не тревога: они просто не выйдут (строка ниже)
   void oldestDays;
 
-  // null - строка, которой в этом прогоне нет; пустая строка - разделитель
-  const lines: Array<string | null> = [
-    `<b>СВОДКА</b> · ${moscowTime(now.toISOString())} МСК`,
-    "",
-    `Готово к выходу: <b>${ready}</b>` +
-      (scheduledCount ? ` (из них на время: ${scheduledCount})` : ""),
-    staleCount
-      ? `Просрочено (старше ${RESERVE_TTL_DAYS} дней, не выйдет): ${staleCount}`
-      : null,
-    `Запас хода: ${runway} ${plural(Math.round(Number(runway)), "день", "дня", "дней")} при ${perDay} постах в сутки`,
-    "",
-    `Ближайший пост: ${nextPost}`,
-    `Сегодня: ${publishedToday} из ${times.length} - ${times.join(", ")} МСК`,
-    "",
-    run
-      ? `Сбор ${moscowTime(run.started_at)}: ${run.analyzed} на анализ → ${run.written} в резерв`
-      : "Сборов ещё не было",
-    `Резерв по крючкам: ${hooks}`,
-    "",
-    autoOn
-      ? "Автопостинг включён - выходит всё, что не удалено"
-      : "Автопостинг выключен - выходят только посты «следующим» и на время",
-    INSTANT_PUBLISH ? "Режим тестовый - «Следующим» выводит сразу" : null,
-    alerts.length ? "" : null,
-    alerts.length ? "<b>Требует внимания</b>" : null,
-    ...alerts.map((a) => `- ${a}`),
-    "",
-    "<i>Подробности: /queue · /schedule · /auto</i>",
-  ];
+  const nextTitle = next ? headline(next.candidate.caption_html, 60) : "";
+  return homeScreen({
+    publishedToday,
+    slotsToday: times.length,
+    times,
+    nextPost: next ? { when: next.when, title: nextTitle } : undefined,
+    ready,
+    stale: staleCount,
+    lastRun: run
+      ? { when: moscowTime(run.started_at), analyzed: run.analyzed, written: run.written }
+      : undefined,
+    autoOn,
+    alerts,
+  });
+}
 
-  await ctx.reply(lines.filter((l) => l !== null).join("\n"), { parse_mode: "HTML" });
+bot.command("status", async (ctx) => {
+  await showPanel(ctx, await buildHome());
 });
 
 /** План публикаций: то же, что решит публикатор - и вручную, и автоматом. */
@@ -1162,41 +1471,7 @@ function planMark(kind: string): string {
 }
 
 bot.command("queue", async (ctx) => {
-  const plan = await currentPlan(10);
-  const autoOn = await getAutoPublish();
-  if (!plan.length) {
-    await ctx.reply(
-      autoOn
-        ? "Публиковать нечего: резерв пуст. Автодобор наполнит его сам, ускорить - /more."
-        : "Очередь пуста: одобрите карточки или включите автопостинг (/auto).",
-    );
-    return;
-  }
-
-  await ctx.reply(
-    `План публикаций: ${plan.length}.` +
-      (autoOn
-        ? "\nАвтопостинг включён - посты с пометкой «автовыбор» выйдут сами."
-        : "\nАвтопостинг выключен - выйдет только одобренное."),
-  );
-  for (const entry of plan) {
-    const c = entry.candidate;
-    await ctx.reply(
-      `${entry.when} - ${planMark(entry.kind)}\n#${c.id}. ${headline(c.caption_html)}`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "Показать", callback_data: `show:${c.id}` },
-              { text: "Сейчас", callback_data: `now:${c.id}` },
-              { text: "Перенести", callback_data: `re:${c.id}` },
-              { text: "Убрать", callback_data: `rm:${c.id}` },
-            ],
-          ],
-        },
-      },
-    );
-  }
+  await showPanel(ctx as never, await buildQueue());
 });
 
 /**
@@ -1212,80 +1487,11 @@ bot.command("queue", async (ctx) => {
  * записи в базу.
  */
 bot.command("reserve", async (ctx) => {
-  const arg = (ctx.match ?? "").trim();
-  const asked = Number(arg);
-  const limit = arg && Number.isFinite(asked) && asked > 0 ? Math.min(Math.trunc(asked), 15) : 8;
-  const now = new Date();
-
-  const { data, error } = await db
-    .from("candidates")
-    .select("id, caption_html, score, tags, created_at")
-    .in("status", ["new", "shown"])
-    .not("caption_html", "is", null)
-    // nullsFirst: иначе Postgres поднимает карточки без оценки наверх списка
-    .order("score", { ascending: false, nullsFirst: false })
-    .limit(200);
-  if (error) {
-    await ctx.reply(`Резерв не читается: ${error.message}`);
-    return;
-  }
-
-  const rows = (data ?? []) as Array<{
-    id: number;
-    caption_html: string | null;
-    score: number | null;
-    tags: { hook?: string } | null;
-    created_at: string;
-  }>;
-  if (!rows.length) {
-    await ctx.reply(
-      "Резерв пуст: разбирать нечего. Наполнит утренний сбор в 11:05 МСК, ускорить - /more.",
-    );
-    return;
-  }
-
-  const staleBefore = now.getTime() - RESERVE_TTL_DAYS * 24 * 3600 * 1000;
-  const isStale = (iso: string) => new Date(iso).getTime() < staleBefore;
-  const stale = rows.filter((r) => isStale(r.created_at)).length;
-  const page = rows.slice(0, limit);
-
-  const head: Array<string | null> = [
-    `<b>РЕЗЕРВ</b> - ${rows.length} ${plural(rows.length, "карточка", "карточки", "карточек")}`,
-    `По крючкам: ${topThree(rows.map((r) => r.tags?.hook ?? "без крючка"))}`,
-    stale
-      ? `Просрочено (старше ${RESERVE_TTL_DAYS} дней): ${stale} - автопостинг их не берёт`
-      : null,
-    "",
-    `Ниже - лучшие по оценке (${page.length}).` +
-      (rows.length > page.length && limit < 15 ? " Больше: /reserve 15" : ""),
-  ];
-  await ctx.reply(head.filter((l) => l !== null).join("\n"), { parse_mode: "HTML" });
-
-  for (const c of page) {
-    const marks = [
-      `#${c.id}`,
-      `оценка ${c.score ?? "?"}`,
-      c.tags?.hook ?? "без крючка",
-      ageWords(c.created_at, now),
-      isStale(c.created_at) ? "просрочена" : null,
-    ].filter((m) => m !== null);
-    await ctx.reply(`${marks.join(" · ")}\n${headline(c.caption_html)}`, {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "Показать", callback_data: `show:${c.id}` },
-            { text: "Следующим", callback_data: `ok:${c.id}` },
-            { text: "Удалить", callback_data: `skip:${c.id}` },
-          ],
-        ],
-      },
-    });
-  }
+  await showPanel(ctx as never, await buildReserve(0));
 });
 
 bot.command("auto", async (ctx) => {
-  const on = await getAutoPublish();
-  await ctx.reply(autoPanelText(on), { reply_markup: autoPanelKeyboard(on) });
+  await showPanel(ctx as never, await buildSettings());
 });
 
 function tidyPanelText(ttl: number): string {
@@ -1310,25 +1516,17 @@ function tidyPanelKeyboard(ttl: number) {
 }
 
 bot.command("tidy", async (ctx) => {
-  const ttl = await getTidyTtlHours();
-  await ctx.reply(tidyPanelText(ttl), { reply_markup: tidyPanelKeyboard(ttl) });
+  await showPanel(ctx as never, tidyScreen(await getTidyTtlHours()));
 });
 
 bot.command("schedule", async (ctx) => {
   const times = await getPublishTimes();
-  await ctx.reply(schedulePanelText(times), {
-    reply_markup: { inline_keyboard: panelKeyboard(times) },
-  });
+  await showPanel(ctx as never, { text: schedulePanelText(times), keyboard: { inline_keyboard: panelKeyboard(times) } });
 });
 
-bot.command("more", async (ctx) => {
-  if (!GH_PAT) {
-    await ctx.reply(
-      "Команда не настроена: нужен секрет GH_PAT (токен GitHub с правом " +
-        "запуска Actions). Добавьте его в GitHub Secrets и перезапустите деплой вебхука.",
-    );
-    return;
-  }
+/** Запуск сбора свежей партии через GitHub Actions (more.yml). */
+async function triggerCollect(): Promise<"ok" | "no_token" | number> {
+  if (!GH_PAT) return "no_token";
   // workflow_dispatch, а не repository_dispatch: последнему нужно право
   // Contents write, а у токена только Actions - и его здесь достаточно
   const res = await fetch(
@@ -1343,42 +1541,23 @@ bot.command("more", async (ctx) => {
       body: JSON.stringify({ ref: GH_BRANCH }),
     },
   );
-  if (res.status === 204) {
-    await ctx.reply("Запустила сбор свежей партии. Карточки придут через несколько минут.");
-  } else {
-    await ctx.reply(`Не получилось запустить сбор: GitHub ответил ${res.status}.`);
+  return res.status === 204 ? "ok" : res.status;
+}
+
+function collectReply(r: "ok" | "no_token" | number): string {
+  if (r === "ok") return "Сбор запущен. Новые посты появятся в резерве минут через двадцать.";
+  if (r === "no_token") {
+    return "Сбор отсюда не запустить: у бота нет токена GitHub (секрет GH_PAT). Утренний сбор в 11:05 придёт сам.";
   }
+  return `Сбор не запустился, GitHub ответил ${r}. Утренний сбор в 11:05 придёт сам.`;
+}
+
+bot.command("more", async (ctx) => {
+  await ctx.reply(collectReply(await triggerCollect()));
 });
 
 bot.command("published", async (ctx) => {
-  const { data, error } = await db
-    .from("candidates")
-    .select("id, caption_html, published_at, channel_msg_id")
-    .eq("status", "published")
-    .order("published_at", { ascending: false })
-    .limit(5);
-  if (error) throw new Error(error.message);
-  if (!data.length) {
-    await ctx.reply("Опубликованных постов пока нет.");
-    return;
-  }
-  await ctx.reply("Последние публикации:");
-  for (const c of data) {
-    const url = c.channel_msg_id
-      ? `https://t.me/${CHANNEL_SLUG}/${c.channel_msg_id}`
-      : "";
-    await ctx.reply(
-      `#${c.id}. ${headline(c.caption_html)}\n${moscowTime(c.published_at)}${url ? `\n${url}` : ""}`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "Удалить из канала", callback_data: `del:${c.id}` }],
-          ],
-        },
-        link_preview_options: { is_disabled: true },
-      },
-    );
-  }
+  await showPanel(ctx as never, await buildPublished());
 });
 
 bot.command("ok", async (ctx) => {
@@ -1413,7 +1592,7 @@ bot.command("quote", async (ctx) => {
   if (error) throw new Error(error.message);
   if (!candidate?.caption_html) return;
   if (!["new", "shown", "approved"].includes(candidate.status)) {
-    await ctx.reply(`#${id}: пост уже вышел или снят - цитату не трогаю.`);
+    await ctx.reply(`#${id}: пост уже вышел или снят − цитату не трогаю.`);
     return;
   }
 
@@ -1457,7 +1636,7 @@ bot.command("undo", async (ctx) => {
   const post = data?.[0];
   if (!post) {
     await ctx.reply(
-      target ? `#${target}: в канале его нет - удалять нечего.` : "Опубликованных постов нет - удалять нечего.",
+      target ? `#${target}: в канале его нет − удалять нечего.` : "Опубликованных постов нет − удалять нечего.",
     );
     return;
   }
@@ -1480,6 +1659,38 @@ bot.command("undo", async (ctx) => {
 
 // реплай обычным текстом - предложить замену подписи (с подтверждением:
 // живой тест показал, что случайный реплай "ok" молча стирал подпись)
+/**
+ * Вход в меню. /start и /menu ставят нижнюю клавиатуру и открывают
+ * сводку; дальше команды знать не нужно.
+ */
+async function openMenu(ctx: PanelCtx & Ctx): Promise<void> {
+  await ctx.reply("Меню внизу. Сводка, очередь, резерв и настройки открываются кнопками.", {
+    reply_markup: MAIN_KEYBOARD,
+  });
+  await showPanel(ctx, await buildHome());
+}
+
+bot.command(["start", "menu"], async (ctx) => {
+  await openMenu(ctx as never);
+});
+
+// нажатие нижней кнопки приходит обычным текстом «Сводка», «Резерв»...
+bot.on("message:text", async (ctx, next) => {
+  const section = menuByText(ctx.message.text);
+  if (!section) return next();
+  // сама надпись кнопки в чате не нужна - убираем, если есть право
+  await ctx.deleteMessage().catch(() => {});
+  const screen =
+    section === "queue"
+      ? await buildQueue()
+      : section === "reserve"
+        ? await buildReserve(0)
+        : section === "settings"
+          ? await buildSettings()
+          : await buildHome();
+  await showPanel(ctx as never, screen);
+});
+
 bot.on("message:text", async (ctx) => {
   if (ctx.message.text.startsWith("/")) return;
   const id = repliedCandidateId(ctx);
@@ -1490,7 +1701,7 @@ bot.on("message:text", async (ctx) => {
     await ctx.reply(
       "Короткий реплай не считаю правкой подписи. " +
         "Выпустить раньше или удалить пост можно кнопками под карточкой; " +
-        "чтобы заменить подпись - ответьте на карточку полным новым текстом.",
+        "чтобы заменить подпись − ответьте на карточку полным новым текстом.",
     );
     return;
   }
@@ -1503,7 +1714,7 @@ bot.on("message:text", async (ctx) => {
   if (error) throw new Error(error.message);
   if (!candidate?.caption_html) return;
   if (!PUBLISHABLE.includes(candidate.status)) {
-    await ctx.reply(`#${id}: пост уже вышел или снят - подпись не трогаю.`);
+    await ctx.reply(`#${id}: пост уже вышел или снят − подпись не трогаю.`);
     return;
   }
 
@@ -1528,7 +1739,7 @@ bot.on("message:text", async (ctx) => {
   if (updErr) throw new Error(updErr.message);
 
   const tag = draftTag(updated);
-  await ctx.reply(`Новая подпись для поста #${id} - проверьте и подтвердите:\n\n${updated}`, {
+  await ctx.reply(`Новая подпись для поста #${id} − проверьте и подтвердите:\n\n${updated}`, {
     parse_mode: "HTML",
     link_preview_options: { is_disabled: true },
     reply_markup: {

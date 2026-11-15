@@ -114,6 +114,16 @@ jobs:
             --data-urlencode "secret_token=$TG_WEBHOOK_SECRET" \
             --data-urlencode "allowed_updates=[\"message\",\"callback_query\"]"
           echo
+      # меню (15.11): в списке команд Телеграма - только вход в меню,
+      # остальное делается кнопками. Старые команды работают, но не мешают
+      - name: Команды и кнопка меню
+        run: |
+          curl -sS "https://api.telegram.org/bot$BOT_TOKEN/setMyCommands" \
+            --data-urlencode 'commands=[{"command":"menu","description":"Открыть меню"}]'
+          echo
+          curl -sS "https://api.telegram.org/bot$BOT_TOKEN/setChatMenuButton" \
+            --data-urlencode 'menu_button={"type":"commands"}'
+          echo
       # холодный старт после деплоя иногда отдаёт 546 WORKER_RESOURCE_LIMIT
       # (бандл компилируется при первом вызове) — поэтому до 4 попыток
       - name: Самопроверка функции

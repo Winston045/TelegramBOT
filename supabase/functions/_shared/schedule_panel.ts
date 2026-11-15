@@ -37,13 +37,14 @@ export function unpackTime(packed: string): string | undefined {
 }
 
 export function schedulePanelText(times: string[]): string {
+  // стиль меню (_shared/menu.ts): по-человечески, тире - знаком минус
+  const n = times.length;
+  const posts = n % 10 === 1 && n % 100 !== 11 ? "пост" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? "поста" : "постов";
   const lines = [
-    "Расписание публикаций (время МСК)",
+    "<b>Расписание</b>",
+    `${n} ${posts} в день, время московское: ${times.join(", ")}.`,
     "",
-    `Постов в день: ${times.length}`,
-    ...times.map((t, i) => `${i + 1}. ${t}`),
-    "",
-    "Убрать слот или добавить новый - кнопками ниже.",
+    "Нажмите на время, чтобы убрать его, или добавьте новое.",
   ];
   return lines.join("\n");
 }
@@ -63,7 +64,7 @@ export function panelKeyboard(times: string[]): Button[][] {
   const rows = chunk(removeButtons, 3);
   rows.push([
     { text: "Добавить время", callback_data: "tadd" },
-    { text: "Готово", callback_data: "tclose" },
+    { text: "Назад", callback_data: "m:set" },
   ]);
   return rows;
 }

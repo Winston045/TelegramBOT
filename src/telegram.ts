@@ -1,3 +1,4 @@
+import { humanDashes } from "../supabase/functions/_shared/menu.js";
 import { Api, InputFile } from "grammy";
 import sharp from "sharp";
 import { env } from "./env.js";
@@ -120,7 +121,9 @@ export async function sendMessageHtml(
   chatId: string | number,
   html: string,
 ): Promise<number> {
-  const msg = await getTelegram().sendMessage(chatId, html, {
+  // служебные сообщения бота - в стиле меню: тире знаком минус
+  // (_shared/menu.ts). В канал этой функцией ничего не уходит
+  const msg = await getTelegram().sendMessage(chatId, humanDashes(html), {
     parse_mode: "HTML",
     link_preview_options: { is_disabled: true },
   });

@@ -56,7 +56,8 @@ describe("клавиатуры панели", () => {
     expect(buttons.map((b) => b.callback_data)).toContain("tdel:0900");
     expect(buttons.map((b) => b.callback_data)).toContain("tdel:2100");
     expect(buttons.at(-2)?.callback_data).toBe("tadd");
-    expect(buttons.at(-1)?.callback_data).toBe("tclose");
+    // из меню (15.11): панель живёт в настройках, выход - назад к ним
+    expect(buttons.at(-1)?.callback_data).toBe("m:set");
   });
 
   it("часы: 24 кнопки и возврат", () => {
@@ -76,9 +77,10 @@ describe("клавиатуры панели", () => {
 
   it("текст панели показывает число постов и слоты по порядку", () => {
     const text = schedulePanelText(["09:00", "21:00"]);
-    expect(text).toContain("Постов в день: 2");
-    expect(text).toContain("1. 09:00");
-    expect(text).toContain("2. 21:00");
+    expect(text).toContain("2 поста в день");
+    expect(text).toContain("09:00, 21:00");
+    // стиль меню: тире - знаком минус, не дефисом
+    expect(text).not.toContain(" - ");
     expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
   });
 

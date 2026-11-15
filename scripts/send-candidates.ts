@@ -16,7 +16,7 @@ import { visibleLength, CAPTION_LIMIT } from "../src/validate.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 
 /** Подсказка под карточкой: что будет без действий. */
-const CARD_HINT = "<i>Выйдет сам по очереди. Не подходит - «Удалить».</i>";
+const CARD_HINT = "<i>Выйдет сам по очереди. Не подходит − «Удалить».</i>";
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
