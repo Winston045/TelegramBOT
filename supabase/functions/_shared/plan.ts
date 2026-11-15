@@ -414,24 +414,51 @@ const BROAD_PLACE =
   /^(ссср|сша|россия|германия|франция|италия|польша|финляндия|великобритания|англия|нидерланды|бельгия|венгрия|австрия|австро-венгрия|чехословакия|югославия|румыния|греция|норвегия|дания|япония|китай|корея|вьетнам|бирма|индия|египет|ливия|тунис|израиль|канада|австралия|антарктида|арктика|европа|азия|африка|северная африка|восточная европа|карелия|прибалтика|украина|белоруссия)$|фронт|океан|море|залив|пролив/;
 
 /**
- * Ключ события кадра: статья о событии, а без неё - город и год из
- * строки места («будапешт|1956»). Редакция 08.11: три поста про
- * Будапешт-1956 за неделю - ИС-3, БТР-40 и гаубица; правила ленты
- * чередовали страны, эпохи и темы, но одно событие не видели.
+ * Сколько дней помним событие вышедшего поста. Было 7 (неделя) - и
+ * разбор ленты 15.11 нашёл Будапешт-1956 четыре раза за две недели
+ * (29.10, 01.11, 06.11, 12.11): каждый повтор выходил на 8-й день или
+ * проскакивал по ключу (см. eventKeys). Две недели - читатель ещё
+ * помнит прошлый пост, повтор ощущается как «зацикленность».
  */
-export function eventKey(c: { tags?: PlanTags; caption_html?: string | null }): string {
+export const EVENT_MEMORY_DAYS = 14;
+
+/**
+ * Ключи события кадра: статья о событии И город с годом из строки места
+ * («будапешт|1956») - оба сразу. Совпадение по любому - то же событие.
+ *
+ * Редакция 08.11: три поста про Будапешт-1956 за неделю - ИС-3, БТР-40 и
+ * гаубица. Тогда ключ был один: статья, а без неё - город. Разбор 15.11:
+ * Севастополь-1944 вышел 13.11 и 14.11 подряд, Вена-1945 - 04.11 и 09.11.
+ * У одного поста была статья о событии, у другого - нет (или другая
+ * статья о том же), ключи не сошлись, и правило молчало.
+ */
+export function eventKeys(c: { tags?: PlanTags; caption_html?: string | null }): string[] {
+  const keys: string[] = [];
   const wiki = c.tags?.event_wiki?.trim().toLowerCase();
-  if (wiki) return wiki;
+  if (wiki) keys.push(wiki);
   const quotes = [...(c.caption_html ?? "").matchAll(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/g)]
     .map((m) => (m[1] ?? "").replace(/<[^>]+>/g, "").trim())
     // строка места - короткая и с годом; изюминка длинная
     .filter((q) => q.length <= 70 && /(1[89]|20)\d{2}/.test(q));
   const line = quotes.at(-1);
-  if (!line) return "";
+  if (!line) return keys;
   const year = line.match(/(1[89]|20)\d{2}/)?.[0];
   const place = (line.split(/[,.]/)[0] ?? "").trim().toLowerCase().replace(/ё/g, "е");
-  if (!year || !place || /\d/.test(place) || BROAD_PLACE.test(place)) return "";
-  return `${place}|${year}`;
+  if (!year || !place || /\d/.test(place) || BROAD_PLACE.test(place)) return keys;
+  keys.push(`${place}|${year}`);
+  return keys;
+}
+
+/** Главный ключ события (статья, иначе город и год) - для отчётов. */
+export function eventKey(c: { tags?: PlanTags; caption_html?: string | null }): string {
+  return eventKeys(c)[0] ?? "";
+}
+
+/** Все ключи событий постов - память правила «одно событие раз в две недели». */
+export function recentEvents(
+  rows: Array<{ tags?: PlanTags; caption_html?: string | null }>,
+): string[] {
+  return rows.flatMap((r) => eventKeys(r));
 }
 
 /**
@@ -461,10 +488,8 @@ export function weekShares(
   const nationShare: Record<string, number> = {};
   // рубрики считаем штуками, а не долями: потолок у них недельный и в постах
   const rubricWeek: Record<string, number> = {};
-  const weekEvents: string[] = [];
+  const weekEvents = recentEvents(rows);
   for (const p of rows) {
-    const event = eventKey(p);
-    if (event) weekEvents.push(event);
     if (p.tags?.rubric) rubricWeek[p.tags.rubric] = (rubricWeek[p.tags.rubric] ?? 0) + 1;
     const key = archiveKey(p.attribution) || (p.source ?? "");
     if (key) archiveShare[key] = (archiveShare[key] ?? 0) + 1;
@@ -516,7 +541,10 @@ export type RecentContext = {
   rubrics?: string[];
   /** Сколько постов каждой рубрики вышло за неделю: {"poster": 1}. */
   rubricWeek?: Record<string, number>;
-  /** Ключи событий постов за неделю (eventKey): одно событие - раз в неделю. */
+  /**
+   * Ключи событий постов за EVENT_MEMORY_DAYS (recentEvents): одно
+   * событие - не чаще раза в две недели. Имя осталось с недельных времён.
+   */
   weekEvents?: string[];
 };
 
@@ -622,6 +650,7 @@ export function planAuto(
   // рубрика, выбравшая недельный потолок, не выходит НИКАК - ни по
   // правилам, ни аварийным добором: плакат дважды за неделю - это уже не
   // рубрика, а смена профиля канала
+  const repeatsEvent = (c: PlanCandidate) => eventKeys(c).some((k) => events.has(k));
   const overCap = (c: PlanCandidate) => {
     const r = c.tags?.rubric;
     return Boolean(r) && (rubricWeek[r!] ?? 0) >= (RUBRIC_WEEKLY_CAP[r!] ?? DEFAULT_RUBRIC_CAP);
@@ -639,9 +668,8 @@ export function planAuto(
     const civiliansInWindow = civiliansWindow.slice(0, RECENT_WINDOW).filter(Boolean).length;
     const fits = (c: PlanCandidate) => {
       if (overCap(c)) return false;
-      // одно событие - не чаще раза в неделю (три Будапешта-1956 за 7 дней)
-      const event = eventKey(c);
-      if (event && events.has(event)) return false;
+      // одно событие - не чаще раза в две недели (Будапешт-1956 ×4 за 14 дней)
+      if (repeatsEvent(c)) return false;
       // две рубрики подряд не идут: между ними - военное ядро
       if (c.tags?.rubric && rubrics[0]) return false;
       const subject = c.tags?.subject;
@@ -725,8 +753,11 @@ export function planAuto(
       // 27.10 был наполовину из одобренных Signal Corps, и добор ставил
       // американцев через пост. Лучше пустой слот и сигнал сторожу
       // собрать свежего, чем снова «канал про США»
+      // и повтор события - тоже: «зацикленность» читатель замечает
+      // сильнее пустого слота (разбор 15.11: Севастополь-1944 два дня подряд)
       const blocked = (c: PlanCandidate) => {
         if (overCap(c)) return true;
+        if (repeatsEvent(c)) return true;
         const n = postNation(c);
         return (
           Boolean(LIMITED_NATIONS[n]) &&
@@ -739,8 +770,8 @@ export function planAuto(
         if (other !== -1) break;
       }
       idx = other === -1 ? pool.findIndex((c) => !blocked(c)) : other;
-      // в пуле остались только рубрики сверх потолка или США в окне -
-      // слот лучше оставить
+      // в пуле остались только рубрики сверх потолка, США в окне или
+      // повторы событий - слот лучше оставить
       if (idx === -1) break;
     }
     const [pick] = pool.splice(idx, 1);
@@ -755,8 +786,7 @@ export function planAuto(
     longsWindow.unshift(quoteLength(pick.caption_html ?? null) >= LONG_QUOTE);
     rubrics.unshift(pick.tags?.rubric ?? "");
     if (pick.tags?.rubric) rubricWeek[pick.tags.rubric] = (rubricWeek[pick.tags.rubric] ?? 0) + 1;
-    const pickedEvent = eventKey(pick);
-    if (pickedEvent) events.add(pickedEvent);
+    for (const k of eventKeys(pick)) events.add(k);
   }
   return chosen;
 }

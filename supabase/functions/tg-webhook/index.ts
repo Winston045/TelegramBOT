@@ -36,6 +36,7 @@ import { parseCandidateId } from "../_shared/service_line.ts";
 import { draftTag, replaceBody, replaceQuote } from "../_shared/edit_caption.ts";
 import { CAPTION_LIMIT, validateHtml, visibleLength } from "../_shared/validate.ts";
 import {
+  EVENT_MEMORY_DAYS,
   LONG_QUOTE,
   RECENT_WINDOW,
   RESERVE_TTL_DAYS,
@@ -44,6 +45,7 @@ import {
   headline,
   postNation,
   quoteLength,
+  recentEvents,
   weekShares,
   type PlanEntry,
   type PlanTags,
@@ -1030,14 +1032,14 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
           .select("id, caption_html, score, tags, attribution, source")
           .in("status", ["new", "shown"])
           .not("caption_html", "is", null)
-          // ровно как публикатор: свежий резерв, та же двадцатка - иначе
-          // превью показывало «ближайшим» пост, который он уже не возьмёт
+          // ровно как публикатор: свежий резерв, те же шестьдесят лучших -
+          // иначе превью показывало «ближайшим» пост, который он не возьмёт
           .gte(
             "created_at",
             new Date(Date.now() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString(),
           )
           .order("score", { ascending: false })
-          .limit(20)
+          .limit(60)
       : Promise.resolve({ data: [], error: null }),
     db
       .from("candidates")
@@ -1052,11 +1054,15 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       .gte("published_at", new Date(Date.now() - 48 * 3600 * 1000).toISOString()),
     // недельные доли архивов, эпох, тем и стран - как у публикатора;
     // страна поста берётся из подписи, поэтому нужна и она
+    // доли - за неделю, события - за EVENT_MEMORY_DAYS, как у публикатора
     db
       .from("candidates")
-      .select("attribution, source, tags, caption_html")
+      .select("attribution, source, tags, caption_html, published_at")
       .eq("status", "published")
-      .gte("published_at", new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()),
+      .gte(
+        "published_at",
+        new Date(Date.now() - EVENT_MEMORY_DAYS * 24 * 3600 * 1000).toISOString(),
+      ),
   ]);
 
   const todayMsk = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(
@@ -1070,6 +1076,14 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       ) === todayMsk,
   ).length;
 
+  const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+  const memoryRows = (weekRes.data ?? []) as Array<{
+    attribution?: string | null;
+    source?: string | null;
+    tags?: PlanTags;
+    caption_html?: string | null;
+    published_at?: string | null;
+  }>;
   const recentRows = (recentRes.data ?? []) as Array<{
     tags: PlanTags;
     caption_html?: string | null;
@@ -1096,14 +1110,8 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
         archives: recentRows.map((p) => archiveKey(p.attribution) || (p.source ?? "")),
         rubrics: recentRows.map((p) => p.tags?.rubric ?? ""),
         nations: recentRows.map((p) => postNation(p)),
-        ...weekShares(
-          (weekRes.data ?? []) as Array<{
-            attribution?: string | null;
-            source?: string | null;
-            tags?: PlanTags;
-            caption_html?: string | null;
-          }>,
-        ),
+        ...weekShares(memoryRows.filter((r) => (r.published_at ?? "") >= weekAgo)),
+        weekEvents: recentEvents(memoryRows),
       },
       autoPublish,
       formatScheduled: moscowTime,

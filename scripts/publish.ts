@@ -15,6 +15,7 @@ import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
 import { isDuplicate } from "../src/dhash.js";
 import {
   approvedPriority,
+  EVENT_MEMORY_DAYS,
   LONG_QUOTE,
   RECENT_WINDOW,
   RESERVE_TTL_DAYS,
@@ -22,7 +23,9 @@ import {
   planAuto,
   postNation,
   quoteLength,
+  recentEvents,
   weekShares,
+  type PlanTags,
 } from "../src/plan.js";
 import { escapeHtml, isPermanentSendError, sendMessageHtml, sendPhotoHtml } from "../src/telegram.js";
 import { cleanupChat, rememberEphemeral } from "../src/tidy.js";
@@ -44,22 +47,28 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
 
   // доли архивов за неделю: лента не должна быть «в среднем немецкой»,
   // даже если соседние посты честно чередуются
+  // посты за две недели: доли считаем по последней неделе, а события
+  // помним все две (EVENT_MEMORY_DAYS)
   const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
-  const { data: weekPosts } = await db
+  const memoryStart = new Date(now.getTime() - EVENT_MEMORY_DAYS * 24 * 3600 * 1000).toISOString();
+  const { data: memoryPosts } = await db
     .from("candidates")
-    .select("attribution, source, tags, caption_html")
+    .select("attribution, source, tags, caption_html, published_at")
     .eq("status", "published")
-    .gte("published_at", weekAgo);
+    .gte("published_at", memoryStart);
+  const rows = (memoryPosts ?? []) as Array<{
+    attribution?: string | null;
+    source?: string | null;
+    tags?: PlanTags;
+    caption_html?: string | null;
+    published_at?: string | null;
+  }>;
   // доли эпох (замер 24.08: ВМВ 70% и девятки подряд) и тем (замер
   // 15.09: infantry 30% и тройка подряд) считаются тем же счётчиком
-  const shares = weekShares(
-    (weekPosts ?? []) as Array<{
-      attribution?: string | null;
-      source?: string | null;
-      tags?: { period?: string; subject?: string; rubric?: string } | null;
-      caption_html?: string | null;
-    }>,
-  );
+  const shares = {
+    ...weekShares(rows.filter((r) => (r.published_at ?? "") >= weekAgo)),
+    weekEvents: recentEvents(rows),
+  };
 
   return {
     subjects: posts
@@ -190,7 +199,9 @@ async function main() {
         // архива, а оформление отстаёт от текущих правил
         .gte("created_at", new Date(now.getTime() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString())
         .order("score", { ascending: false })
-        .limit(20);
+        // с запасом: правила событий и стран отсекают часть верхушки, и
+        // при двадцати лучших слот оставался пустым при живом резерве ниже
+        .limit(60);
       if (rres.error) throw new Error(`чтение кандидатов автопостинга: ${rres.error.message}`);
       // дубли выкидываем до планировщика: он решает только «что интереснее»
       reserve = await dropDuplicates(rres.data ?? [], "автопостинг");

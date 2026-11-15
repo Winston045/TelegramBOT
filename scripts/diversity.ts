@@ -9,7 +9,7 @@
  * Запуск: npx tsx scripts/diversity.ts [сколько последних]
  */
 import { getDb } from "../src/db.js";
-import { archiveKey, archiveNation, postNation } from "../src/plan.js";
+import { EVENT_MEMORY_DAYS, archiveKey, archiveNation, eventKeys, postNation } from "../src/plan.js";
 
 const LIMIT = Number(process.argv[2]) || 60;
 
@@ -26,6 +26,7 @@ type Row = {
     military?: boolean;
     action?: boolean;
     color?: boolean;
+    event_wiki?: string;
   } | null;
   caption_html: string | null;
 };
@@ -148,6 +149,28 @@ async function main() {
   if (echoes.length) echoes.slice(0, 12).forEach((l) => console.log(l));
   else console.log("  повторов нет");
 
+  // одно событие в памяти планировщика (EVENT_MEMORY_DAYS): что всё же
+  // вышло повтором и по какому ключу его можно было узнать
+  console.log(`\nПОВТОРЫ СОБЫТИЙ (ближе ${EVENT_MEMORY_DAYS} дней)`);
+  const keysOf = rows.map((r) => eventKeys(r));
+  const repeats: string[] = [];
+  rows.forEach((r, i) => {
+    const at = r.published_at ? Date.parse(r.published_at) : NaN;
+    for (let j = 0; j < i; j++) {
+      const prev = rows[j]!;
+      const gap = (at - Date.parse(prev.published_at ?? "")) / 86_400_000;
+      if (!(gap <= EVENT_MEMORY_DAYS)) continue;
+      const common = keysOf[i]!.filter((k) => keysOf[j]!.includes(k));
+      if (!common.length) continue;
+      repeats.push(
+        `  посты ${j + 1} и ${i + 1} (через ${gap.toFixed(1)} дн.): ${common.join(" / ")}` +
+          ` [ключи: ${keysOf[j]!.join(", ")} | ${keysOf[i]!.join(", ")}]`,
+      );
+    }
+  });
+  if (repeats.length) repeats.forEach((l) => console.log(l));
+  else console.log("  повторов нет");
+
   console.log("\nЛЕНТА ПО ПОРЯДКУ");
   rows.forEach((r, i) => {
     const head = (r.caption_html ?? "").replace(/<[^>]+>/g, "").split("\n")[0]?.slice(0, 46) ?? "";
@@ -163,7 +186,8 @@ async function main() {
         }).format(new Date(r.published_at))
       : "-";
     console.log(
-      `  ${String(i + 1).padStart(2)}. ${when} [${archives[i] || "?"}] ${periods[i] || "?"}/${subjects[i] || "?"} - ${head}`,
+      `  ${String(i + 1).padStart(2)}. ${when} [${archives[i] || "?"}] ${periods[i] || "?"}/${subjects[i] || "?"} - ${head}` +
+        (keysOf[i]!.length ? `  {${keysOf[i]!.join(" / ")}}` : ""),
     );
   });
 }

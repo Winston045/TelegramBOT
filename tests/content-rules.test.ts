@@ -3,7 +3,7 @@ import { captionRules, FEW_SHOT } from "../src/caption.js";
 import { buildPrompt } from "../src/critic.js";
 import { buildAnalysisPrompt } from "../src/analyze.js";
 import { clicheIn, guardCliches } from "../src/factcheck.js";
-import { eventKey, planAuto, type PlanCandidate } from "../src/plan.js";
+import { EVENT_MEMORY_DAYS, eventKey, eventKeys, planAuto, recentEvents, weekShares, type PlanCandidate } from "../src/plan.js";
 
 /**
  * Правки контента 08.11 (редакция: «нравится, но чего-то не хватает»):
@@ -114,6 +114,47 @@ describe("одно событие - раз в неделю", () => {
     pool[0]!.score = 90;
     const [pick] = planAuto(pool, { subjects: [], civilian: false, weekEvents: ["будапешт|1956"] }, 1);
     expect(pick?.id).toBe(2);
+  });
+
+  it("ключей у кадра два: статья и город с годом (разбор 15.11)", () => {
+    const withWiki = post(1, "Морпехи у берега.", "Севастополь, Крымская АССР. 1944 год.", { event_wiki: "Crimean offensive" });
+    expect(eventKeys(withWiki)).toEqual(["crimean offensive", "севастополь|1944"]);
+    expect(eventKey(withWiki)).toBe("crimean offensive");
+    expect(eventKeys(post(2, "Подводники.", "СССР, 1942 год."))).toEqual([]);
+  });
+
+  it("Севастополь-1944: статья у одного поста, город у другого - всё равно повтор", () => {
+    // 13.11 вышел пост со статьёй о Крымской операции, 14.11 - пост о
+    // том же Севастополе без статьи: ключи не сошлись, правило молчало
+    const published = post(1, "Морпехи у берега.", "Севастополь, Крымская АССР. 1944 год.", { event_wiki: "Crimean offensive" });
+    const pool = [post(2, "Пленные на склоне.", "Севастополь, 1944 год."), post(3, "Финские лыжники.", "Карелия, 1940 год.")];
+    pool[0]!.score = 90;
+    const [pick] = planAuto(pool, { subjects: [], civilian: false, weekEvents: recentEvents([published]) }, 1);
+    expect(pick?.id).toBe(3);
+  });
+
+  it("одна статья о событии при разных городах - тоже повтор", () => {
+    const published = post(1, "Пленные в Риме.", "Рим, Италия, 1944 год.", { event_wiki: "Battle of Anzio" });
+    const pool = [
+      post(2, "Парашютисты в окопе.", "Италия, 1944 год.", { event_wiki: "Battle of Anzio" }),
+      post(3, "Финские лыжники.", "Карелия, 1940 год."),
+    ];
+    pool[0]!.score = 90;
+    const [pick] = planAuto(pool, { subjects: [], civilian: false, weekEvents: recentEvents([published]) }, 1);
+    expect(pick?.id).toBe(3);
+  });
+
+  it("аварийный добор событие не повторяет: лучше пустой слот", () => {
+    // единственный кандидат - снова Будапешт-1956; раньше добор его ставил
+    const pool = [post(1, "Церковь после боёв.", "Будапешт, Венгрия, 1956 год.")];
+    const picks = planAuto(pool, { subjects: [], civilian: false, weekEvents: ["будапешт|1956"] }, 1);
+    expect(picks).toEqual([]);
+  });
+
+  it("недельные доли несут все ключи событий; память - две недели", () => {
+    const rows = [post(1, "Морпехи.", "Севастополь, 1944 год.", { event_wiki: "Crimean offensive" })];
+    expect(weekShares(rows).weekEvents).toEqual(["crimean offensive", "севастополь|1944"]);
+    expect(EVENT_MEMORY_DAYS).toBe(14);
   });
 
   it("два кадра одного события в одном плане не встают", () => {

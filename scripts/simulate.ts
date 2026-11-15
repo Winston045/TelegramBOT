@@ -29,7 +29,9 @@ import {
   quoteLength,
   rank,
   weekShares,
-  eventKey,
+  EVENT_MEMORY_DAYS,
+  eventKeys,
+  recentEvents,
   type PlanCandidate,
 } from "../src/plan.js";
 import { passesGate } from "../src/scoring.js";
@@ -133,12 +135,13 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
 
   // старт - настоящие последние посты канала и недельные доли, как у публикатора
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
-  const [{ data: weekPosts }, { data: lastPosts }] = await Promise.all([
+  const memoryStart = new Date(Date.now() - EVENT_MEMORY_DAYS * 24 * 3600 * 1000).toISOString();
+  const [{ data: memoryPosts }, { data: lastPosts }] = await Promise.all([
     db
       .from("candidates")
-      .select("attribution, source, tags, caption_html")
+      .select("attribution, source, tags, caption_html, published_at")
       .eq("status", "published")
-      .gte("published_at", weekAgo),
+      .gte("published_at", memoryStart),
     db
       .from("candidates")
       .select("attribution, source, tags, caption_html")
@@ -146,7 +149,12 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
       .order("published_at", { ascending: false })
       .limit(RECENT_WINDOW),
   ]);
-  const shares = weekShares((weekPosts ?? []) as Array<Row>);
+  const memory = (memoryPosts ?? []) as Array<Row & { published_at?: string | null }>;
+  // доли - за неделю, события - за две, как у публикатора
+  const shares = {
+    ...weekShares(memory.filter((r) => (r.published_at ?? "") >= weekAgo)),
+    weekEvents: recentEvents(memory),
+  };
   const last = (lastPosts ?? []) as Row[];
   const window: Row[] = [...last];
 
@@ -175,8 +183,7 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
     pool.splice(pool.indexOf(row), 1);
     window.unshift(row);
     if (row.tags?.rubric) shares.rubricWeek[row.tags.rubric] = (shares.rubricWeek[row.tags.rubric] ?? 0) + 1;
-    const event = eventKey(row);
-    if (event) shares.weekEvents.push(event);
+    shares.weekEvents.push(...eventKeys(row));
   }
 
   feed.forEach((row, i) => {
