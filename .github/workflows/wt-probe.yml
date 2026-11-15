@@ -39,7 +39,7 @@ jobs:
           grep -oE 'og:image" content="[^"]+' /tmp/n | head -3
       - name: Страница новости (разметка)
         run: |
-          url="https://warthunder.com$(curl -sL --max-time 25 -A 'Mozilla/5.0' https://warthunder.com/ru/news/ | grep -oE 'href="/ru/news/[^"]+"' | head -1 | cut -d'"' -f2)"
+          url="https://warthunder.com$(curl -sL --max-time 25 -A 'Mozilla/5.0' https://warthunder.com/ru/news/ | grep -oE 'href="/ru/news/[0-9]+-[^"]+"' | head -1 | cut -d'"' -f2)"
           echo "статья: $url"
           curl -sL --max-time 25 -A "Mozilla/5.0" "$url" -o /tmp/a
           grep -oE '<meta property="og:[a-z]+" content="[^"]{0,200}' /tmp/a | head -6
