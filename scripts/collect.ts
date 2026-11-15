@@ -78,8 +78,19 @@ const dry = process.argv.includes("--dry");
  * вместе с подготовкой job, карточками и сводкой выводил за 30 минут, и
  * job убивали уже после сбора, на рассылке.
  */
-const RUN_BUDGET_MS = 19 * 60_000;
+const RUN_BUDGET_MS = (numArg("--budget-min") ?? 19) * 60_000;
 const runStartedAt = Date.now();
+/**
+ * Долгий бережный сбор (редакция 15.11: «дать больше времени, чтобы
+ * работа была тонкой, а не на беглую руку»). Главный утренний сбор идёт
+ * полтора часа, и в нём перегрузку полноценных моделей пережидают, а не
+ * спускаются на облегчённую: добор 15.11 из 17 минут около десяти ждал
+ * перегруженные модели и часть кадров разобрал на бегу. Облегчённая -
+ * только когда суточная квота полноценных кончилась совсем.
+ */
+const careful = process.argv.includes("--careful");
+/** Сколько раз редактор цитаты ждёт полноценную модель. */
+const REVIEW_WAITS = careful ? 10 : 3;
 
 function numArg(name: string): number | undefined {
   const i = process.argv.findIndex((a) => a === name || a.startsWith(`${name}=`));
@@ -135,7 +146,7 @@ async function reviewWithWait<T extends { caption: GeneratedCaption; rewritten: 
   review: () => Promise<T>,
   generated: GeneratedCaption,
 ): Promise<T | { caption: GeneratedCaption; rewritten: false }> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < REVIEW_WAITS; attempt++) {
     try {
       return await review();
     } catch (err) {
@@ -299,7 +310,8 @@ async function main() {
   const onlyIdx = process.argv.indexOf("--only");
   const only = onlyIdx !== -1 ? process.argv[onlyIdx + 1] : undefined;
   const cursors = dry ? memoryCursorStore() : dbCursorStore();
-  const raw = await collectRaw(cfg, cfg.collect.raw_limit, cursors, only);
+  // долгому сбору нужно больше сырья: партия до шестидесяти кадров
+  const raw = await collectRaw(cfg, numArg("--raw") ?? cfg.collect.raw_limit, cursors, only);
   console.log(`сырых записей: ${raw.length}`);
 
   const { kept, rejected } = prefilter(raw, cfg);
@@ -475,6 +487,22 @@ async function main() {
     if (error) console.warn(`  не запомнил отсев [${item.source}] ${item.sourceId}: ${error.message}`);
   };
 
+  // бережный режим: полноценная модель, перегрузку пережидает общий
+  // механизм ожидания ниже (GeminiBusyError); кончилась суточная квота
+  // полноценных - дальше по-старому, с облегчённой и вторым мнением
+  let carefulFull = careful;
+  const analyzeCareful = async (item: HashedItem, extraContext?: string) => {
+    if (!carefulFull) return analyzeImage(item, cfg, item.imageBuffer, extraContext);
+    try {
+      return await analyzeImage(item, cfg, item.imageBuffer, extraContext, { fullOnly: true });
+    } catch (err) {
+      if (!/нет доступной полноценной модели/.test((err as Error).message)) throw err;
+      carefulFull = false;
+      console.warn("  квота полноценных моделей кончилась - дальше с облегчённой и вторым мнением");
+      return analyzeImage(item, cfg, item.imageBuffer, extraContext);
+    }
+  };
+
   let outOfTime = false;
   let analyzed = 0;
   // спасённые вторым подходом: 503 и таймаут - это состояние сервиса, а не
@@ -517,7 +545,7 @@ async function main() {
     }
 
     try {
-      let a = await analyzeImage(item, cfg, item.imageBuffer, extraContext);
+      let a = await analyzeCareful(item, extraContext);
       // какая модель оценила и подписала кадр - при перегрузке это может
       // быть облегчённая; храним рядом с тегами, чтобы потом сверить её
       // посты с остальными по живым данным, а не по догадкам

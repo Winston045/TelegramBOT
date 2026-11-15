@@ -1,0 +1,64 @@
+name: proofread
+
+# Ночная вычитка резерва (scripts/proofread.ts, редакция 15.11): посты,
+# которые выйдут ближайшими, перечитывает полноценная модель - только
+# язык, без фактов, со страховкой на числа, имена и латиницу.
+#
+# 01:30 UTC = 04:30 МСК: до первого слота (12:00) больше семи часов, и
+# вычитка идёт на остатке суточной квоты Gemini (окно - с 11:00 МСК).
+# Ручной запуск - пуш маркера .github/proofread.trigger (строка «dry» -
+# только показать правки, без записи).
+
+on:
+  schedule:
+    - cron: "30 1 * * *"
+  workflow_dispatch: {}
+  push:
+    branches: [claude/starting-work-tpehs7]
+    paths:
+      - ".github/proofread.trigger"
+
+# одна очередь со сборами: вычитка не правит подпись, пока сбор её пишет
+concurrency:
+  group: collector
+  cancel-in-progress: false
+
+jobs:
+  proofread:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+      EDITORS_CHAT_ID: ${{ secrets.EDITORS_CHAT_ID }}
+    steps:
+      - name: Секреты настроены?
+        id: guard
+        run: |
+          if [ -n "$SUPABASE_URL" ] && [ -n "$GEMINI_API_KEY$GEMINI_API_KEYS" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "секреты не настроены — запуск пропущен"
+          fi
+      - uses: actions/checkout@v5
+        if: steps.guard.outputs.ok == 'true'
+      - uses: actions/setup-node@v5
+        if: steps.guard.outputs.ok == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci || npm install
+        if: steps.guard.outputs.ok == 'true'
+      - name: Вычитка резерва
+        if: steps.guard.outputs.ok == 'true'
+        run: |
+          flags=""
+          if [ "${{ github.event_name }}" = "push" ] && grep -q 'dry' .github/proofread.trigger; then
+            flags="--dry"
+          fi
+          npx tsx scripts/proofread.ts 12 $flags

@@ -134,10 +134,10 @@ export function usableCount(
   return others + Math.min(limited, Math.ceil(others / 4));
 }
 
-export async function planReserve(cfg: AppConfig): Promise<ReservePlan> {
+export async function planReserve(cfg: AppConfig, cap?: number): Promise<ReservePlan> {
   const [available, times] = await Promise.all([
     countAvailable(),
     loadPublishTimes(cfg.publish.times),
   ]);
-  return planFromCounts(available, times.length, cfg.collect.prefilter_keep);
+  return planFromCounts(available, times.length, cap ?? cfg.collect.prefilter_keep);
 }

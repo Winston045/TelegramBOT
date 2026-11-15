@@ -16,17 +16,26 @@ on:
     #
     # Файл трогали 03.08, чтобы GitHub перерегистрировал расписание:
     # планировщик застрял на старом времени 05:30 UTC.
-    - cron: "20 8 * * *"
+    #
+    # 15.11: 08:05 UTC = 11:05 МСК, сразу после сброса квоты (11:00 МСК
+    # зимой). Это полночь в Калифорнии - модели Gemini свободнее всего.
+    # Сбор долгий и бережный (редакция: «дать больше времени, чтобы работа
+    # была тонкой»): полтора часа, только полноценные модели, партия до
+    # шестидесяти кадров - запас ленты на неделю.
+    - cron: "5 8 * * *"
   workflow_dispatch: {}
 
 concurrency:
-  group: daily-collect
+  # одна очередь со всеми сборами: /more во время долгого утреннего
+  # сбора ждёт, а не читает те же курсоры параллельно
+  group: collector
   cancel-in-progress: false
 
 jobs:
   collect-and-send:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 90 минут сбора + подготовка, карточки и сводка
+    timeout-minutes: 120
     env:
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
       CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
@@ -62,10 +71,10 @@ jobs:
       - name: Сколько собирать
         id: plan
         if: steps.guard.outputs.ok == 'true'
-        run: npx tsx scripts/plan-collect.ts
+        run: npx tsx scripts/plan-collect.ts --cap 60
       - name: Сбор кандидатов (источники → скоринг → подписи)
         if: steps.plan.outputs.need == 'true'
-        run: npm run collect -- --keep ${{ steps.plan.outputs.keep }}
+        run: npm run collect -- --keep ${{ steps.plan.outputs.keep }} --budget-min 90 --careful --raw 250
       # always(): упавший сбор не должен лишать редакторов карточек из
       # уже готового резерва и утренней сводки - иначе неявный success()
       # глушил оба шага ровно тогда, когда сводка нужнее всего

@@ -19,7 +19,10 @@ function emit(need: boolean, keep: number, reason: string) {
 
 async function main() {
   const cfg = loadConfig();
-  const plan = await planReserve(cfg);
+  // --cap 60: потолок партии для долгого утреннего сбора (обычно - prefilter_keep)
+  const capIdx = process.argv.indexOf("--cap");
+  const cap = capIdx !== -1 ? Number(process.argv[capIdx + 1]) : NaN;
+  const plan = await planReserve(cfg, Number.isFinite(cap) && cap > 0 ? cap : undefined);
   if (plan.keep === 0) {
     emit(false, 0, `готовых ${plan.available} при запасе ${plan.target} - хватает`);
     return;
