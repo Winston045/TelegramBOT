@@ -452,7 +452,7 @@ async function approve(id: number): Promise<string | null> {
     .update({ status: "approved" })
     .eq("id", id)
     .in("status", ["new", "shown", "rejected"])
-    .select("id, caption_html");
+    .select("id, caption_html, created_at");
   if (error) throw new Error(error.message);
   const c = data[0];
   if (!c) return null;
@@ -460,6 +460,20 @@ async function approve(id: number): Promise<string | null> {
   if (INSTANT_PUBLISH && c.caption_html) {
     const url = await publishCandidate(id);
     if (url) return `Пост #${id} опубликован: ${url}`;
+  }
+  // пост старше срока годности автопостинг не берёт - «следующим» для
+  // него значит ближайший слот по времени: время срок годности не держит
+  const stale =
+    new Date(c.created_at).getTime() < Date.now() - RESERVE_TTL_DAYS * 24 * 3600 * 1000;
+  if (stale) {
+    const [slot] = upcomingSlots(1, await getPublishTimes());
+    if (slot) {
+      await db
+        .from("candidates")
+        .update({ scheduled_at: new Date(slot.iso).toISOString() })
+        .eq("id", id);
+      return `Пост #${id} выйдет ${slot.label} МСК.`;
+    }
   }
   return `Пост #${id} выйдет следующим.`;
 }
@@ -495,7 +509,9 @@ bot.on("callback_query:data", async (ctx) => {
         }
         const label = result.includes("опубликован")
           ? `Опубликовано - ${who}`
-          : `Следующим - ${who}`;
+          : result.includes(" МСК")
+            ? `${result.replace(/^Пост #\d+ /, "").replace(/\.$/, "")} - ${who}`
+            : `Следующим - ${who}`;
         await ctx.editMessageReplyMarkup({ reply_markup: doneKeyboard(label) });
         await ctx.answerCallbackQuery({ text: label });
         if (result.includes("https://")) await ctx.reply(result);
