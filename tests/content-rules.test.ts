@@ -151,6 +151,18 @@ describe("одно событие - раз в неделю", () => {
     expect(picks).toEqual([]);
   });
 
+  it("добор виден: planAuto сообщает, что кадр взят вне правил", () => {
+    // обе темы уже были в окне - под правила не подходит никто
+    const pool = [post(1, "Пехота.", "Карелия, 1940 год."), post(2, "Танк.", "Карелия, 1941 год.")];
+    const forced: number[] = [];
+    const picks = planAuto(pool, { subjects: ["s1", "s2"], civilian: false }, 1, (c) => forced.push(c.id));
+    expect(picks).toHaveLength(1);
+    expect(forced).toEqual([picks[0]!.id]);
+    const none: number[] = [];
+    planAuto([post(3, "Лыжники.", "Карелия, 1942 год.")], { subjects: [], civilian: false }, 1, (c) => none.push(c.id));
+    expect(none).toEqual([]);
+  });
+
   it("недельные доли несут все ключи событий; память - две недели", () => {
     const rows = [post(1, "Морпехи.", "Севастополь, 1944 год.", { event_wiki: "Crimean offensive" })];
     expect(weekShares(rows).weekEvents).toEqual(["crimean offensive", "севастополь|1944"]);

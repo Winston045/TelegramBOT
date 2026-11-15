@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  ARCHIVE_WINDOW,
   captionNation,
+  HISTORY_WINDOW,
   NATION_WINDOW,
+  nationWindow,
+  SECONDARY_NATION_WINDOW,
   planAuto,
   postNation,
   rank,
@@ -201,5 +205,67 @@ describe("США и аварийный добор", () => {
     const other = (i: number) => ({ caption_html: cap(`Финские лыжники ${i}.`), attribution: "SA-kuva" });
     // 7 прочих + 8 американцев: выйти без перекоса могут 7 + 2
     expect(usableCount([...Array.from({ length: 8 }, (_, i) => us(i)), ...Array.from({ length: 7 }, (_, i) => other(i))])).toBe(9);
+  });
+});
+
+describe("малые страны и архивы не ходят по кругу (разбор 15.11)", () => {
+  it("окна: малая страна - восемь постов, главные - три, архив - пять", () => {
+    expect(SECONDARY_NATION_WINDOW).toBe(8);
+    expect(nationWindow("netherlands")).toBe(8);
+    expect(nationWindow("hungary")).toBe(8);
+    expect(nationWindow("germany")).toBe(NATION_WINDOW);
+    expect(nationWindow("uk")).toBe(NATION_WINDOW);
+    expect(ARCHIVE_WINDOW).toBe(5);
+    expect(HISTORY_WINDOW).toBeGreaterThanOrEqual(SECONDARY_NATION_WINDOW);
+  });
+
+  it("голландские военные не возвращаются через два поста", () => {
+    // 13.11 и 14.11: Anefo, между ними два поста
+    const pool = [
+      post(1, "Нидерландские солдаты на армейском прицепе.", "Anefo"),
+      post(2, "Польские уланы на марше.", "Narodowe Archiwum Cyfrowe"),
+    ];
+    pool[0]!.score = 90;
+    const [pick] = planAuto(
+      pool,
+      { subjects: [], civilian: false, nations: ["ussr", "finland", "netherlands"], archives: ["x", "y", "anefo"] },
+      1,
+    );
+    expect(pick?.id).toBe(2);
+  });
+
+  it("добор отпускает тему, но не окно страны", () => {
+    // у обоих та же тема, что у прошлого поста: под все правила не
+    // подходит никто. Прежний добор смотрел только на соседний пост и
+    // брал Венгрию, вышедшую три поста назад
+    const pool = [
+      post(1, "Советский танк ИС-3 на улице Будапешта.", "Fortepan", "armor"),
+      post(2, "Бельгийские пехотинцы ведут огонь.", "Agence Rol", "armor"),
+    ];
+    pool[0]!.caption_html = cap("Разрушенная улица Будапешта после боёв.");
+    pool[0]!.score = 90;
+    const forced: number[] = [];
+    const [pick] = planAuto(
+      pool,
+      { subjects: ["armor"], civilian: false, nations: ["ussr", "finland", "hungary"], archives: ["a", "b", "fortepan"] },
+      1,
+      (c) => forced.push(c.id),
+    );
+    expect(pick?.id).toBe(2);
+    expect(forced).toEqual([2]);
+  });
+
+  it("архив не возвращается раньше пятого поста", () => {
+    const pool = [
+      post(1, "Финские лыжники на привале.", "SA-kuva"),
+      post(2, "Немецкие сапёры наводят мост.", "Bundesarchiv"),
+    ];
+    pool[0]!.score = 90;
+    const [pick] = planAuto(
+      pool,
+      { subjects: [], civilian: false, nations: ["", "", "", ""], archives: ["a", "b", "c", "sa-kuva"] },
+      1,
+    );
+    expect(pick?.id).toBe(2);
   });
 });

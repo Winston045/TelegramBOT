@@ -105,6 +105,12 @@ export const LONG_QUOTE = 180;
 /** Сколько последних постов помним для правил разнообразия. */
 export const RECENT_WINDOW = 4;
 /**
+ * Сколько последних постов нужно планировщику целиком: самое длинное окно
+ * соседства - у малых стран (SECONDARY_NATION_WINDOW). Темы, статика и
+ * изюминки по-прежнему считаются по RECENT_WINDOW.
+ */
+export const HISTORY_WINDOW = 8;
+/**
  * Насколько статика уступает живому кадру при равном качестве. Оценка за
  * постановочность больше не штрафуется (это делала модель и выбрасывала
  * целые архивы), но в ленте движение идёт вперёд.
@@ -152,7 +158,14 @@ export const MAX_CIVILIAN_IN_WINDOW = 1;
  * упиралась бы в правило и шла по запасному пути.
  */
 export const MAX_SAME_ARCHIVE_IN_WINDOW = 1;
-export const ARCHIVE_WINDOW = 2;
+/**
+ * Было 2 (архив - через пост). Разбор 15.11, «Венгрия, нидерландские
+ * солдаты, всё по кругу»: у малых архивов одна-две темы (Fortepan -
+ * Будапешт-1956, Anefo - голландские военные), и раз в три поста они
+ * возвращались с тем же сюжетом. Пять постов - архив не чаще раза в
+ * два дня.
+ */
+export const ARCHIVE_WINDOW = 5;
 /**
  * Чередования архивов мало: у одной страны их бывает несколько. Живой
  * случай 13.08 - в пуле четыре американских поставщика (LOC как источник,
@@ -203,10 +216,26 @@ export const LIMITED_NATIONS: Record<string, { window: number; softShare: number
   usa: { window: 5, softShare: 0.1 },
 };
 
-/** Окно соседства для страны: своё - через пост, США - раз в пять. */
+/**
+ * Главные участники войн XX века: их материал разнообразен (фронты,
+ * годы, рода войск), для них хватает общего окна в три поста.
+ */
+export const MAJOR_NATIONS = new Set(["germany", "uk"]);
+/**
+ * Остальные страны - Венгрия, Нидерланды, Финляндия, Польша, Бельгия -
+ * приходят из одного-двух малых архивов с узким набором сюжетов. Разбор
+ * 15.11: Венгрия пять раз за 19 дней (все пять - Будапешт-1956),
+ * голландские военные 13.11 и 14.11. Читатель видит круг уже через
+ * день-два, поэтому для них окно - восемь постов, почти три дня.
+ */
+export const SECONDARY_NATION_WINDOW = 8;
+
+/** Окно соседства для страны: своё - через пост, США - раз в пять, малые - раз в восемь. */
 export function nationWindow(nation: string): number {
   if (nation === HOME_NATION) return HOME_NATION_WINDOW;
-  return LIMITED_NATIONS[nation]?.window ?? NATION_WINDOW;
+  const limited = LIMITED_NATIONS[nation]?.window;
+  if (limited) return limited;
+  return MAJOR_NATIONS.has(nation) ? NATION_WINDOW : SECONDARY_NATION_WINDOW;
 }
 
 /** Доля недели без штрафа для страны. */
@@ -614,6 +643,12 @@ export function planAuto(
   reserve: PlanCandidate[],
   recent: RecentContext,
   count: number,
+  /**
+   * Сообщить, что кадр взят аварийным добором (под правила не подошёл
+   * никто). Разбор 15.11: второй Севастополь-1944 вышел именно добором,
+   * а в логе публикатора этого не было видно.
+   */
+  onFallback?: (pick: PlanCandidate) => void,
 ): PlanCandidate[] {
   const pool = [...reserve].sort(
     (a, b) =>
@@ -666,24 +701,41 @@ export function planAuto(
         ? streak[0]
         : undefined;
     const civiliansInWindow = civiliansWindow.slice(0, RECENT_WINDOW).filter(Boolean).length;
-    const fits = (c: PlanCandidate) => {
+    /**
+     * relax - насколько правила отпущены, когда под все не подходит никто
+     * (лестница добора, разбор 15.11):
+     * 0 - все правила;
+     * 1 - без статики, изюминок, мирных кадров и вождей подряд;
+     * 2 - и без смены темы, эпохи и рубрики;
+     * 3 - и без окна архива.
+     * Событие, страна и потолки рубрик держатся на всех ступенях: именно
+     * они дают «по кругу» - Венгрия, голландские солдаты, Севастополь.
+     */
+    const fits = (c: PlanCandidate, relax = 0) => {
       if (overCap(c)) return false;
       // одно событие - не чаще раза в две недели (Будапешт-1956 ×4 за 14 дней)
       if (repeatsEvent(c)) return false;
       // две рубрики подряд не идут: между ними - военное ядро
-      if (c.tags?.rubric && rubrics[0]) return false;
+      if (relax < 2 && c.tags?.rubric && rubrics[0]) return false;
       const subject = c.tags?.subject;
-      if (subject && subjects.slice(0, RECENT_WINDOW).includes(subject)) return false;
-      if (c.tags?.military === false && civiliansInWindow >= MAX_CIVILIAN_IN_WINDOW) return false;
+      if (relax < 2 && subject && subjects.slice(0, RECENT_WINDOW).includes(subject)) return false;
+      if (relax < 1 && c.tags?.military === false && civiliansInWindow >= MAX_CIVILIAN_IN_WINDOW)
+        return false;
       // статика допустима, но редко: лента должна дышать движением
-      if (c.tags?.action === false && staticsInWindow >= MAX_STATIC_IN_WINDOW) return false;
+      if (relax < 1 && c.tags?.action === false && staticsInWindow >= MAX_STATIC_IN_WINDOW)
+        return false;
       // развёрнутая цитата - изюминка: длинные посты не идут подряд
-      if (quoteLength(c.caption_html ?? null) >= LONG_QUOTE && longsInWindow >= MAX_LONG_IN_WINDOW)
+      if (
+        relax < 1 &&
+        quoteLength(c.caption_html ?? null) >= LONG_QUOTE &&
+        longsInWindow >= MAX_LONG_IN_WINDOW
+      )
         return false;
       // лента не должна неделями сидеть в одном году - эпохи чередуются
-      if (stuckPeriod && c.tags?.period === stuckPeriod) return false;
+      if (relax < 2 && stuckPeriod && c.tags?.period === stuckPeriod) return false;
       // вожди - редкая краска, а не каждый второй пост
       if (
+        relax < 1 &&
         c.tags?.subject === "leader" &&
         subjects.slice(0, RECENT_WINDOW).filter((s) => s === "leader").length >=
           MAX_LEADERS_IN_WINDOW
@@ -693,6 +745,7 @@ export function planAuto(
       // и не должна быть витриной одного архива: «одни немцы», «одни британцы»
       const archive = archiveKey(c.attribution) || (c.source ?? "");
       if (
+        relax < 3 &&
         archive &&
         archives.slice(0, ARCHIVE_WINDOW).filter((a) => a === archive).length >=
           MAX_SAME_ARCHIVE_IN_WINDOW
@@ -710,70 +763,80 @@ export function planAuto(
       }
       return true;
     };
-    let idx = pool.findIndex(fits);
-    if (idx === -1) {
-      // под все правила не подошёл никто (резерв беден) - берём лучшего,
-      // но по цепочке предпочтений, а не слепо: слепой добор давал
-      // «Бундесархив, Бундесархив, Бундесархив» и девять ВМВ подряд
-      // (живой замер 24.08, посты 15-23). Сначала пробуем сменить эпоху
-      // застрявшей серии, потом тему последнего поста, потом страну
-      // архива, потом хотя бы сам архив. Тему добавил замер 15.09:
-      // без неё бедный резерв дал infantry×3 подряд - цепочка меняла
-      // что угодно, кроме сюжета.
-      const lastNation = nations[0];
-      const lastArchive = archives[0];
-      const lastSubject = subjects[0];
-      const otherPeriod = (c: PlanCandidate) =>
-        Boolean(stuckPeriod) && Boolean(c.tags?.period) && c.tags?.period !== stuckPeriod;
-      const otherSubject = (c: PlanCandidate) =>
-        Boolean(lastSubject) && Boolean(c.tags?.subject) && c.tags?.subject !== lastSubject;
-      const otherNation = (c: PlanCandidate) => {
-        const n = postNation(c);
-        return Boolean(lastNation) && n !== "" && n !== lastNation;
-      };
-      const otherArchive = (c: PlanCandidate) =>
-        Boolean(lastArchive) && (archiveKey(c.attribution) || (c.source ?? "")) !== lastArchive;
-      const prefs = [
-        // смена эпохи, не тащащая за собой повтор темы, - лучший выход:
-        // контрольная симуляция 15.09 показала, как добор честно сменил
-        // эпоху и поставил вторую aviation подряд
-        // сменить сразу и эпоху, и тему, и страну - лучше всего
-        (c: PlanCandidate) => otherPeriod(c) && otherSubject(c) && otherNation(c),
-        (c: PlanCandidate) => otherPeriod(c) && otherSubject(c),
-        // страна поднята выше одиночной смены эпохи: аварийный добор
-        // 12.10 дал два Signal Corps подряд - американцы шли сериями
-        (c: PlanCandidate) => otherNation(c) && otherSubject(c),
-        (c: PlanCandidate) => otherPeriod(c) && otherNation(c),
-        otherNation,
-        otherPeriod,
-        otherSubject,
-        otherArchive,
-      ];
-      // США в окне соседства не выходят и аварийным добором: резерв
-      // 27.10 был наполовину из одобренных Signal Corps, и добор ставил
-      // американцев через пост. Лучше пустой слот и сигнал сторожу
-      // собрать свежего, чем снова «канал про США»
-      // и повтор события - тоже: «зацикленность» читатель замечает
-      // сильнее пустого слота (разбор 15.11: Севастополь-1944 два дня подряд)
-      const blocked = (c: PlanCandidate) => {
-        if (overCap(c)) return true;
-        if (repeatsEvent(c)) return true;
-        const n = postNation(c);
-        return (
-          Boolean(LIMITED_NATIONS[n]) &&
-          nations.slice(0, nationWindow(n)).filter((x) => x === n).length >= MAX_SAME_NATION_IN_WINDOW
-        );
-      };
-      let other = -1;
+    // под все правила не подошёл никто (резерв беден) - берём лучшего,
+    // но по цепочке предпочтений, а не слепо: слепой добор давал
+    // «Бундесархив, Бундесархив, Бундесархив» и девять ВМВ подряд
+    // (живой замер 24.08, посты 15-23). Сначала пробуем сменить эпоху
+    // застрявшей серии, потом тему последнего поста, потом страну
+    // архива, потом хотя бы сам архив. Тему добавил замер 15.09:
+    // без неё бедный резерв дал infantry×3 подряд - цепочка меняла
+    // что угодно, кроме сюжета.
+    const lastNation = nations[0];
+    const lastArchive = archives[0];
+    const lastSubject = subjects[0];
+    const otherPeriod = (c: PlanCandidate) =>
+      Boolean(stuckPeriod) && Boolean(c.tags?.period) && c.tags?.period !== stuckPeriod;
+    const otherSubject = (c: PlanCandidate) =>
+      Boolean(lastSubject) && Boolean(c.tags?.subject) && c.tags?.subject !== lastSubject;
+    const otherNation = (c: PlanCandidate) => {
+      const n = postNation(c);
+      return Boolean(lastNation) && n !== "" && n !== lastNation;
+    };
+    const otherArchive = (c: PlanCandidate) =>
+      Boolean(lastArchive) && (archiveKey(c.attribution) || (c.source ?? "")) !== lastArchive;
+    const prefs = [
+      // смена эпохи, не тащащая за собой повтор темы, - лучший выход:
+      // контрольная симуляция 15.09 показала, как добор честно сменил
+      // эпоху и поставил вторую aviation подряд
+      // сменить сразу и эпоху, и тему, и страну - лучше всего
+      (c: PlanCandidate) => otherPeriod(c) && otherSubject(c) && otherNation(c),
+      (c: PlanCandidate) => otherPeriod(c) && otherSubject(c),
+      // страна поднята выше одиночной смены эпохи: аварийный добор
+      // 12.10 дал два Signal Corps подряд - американцы шли сериями
+      (c: PlanCandidate) => otherNation(c) && otherSubject(c),
+      (c: PlanCandidate) => otherPeriod(c) && otherNation(c),
+      otherNation,
+      otherPeriod,
+      otherSubject,
+      otherArchive,
+    ];
+    /** Лучший из допустимых по цепочке предпочтений; -1 - допустимых нет. */
+    const byPrefs = (allowed: (c: PlanCandidate) => boolean): number => {
       for (const pref of prefs) {
-        other = pool.findIndex((c) => !blocked(c) && pref(c));
-        if (other !== -1) break;
+        const i = pool.findIndex((c) => allowed(c) && pref(c));
+        if (i !== -1) return i;
       }
-      idx = other === -1 ? pool.findIndex((c) => !blocked(c)) : other;
-      // в пуле остались только рубрики сверх потолка, США в окне или
-      // повторы событий - слот лучше оставить
-      if (idx === -1) break;
+      return pool.findIndex(allowed);
+    };
+    // США в окне соседства не выходят и аварийным добором: резерв
+    // 27.10 был наполовину из одобренных Signal Corps, и добор ставил
+    // американцев через пост. Лучше пустой слот и сигнал сторожу
+    // собрать свежего, чем снова «канал про США»
+    // и повтор события - тоже: «зацикленность» читатель замечает
+    // сильнее пустого слота (разбор 15.11: Севастополь-1944 два дня подряд)
+    const blocked = (c: PlanCandidate) => {
+      if (overCap(c)) return true;
+      if (repeatsEvent(c)) return true;
+      const n = postNation(c);
+      return (
+        Boolean(LIMITED_NATIONS[n]) &&
+        nations.slice(0, nationWindow(n)).filter((x) => x === n).length >= MAX_SAME_NATION_IN_WINDOW
+      );
+    };
+
+    let idx = pool.findIndex((c) => fits(c));
+    // лестница добора (разбор 15.11): отпускаем мелкие правила по одному,
+    // а окна страны и события держим до последнего - добор, не глядевший
+    // на них, и крутил «Венгрию и нидерландских солдат по кругу»
+    for (let relax = 1; idx === -1 && relax <= 3; relax++) {
+      idx = relax === 1 ? pool.findIndex((c) => fits(c, 1)) : byPrefs((c) => fits(c, relax));
     }
+    // последняя ступень - прежний добор: держит только США, рубрики и события
+    if (idx === -1) idx = byPrefs((c) => !blocked(c));
+    // в пуле остались только рубрики сверх потолка, США в окне или
+    // повторы событий - слот лучше оставить
+    if (idx === -1) break;
+    if (!fits(pool[idx]!)) onFallback?.(pool[idx]!);
     const [pick] = pool.splice(idx, 1);
     if (!pick) break;
     chosen.push(pick);

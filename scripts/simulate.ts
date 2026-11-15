@@ -21,6 +21,7 @@ import { pickBalanced } from "../src/balance.js";
 import {
   approvedPriority,
   LONG_QUOTE,
+  HISTORY_WINDOW,
   RECENT_WINDOW,
   RESERVE_TTL_DAYS,
   archiveKey,
@@ -147,7 +148,7 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
       .select("attribution, source, tags, caption_html")
       .eq("status", "published")
       .order("published_at", { ascending: false })
-      .limit(RECENT_WINDOW),
+      .limit(HISTORY_WINDOW),
   ]);
   const memory = (memoryPosts ?? []) as Array<Row & { published_at?: string | null }>;
   // доли - за неделю, события - за две, как у публикатора
@@ -163,6 +164,8 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
     ...reserve,
   ];
   const feed: Pooled[] = [];
+  // какие посты встали аварийным добором (под правила не подошёл никто)
+  const fallbacks = new Set<number>();
   for (let i = 0; i < steps && pool.length; i++) {
     const w = window.slice(0, RECENT_WINDOW);
     const recent = {
@@ -171,13 +174,19 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
       civilian: w.some((p) => p.tags?.military === false),
       statics: w.filter((p) => p.tags?.action === false).length,
       longs: w.filter((p) => quoteLength(p.caption_html ?? null) >= LONG_QUOTE).length,
-      archives: w.map((p) => archiveKey(p.attribution) || (p.source ?? "")),
-      nations: w.map((p) => postNation(p)),
+      // архивы и страны - на HISTORY_WINDOW постов, как у публикатора
+      archives: window.slice(0, HISTORY_WINDOW).map((p) => archiveKey(p.attribution) || (p.source ?? "")),
+      nations: window.slice(0, HISTORY_WINDOW).map((p) => postNation(p)),
       rubrics: w.map((p) => p.tags?.rubric ?? ""),
       ...shares,
     };
-    const [pick] = planAuto(pool, recent, 1);
-    if (!pick) break;
+    let fallback = false;
+    const [pick] = planAuto(pool, recent, 1, () => (fallback = true));
+    if (!pick) {
+      console.log(`шаг ${i + 1}: слот пуст - все оставшиеся повторяют событие, рубрику или США`);
+      break;
+    }
+    if (fallback) fallbacks.add(pick.id);
     const row = pool.find((c) => c.id === pick.id)!;
     feed.push(row);
     pool.splice(pool.indexOf(row), 1);
@@ -190,9 +199,10 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
     const head = (row.caption_html ?? "").replace(/<[^>]+>/g, "").split("\n")[0]?.slice(0, 52);
     const kind = row.status === "approved" ? "одобр" : "резерв";
     const rubric = row.tags?.rubric ? ` {${row.tags.rubric}}` : "";
+    const forced = fallbacks.has(row.id) ? " [добор]" : "";
     console.log(
       `${String(i + 1).padStart(2)}. #${row.id} ${kind} ${row.score ?? "?"} [${archiveKey(row.attribution) || "?"} · ${postNation(row) || "?"}]` +
-        ` ${row.tags?.period ?? "?"}/${row.tags?.subject ?? "?"}${rubric} - ${head}`,
+        ` ${row.tags?.period ?? "?"}/${row.tags?.subject ?? "?"}${rubric}${forced} - ${head}`,
     );
   });
 

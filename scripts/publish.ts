@@ -17,6 +17,7 @@ import {
   approvedPriority,
   EVENT_MEMORY_DAYS,
   LONG_QUOTE,
+  HISTORY_WINDOW,
   RECENT_WINDOW,
   RESERVE_TTL_DAYS,
   archiveKey,
@@ -42,8 +43,10 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
     .select("tags, caption_html, attribution, source")
     .eq("status", "published")
     .order("published_at", { ascending: false })
-    .limit(RECENT_WINDOW);
-  const posts = lastPosts ?? [];
+    .limit(HISTORY_WINDOW);
+  // архивы и страны помним на HISTORY_WINDOW постов, остальное - на ближних
+  const history = lastPosts ?? [];
+  const posts = history.slice(0, RECENT_WINDOW);
 
   // доли архивов за неделю: лента не должна быть «в среднем немецкой»,
   // даже если соседние посты честно чередуются
@@ -80,14 +83,14 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
     longs: posts.filter(
       (p) => quoteLength((p as { caption_html?: string | null }).caption_html ?? null) >= LONG_QUOTE,
     ).length,
-    archives: posts.map(
+    archives: history.map(
       (p) =>
         archiveKey((p as { attribution?: string | null }).attribution) ||
         ((p as { source?: string | null }).source ?? ""),
     ),
     rubrics: posts.map((p) => (p.tags as { rubric?: string } | null)?.rubric ?? ""),
     // страна поста - по тому, о ком подпись, а не по архиву
-    nations: posts.map((p) =>
+    nations: history.map((p) =>
       postNation(p as { caption_html?: string | null; attribution?: string | null; source?: string | null }),
     ),
     ...shares,
@@ -217,7 +220,13 @@ async function main() {
         ...reserve,
       ];
       // тот же планировщик, что показывает /queue - предпросмотр не врёт
-      const [pick] = planAuto(pool, recent, 1);
+      let fallback = false;
+      const [pick] = planAuto(pool, recent, 1, () => (fallback = true));
+      if (fallback) {
+        console.log(
+          `аварийный добор: под все правила не подошёл ни один из ${pool.length} - взят лучший из допустимых`,
+        );
+      }
       const chosen = pick ? [...approved, ...reserve].find((c) => c.id === pick.id) : undefined;
       queue = chosen ? [chosen] : [];
       if (chosen) {

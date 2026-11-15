@@ -37,6 +37,7 @@ import { draftTag, replaceBody, replaceQuote } from "../_shared/edit_caption.ts"
 import { CAPTION_LIMIT, validateHtml, visibleLength } from "../_shared/validate.ts";
 import {
   EVENT_MEMORY_DAYS,
+  HISTORY_WINDOW,
   LONG_QUOTE,
   RECENT_WINDOW,
   RESERVE_TTL_DAYS,
@@ -1046,7 +1047,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       .select("tags, caption_html, attribution, source")
       .eq("status", "published")
       .order("published_at", { ascending: false })
-      .limit(RECENT_WINDOW),
+      .limit(HISTORY_WINDOW),
     db
       .from("candidates")
       .select("published_at")
@@ -1084,12 +1085,14 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
     caption_html?: string | null;
     published_at?: string | null;
   }>;
-  const recentRows = (recentRes.data ?? []) as Array<{
+  // архивы и страны - на HISTORY_WINDOW постов, остальное - на ближних
+  const historyRows = (recentRes.data ?? []) as Array<{
     tags: PlanTags;
     caption_html?: string | null;
     attribution?: string | null;
     source?: string | null;
   }>;
+  const recentRows = historyRows.slice(0, RECENT_WINDOW);
   return buildPlan(
     {
       now: new Date(),
@@ -1107,9 +1110,9 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
         civilian: recentRows.some((p) => p.tags?.military === false),
         statics: recentRows.filter((p) => p.tags?.action === false).length,
         longs: recentRows.filter((p) => quoteLength(p.caption_html ?? null) >= LONG_QUOTE).length,
-        archives: recentRows.map((p) => archiveKey(p.attribution) || (p.source ?? "")),
+        archives: historyRows.map((p) => archiveKey(p.attribution) || (p.source ?? "")),
         rubrics: recentRows.map((p) => p.tags?.rubric ?? ""),
-        nations: recentRows.map((p) => postNation(p)),
+        nations: historyRows.map((p) => postNation(p)),
         ...weekShares(memoryRows.filter((r) => (r.published_at ?? "") >= weekAgo)),
         weekEvents: recentEvents(memoryRows),
       },
