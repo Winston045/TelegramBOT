@@ -1,1 +1,1 @@
-yield:30
+simulate

@@ -32,6 +32,11 @@ export type CollectedItem = RawItem & { source: string };
  */
 export function interleaveBySource<T extends { source: string; attribution?: string }>(
   items: T[],
+  /**
+   * Вес архива по его выходу (src/yield.ts): у архива с весом 2 кадры
+   * встают вдвое раньше, с весом 0.5 - вдвое позже. Нет веса - 1.
+   */
+  weights?: Map<string, number>,
 ): T[] {
   // мешаем по АРХИВУ, а не по источнику: commons - это девять архивов в
   // одной куче, и срез «на анализ» состоял из первого архива списка
@@ -50,7 +55,7 @@ export function interleaveBySource<T extends { source: string; attribution?: str
       const b = bucketOf(item);
       const idx = poolIndex.get(b) ?? 0;
       poolIndex.set(b, idx + 1);
-      const depth = (idx + 0.5) / (poolSizes.get(b) ?? 1);
+      const depth = (idx + 0.5) / (poolSizes.get(b) ?? 1) / (weights?.get(b) ?? 1);
       return { item, depth, idx, bucket: b };
     })
     .sort((a, b) => a.depth - b.depth || a.idx - b.idx || a.bucket.localeCompare(b.bucket))

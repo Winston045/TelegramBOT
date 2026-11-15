@@ -13,6 +13,7 @@
 import { loadConfig } from "../src/config.js";
 import { getDb } from "../src/db.js";
 import { collectRaw, interleaveBySource, lastSourceCounts } from "../src/sources/index.js";
+import { loadArchiveWeights, YIELD_DAYS } from "../src/yield.js";
 import { byPromise } from "../src/promise.js";
 import { buildAnalysisQueue } from "../src/queue.js";
 import { memoryCursorStore } from "../src/cursors.js";
@@ -82,8 +83,14 @@ async function simulateCollect(cfg: ReturnType<typeof loadConfig>) {
   // Диагностика 04.09 показала расхождение: симуляция строила очередь
   // по-старому и рисовала LOC×7 и три дубля названия, которых живой
   // сбор уже не допускает
+  // и веса архивов по выходу - как у живого сбора (src/yield.ts)
+  const weights = await loadArchiveWeights(getDb());
+  console.log(
+    `вес архивов по выходу за ${YIELD_DAYS} дн.:`,
+    [...weights.entries()].sort((a, b) => b[1] - a[1]).map(([k, w]) => `${k} ${w}`).join(", ") || "(нет истории)",
+  );
   const { queue, cuts } = buildAnalysisQueue(
-    interleaveBySource(byPromise(kept)),
+    interleaveBySource(byPromise(kept), weights),
     cfg.collect.prefilter_keep,
   );
   console.log(`\nпосле префильтра: ${kept.length}, на анализ пойдут: ${queue.length}`);

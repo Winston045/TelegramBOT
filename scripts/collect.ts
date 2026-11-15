@@ -22,6 +22,7 @@ import { minWidthFor, prefilter } from "../src/prefilter.js";
 import sharp from "sharp";
 import { byPromise, isHome, promise } from "../src/promise.js";
 import { buildAnalysisQueue } from "../src/queue.js";
+import { loadArchiveWeights, YIELD_DAYS } from "../src/yield.js";
 import { hiResLocUrl } from "../src/sources/loc.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { isStereoPair } from "../src/stereo.js";
@@ -39,6 +40,7 @@ import { sendMessageHtml } from "../src/telegram.js";
 
 /** Квота кончилась - молчать нельзя, редакторы должны знать, почему нет карточек. */
 let quotaNotified = false;
+
 async function notifyQuotaExhausted() {
   if (quotaNotified) return;
   quotaNotified = true;
@@ -283,7 +285,17 @@ async function main() {
     console.log(`уже разобраны раньше: ${kept.length - unseen.length}`);
   }
   const ranked = byPromise(unseen);
-  const { queue: survivors, cuts } = buildAnalysisQueue(interleaveBySource(ranked), keepLimit);
+  // квота Gemini кончается на первых 6-15 кадрах очереди: вперёд - архивы,
+  // чьи кадры реально проходят сито (src/yield.ts)
+  const weights = db ? await loadArchiveWeights(db) : new Map<string, number>();
+  if (weights.size) {
+    const shown = [...weights.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, w]) => `${k} ${w}`)
+      .join(", ");
+    console.log(`вес архивов по выходу за ${YIELD_DAYS} дн.: ${shown}`);
+  }
+  const { queue: survivors, cuts } = buildAnalysisQueue(interleaveBySource(ranked, weights), keepLimit);
   const avg = survivors.length
     ? survivors.reduce((s, it) => s + promise(it), 0) / survivors.length
     : 0;
