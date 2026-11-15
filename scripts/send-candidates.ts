@@ -15,6 +15,9 @@ import { isDeadImageError, sendMessageHtml, sendPhotoHtml } from "../src/telegra
 import { visibleLength, CAPTION_LIMIT } from "../src/validate.js";
 import { heartbeatError, heartbeatOk } from "../src/heartbeat.js";
 
+/** Подсказка под карточкой: что будет без действий. */
+const CARD_HINT = "<i>Выйдет сам по очереди. Не подходит - «Удалить».</i>";
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -74,12 +77,18 @@ async function main() {
       c,
       rubricOf((c.tags as { rubric?: string } | null)?.rubric)?.title,
     );
-    const withService = `${c.caption_html}\n\n${serviceLine}`;
+    // модель 15.11: одобрять не нужно - карточка уже в очереди и выйдет
+    // сама; человек только удаляет лишнее или выпускает раньше
+    const withService = `${c.caption_html}\n\n${serviceLine}\n${CARD_HINT}`;
     const buttons = {
       inline_keyboard: [
         [
-          { text: "Одобрить", callback_data: `ok:${c.id}` },
-          { text: "Мимо", callback_data: `skip:${c.id}` },
+          { text: "Опубликовать сейчас", callback_data: `now:${c.id}` },
+          { text: "На время", callback_data: `re:${c.id}` },
+        ],
+        [
+          { text: "Следующим", callback_data: `ok:${c.id}` },
+          { text: "Удалить", callback_data: `skip:${c.id}` },
         ],
       ],
     };

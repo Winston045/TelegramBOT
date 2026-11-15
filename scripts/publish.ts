@@ -159,6 +159,10 @@ async function main() {
       .eq("status", "approved")
       .not("caption_html", "is", null)
       .is("scheduled_at", null)
+      // модель 15.11: одобрять не нужно, всё неудалённое уже в очереди;
+      // «следующим» без времени стареет как весь резерв. Раньше старые
+      // одобренные (сентябрьские плакаты США) жили вечно и выходили добором
+      .gte("created_at", new Date(now.getTime() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString())
       .order("id", { ascending: true })
       .limit(20);
     if (res.error) throw new Error(`чтение очереди: ${res.error.message}`);

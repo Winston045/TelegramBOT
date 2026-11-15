@@ -461,8 +461,7 @@ async function approve(id: number): Promise<string | null> {
     const url = await publishCandidate(id);
     if (url) return `Пост #${id} опубликован: ${url}`;
   }
-  const queued = await countByStatus("approved");
-  return `Пост #${id} в очереди публикации. Всего в очереди: ${queued}.`;
+  return `Пост #${id} выйдет следующим.`;
 }
 
 // ---------- кнопки ----------
@@ -496,7 +495,7 @@ bot.on("callback_query:data", async (ctx) => {
         }
         const label = result.includes("опубликован")
           ? `Опубликовано - ${who}`
-          : `В очереди - ${who}`;
+          : `Следующим - ${who}`;
         await ctx.editMessageReplyMarkup({ reply_markup: doneKeyboard(label) });
         await ctx.answerCallbackQuery({ text: label });
         if (result.includes("https://")) await ctx.reply(result);
@@ -518,10 +517,10 @@ bot.on("callback_query:data", async (ctx) => {
           await ctx.deleteMessage();
         } catch {
           await ctx.editMessageReplyMarkup({
-            reply_markup: doneKeyboard(`Пропущено - ${who}`),
+            reply_markup: doneKeyboard(`Удалено - ${who}`),
           });
         }
-        await ctx.answerCallbackQuery({ text: "Пропущено, карточка убрана" });
+        await ctx.answerCallbackQuery({ text: "Удалено: в канал не выйдет" });
         return;
       }
       case "re": {
@@ -901,10 +900,12 @@ bot.command("status", async (ctx) => {
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // всё, что выйдет само: резерв и «следующим» без времени (модель
+    // 15.11: одобрять не нужно - всё, что не удалено, уже в очереди)
     db
       .from("candidates")
-      .select("tags, created_at")
-      .in("status", ["new", "shown"])
+      .select("tags, created_at, scheduled_at")
+      .in("status", ["new", "shown", "approved"])
       .not("caption_html", "is", null),
     getPublishTimes(),
     getAutoPublish(),
@@ -918,17 +919,26 @@ bot.command("status", async (ctx) => {
   const passed = slotsPassedToday(times, now);
 
   // ---- резерв: крючки и возраст
-  const reserve = (reserveRes.data ?? []) as Array<{
+  const pool = (reserveRes.data ?? []) as Array<{
     tags: { hook?: string } | null;
     created_at: string;
+    scheduled_at: string | null;
   }>;
-  const hooks = topThree(reserve.map((r) => r.tags?.hook ?? "без крючка"));
+  // пост на время выходит в своё время, срок годности ему не указ
+  const staleBefore = now.getTime() - RESERVE_TTL_DAYS * 24 * 3600 * 1000;
+  const reserve = pool.filter((r) => !r.scheduled_at);
+  const freshReserve = reserve.filter((r) => new Date(r.created_at).getTime() >= staleBefore);
+  const staleCount = reserve.length - freshReserve.length;
+  const scheduledCount = pool.length - reserve.length;
+  const hooks = topThree(freshReserve.map((r) => r.tags?.hook ?? "без крючка"));
   const oldestMs = reserve.length
     ? Math.max(...reserve.map((r) => now.getTime() - new Date(r.created_at).getTime()))
     : 0;
   const oldestDays = Math.floor(oldestMs / (24 * 3600 * 1000));
   // запас хода: сколько дней лента проживёт на готовом без новых сборов
-  const ready = fresh + shown + queued;
+  // готово - то, что публикатор реально возьмёт: свежий резерв и посты на
+  // время. Раньше в счёт шли и просроченные - «27 готовых» при восьми живых
+  const ready = freshReserve.length + scheduledCount;
   const perDay = Math.max(1, times.length);
   const runway = (ready / perDay).toFixed(1);
 
@@ -971,17 +981,18 @@ bot.command("status", async (ctx) => {
   if (pubSilent) alerts.push(`Публикатор молчит с ${moscowTime(pubBeat?.last_ok ?? null)}`);
   const colBeat = beat("collector");
   if (colBeat?.last_error) alerts.push("Последний сбор закончился ошибкой");
-  if (reserve.length && oldestDays >= RESERVE_TTL_DAYS) {
-    alerts.push(
-      `В резерве есть карточки старше ${RESERVE_TTL_DAYS} дней - автопостинг их уже не берёт (/reserve)`,
-    );
-  }
+  // просроченные - не тревога: они просто не выйдут (строка ниже)
+  void oldestDays;
 
   // null - строка, которой в этом прогоне нет; пустая строка - разделитель
   const lines: Array<string | null> = [
     `<b>СВОДКА</b> · ${moscowTime(now.toISOString())} МСК`,
     "",
-    `Готово к выходу: <b>${ready}</b> (на разборе ${shown}, одобрено ${queued})`,
+    `Готово к выходу: <b>${ready}</b>` +
+      (scheduledCount ? ` (из них на время: ${scheduledCount})` : ""),
+    staleCount
+      ? `Просрочено (старше ${RESERVE_TTL_DAYS} дней, не выйдет): ${staleCount}`
+      : null,
     `Запас хода: ${runway} ${plural(Math.round(Number(runway)), "день", "дня", "дней")} при ${perDay} постах в сутки`,
     "",
     `Ближайший пост: ${nextPost}`,
@@ -992,8 +1003,10 @@ bot.command("status", async (ctx) => {
       : "Сборов ещё не было",
     `Резерв по крючкам: ${hooks}`,
     "",
-    autoOn ? "Автопостинг включён - посты выходят сами" : "Автопостинг выключен - только одобренные",
-    INSTANT_PUBLISH ? "Режим тестовый - одобрение выводит сразу" : null,
+    autoOn
+      ? "Автопостинг включён - выходит всё, что не удалено"
+      : "Автопостинг выключен - выходят только посты «следующим» и на время",
+    INSTANT_PUBLISH ? "Режим тестовый - «Следующим» выводит сразу" : null,
     alerts.length ? "" : null,
     alerts.length ? "<b>Требует внимания</b>" : null,
     ...alerts.map((a) => `- ${a}`),
@@ -1025,6 +1038,8 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       .eq("status", "approved")
       .not("caption_html", "is", null)
       .is("scheduled_at", null)
+      // «следующим» без времени стареет как весь резерв, как у публикатора
+      .gte("created_at", new Date(Date.now() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString())
       .order("id", { ascending: true })
       .limit(20),
     autoPublish
@@ -1126,7 +1141,7 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
 /** Пометка, откуда пост в плане - объявлена функцией, её зовёт и /status. */
 function planMark(kind: string): string {
   if (kind === "scheduled") return "на время";
-  if (kind === "approved") return "одобрен";
+  if (kind === "approved") return "следующим";
   return "автовыбор";
 }
 
@@ -1243,8 +1258,8 @@ bot.command("reserve", async (ctx) => {
         inline_keyboard: [
           [
             { text: "Показать", callback_data: `show:${c.id}` },
-            { text: "Одобрить", callback_data: `ok:${c.id}` },
-            { text: "Пропустить", callback_data: `skip:${c.id}` },
+            { text: "Следующим", callback_data: `ok:${c.id}` },
+            { text: "Удалить", callback_data: `skip:${c.id}` },
           ],
         ],
       },
@@ -1458,7 +1473,7 @@ bot.on("message:text", async (ctx) => {
   if (text.length < 20) {
     await ctx.reply(
       "Короткий реплай не считаю правкой подписи. " +
-        "Одобрить или пропустить пост можно кнопками под карточкой; " +
+        "Выпустить раньше или удалить пост можно кнопками под карточкой; " +
         "чтобы заменить подпись - ответьте на карточку полным новым текстом.",
     );
     return;

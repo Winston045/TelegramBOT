@@ -8,7 +8,7 @@ import { env } from "../src/env.js";
 import { sendMessageHtml } from "../src/telegram.js";
 import { countPublishedToday, slotsPassed } from "../src/schedule.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
-import { archiveKey } from "../src/plan.js";
+import { archiveKey, RESERVE_TTL_DAYS } from "../src/plan.js";
 import { readFileSync } from "node:fs";
 
 /** Версия из package.json - чтобы подпись в сводке не рассинхронилась. */
@@ -32,21 +32,27 @@ function moscow(iso: string | null): string {
   }).format(new Date(iso));
 }
 
-async function count(status: string): Promise<number> {
-  const { count } = await getDb()
-    .from("candidates")
-    .select("id", { count: "exact", head: true })
-    .eq("status", status);
-  return count ?? 0;
-}
-
 async function main() {
   const cfg = loadConfig();
   const db = getDb();
   const now = new Date();
   const tz = cfg.publish.timezone;
 
-  const [shown, queued] = await Promise.all([count("shown"), count("approved")]);
+  // модель 15.11: одобрять не нужно - всё неудалённое уже в очереди.
+  // Считаем только то, что публикатор реально возьмёт: не старше срока
+  // годности или с назначенным временем
+  const freshSince = new Date(now.getTime() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString();
+  const { count: newCards } = await db
+    .from("candidates")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "new")
+    .not("caption_html", "is", null);
+  const { count: scheduledCount } = await db
+    .from("candidates")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "approved")
+    .not("scheduled_at", "is", null);
+  const queued = scheduledCount ?? 0;
 
   const twoDaysAgo = new Date(now.getTime() - 48 * 3600 * 1000).toISOString();
   const { data: recent } = await db
@@ -76,8 +82,10 @@ async function main() {
   const { count: reserve } = await db
     .from("candidates")
     .select("id", { count: "exact", head: true })
-    .in("status", ["new", "shown"])
-    .not("caption_html", "is", null);
+    .in("status", ["new", "shown", "approved"])
+    .is("scheduled_at", null)
+    .not("caption_html", "is", null)
+    .gte("created_at", freshSince);
   const available = queued + (autoPublish ? (reserve ?? 0) : 0);
   const willGo = Math.min(available, slotsLeft.length);
 
@@ -112,13 +120,13 @@ async function main() {
   const lines = [
     "Сводка на утро",
     "",
-    `Новых карточек на разбор: ${shown}`,
-    `В очереди публикации: ${queued}`,
+    `Готово к выходу: ${available}` + (queued ? ` (из них на время: ${queued})` : ""),
+    `Новых карточек в чате: ${newCards ?? 0} - выйдут сами, лишнее удалите`,
     willGo > 0
       ? `Сегодня выйдут: ${slotsLeft.slice(0, willGo).join(", ")} (МСК)` +
-        (autoPublish && queued === 0 ? " - автопостингом из резерва" : "")
+        (autoPublish ? " - автопостингом" : "")
       : available === 0
-        ? "Сегодня публиковать нечего - одобрите карточки или запустите /more"
+        ? "Сегодня публиковать нечего - запустите /more"
         : `Слоты на сегодня уже прошли, очередь пойдёт завтра с ${times[0]}`,
     `Уже вышло сегодня: ${publishedToday}`,
     "",

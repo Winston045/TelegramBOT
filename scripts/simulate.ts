@@ -117,7 +117,13 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
   const ttl = new Date(Date.now() - RESERVE_TTL_DAYS * 24 * 3600 * 1000).toISOString();
   const fields = "id, caption_html, score, tags, attribution, source, status, created_at";
   const [approvedRes, reserveRes] = await Promise.all([
-    db.from("candidates").select(fields).eq("status", "approved").not("caption_html", "is", null),
+    db
+      .from("candidates")
+      .select(fields)
+      .eq("status", "approved")
+      .not("caption_html", "is", null)
+      .is("scheduled_at", null)
+      .gte("created_at", ttl),
     db
       .from("candidates")
       .select(fields)
