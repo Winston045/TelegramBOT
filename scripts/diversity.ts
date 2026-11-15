@@ -10,6 +10,7 @@
  */
 import { getDb } from "../src/db.js";
 import { EVENT_MEMORY_DAYS, archiveKey, archiveNation, eventKeys, postNation } from "../src/plan.js";
+import { storyLine } from "../src/story.js";
 
 const LIMIT = Number(process.argv[2]) || 60;
 
@@ -27,6 +28,7 @@ type Row = {
     action?: boolean;
     color?: boolean;
     event_wiki?: string;
+    story?: string;
   } | null;
   caption_html: string | null;
 };
@@ -171,6 +173,13 @@ async function main() {
   if (repeats.length) repeats.forEach((l) => console.log(l));
   else console.log("  повторов нет");
 
+  // типы сюжетов (src/story.ts): про что лента, а не откуда кадры
+  console.log("\nСЮЖЕТЫ");
+  console.log(
+    "  " +
+      storyLine(rows.map((r) => ({ story: r.tags?.story, color: r.tags?.color, nation: postNation(r) }))),
+  );
+
   console.log("\nЛЕНТА ПО ПОРЯДКУ");
   rows.forEach((r, i) => {
     const head = (r.caption_html ?? "").replace(/<[^>]+>/g, "").split("\n")[0]?.slice(0, 46) ?? "";
@@ -186,7 +195,8 @@ async function main() {
         }).format(new Date(r.published_at))
       : "-";
     console.log(
-      `  ${String(i + 1).padStart(2)}. ${when} [${archives[i] || "?"}] ${periods[i] || "?"}/${subjects[i] || "?"} - ${head}` +
+      `  ${String(i + 1).padStart(2)}. ${when} [${archives[i] || "?"}] ${periods[i] || "?"}/${subjects[i] || "?"}` +
+        `${r.tags?.story ? ` <${r.tags.story}>` : ""} - ${head}` +
         (keysOf[i]!.length ? `  {${keysOf[i]!.join(" / ")}}` : ""),
     );
   });

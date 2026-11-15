@@ -97,6 +97,8 @@ export type HomeData = {
   stale: number;
   lastRun?: { when: string; analyzed: number; written: number };
   autoOn: boolean;
+  /** типы сюжетов за неделю (_shared/story.ts): «своё 5, человек 3...» */
+  storyWeek?: string;
   /** что сломалось: каждая строка - готовая фраза */
   alerts: string[];
 };
@@ -126,6 +128,11 @@ export function homeScreen(d: HomeData): Screen {
       ? `${d.lastRun.when} разобрано ${d.lastRun.analyzed}, в резерв ${d.lastRun.written}.`
       : "Сборов ещё не было.",
   );
+  if (d.storyWeek) {
+    lines.push("");
+    lines.push("<b>Сюжеты за неделю</b>");
+    lines.push(d.storyWeek);
+  }
   lines.push("");
   lines.push(
     d.autoOn

@@ -8,7 +8,8 @@ import { env } from "../src/env.js";
 import { sendMessageHtml } from "../src/telegram.js";
 import { countPublishedToday, slotsPassed } from "../src/schedule.js";
 import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
-import { archiveKey, RESERVE_TTL_DAYS } from "../src/plan.js";
+import { archiveKey, postNation, RESERVE_TTL_DAYS } from "../src/plan.js";
+import { storyLine } from "../src/story.js";
 import { readFileSync } from "node:fs";
 
 /** Версия из package.json - чтобы подпись в сводке не рассинхронилась. */
@@ -93,7 +94,7 @@ async function main() {
   const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
   const { data: week } = await db
     .from("candidates")
-    .select("attribution, source, tags")
+    .select("attribution, source, tags, caption_html")
     .eq("status", "published")
     .gte("published_at", weekAgo);
   const tally = (values: string[]) => {
@@ -112,6 +113,14 @@ async function main() {
         archiveKey((r as { attribution?: string | null }).attribution) ||
         ((r as { source?: string | null }).source ?? ""),
     ),
+  );
+  // типы сюжетов (src/story.ts): про что лента, а не откуда кадры
+  const weekStories = storyLine(
+    weekRows.map((r) => ({
+      story: (r.tags as { story?: string } | null)?.story,
+      color: (r.tags as { color?: boolean } | null)?.color,
+      nation: postNation(r as { caption_html?: string | null; attribution?: string | null; source?: string | null }),
+    })),
   );
   const periodsLine = tally(
     weekRows.map((r) => (r.tags as { period?: string } | null)?.period ?? ""),
@@ -133,7 +142,7 @@ async function main() {
     `Последний сбор: ${moscow(hb?.last_ok ?? null)}${hb?.last_error ? " - была ошибка, смотрите /status" : ""}`,
     "",
     weekRows.length
-      ? `За неделю (${weekRows.length} постов):\nархивы - ${archivesLine || "нет данных"}\nэпохи - ${periodsLine || "нет данных"}`
+      ? `За неделю (${weekRows.length} постов):\nсюжеты − ${weekStories}\nархивы − ${archivesLine || "нет данных"}\nэпохи − ${periodsLine || "нет данных"}`
       : "За неделю постов не было",
     "",
     `<i>v${botVersion()}</i>`,

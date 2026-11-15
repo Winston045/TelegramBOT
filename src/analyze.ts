@@ -10,6 +10,7 @@ import type { RawItem } from "./sources/types.js";
 import { geminiJson, imagePart } from "./gemini.js";
 import { FEW_SHOT, captionRules, metadataBlock } from "./caption.js";
 import { SCORE_FIELDS_SCHEMA, SCORING_CRITERIA } from "./scoring.js";
+import { normalizeStory, storyGuide } from "./story.js";
 import type { GeneratedCaption } from "./caption.js";
 import type { VisionScore } from "./scoring.js";
 import { rubricOf } from "./rubrics.js";
@@ -92,6 +93,13 @@ Expedition», «Battle of Stalingrad», «Hungarian Revolution of 1956».
 people - имена людей, которых ты назвал в caption (как написано в
 caption: «Джордж Паттон»); никого не назвал - пустой список.
 
+tags.story - тип сюжета ГОТОВОГО поста (подписи и изюминки вместе), то
+есть про что пост для читателя, а не что за техника в кадре. Ровно один:
+${storyGuide()}
+Обычные солдаты, техника и учения без отдельной истории - честно
+"service", даже если кадр хороший: по этому типу редакция видит, сколько
+в ленте «просто армии».
+
 Верни строго JSON без обёрток и без markdown:
 {${SCORE_FIELDS_SCHEMA}, "subject_wiki": "<название статьи или пустая строка>", "people": ["<имя из caption>"], "event_wiki": "<название статьи о событии или пустая строка>", "caption": "...", "quote": "<обычный пост: место и год короткой строкой; изюминка: факт-справка>", "quote_place": "<у изюминки место и дата ВСЕГДА здесь - отдельной второй цитатой после факта; у обычного поста пустая строка>", "quote_kind": "observation" | "context"}`;
 }
@@ -120,7 +128,14 @@ export async function analyzeImage(
   return {
     score: Math.max(0, Math.min(100, Math.round(score))),
     score_why: result.score_why?.trim().slice(0, 120) || undefined,
-    tags: result.tags ?? {},
+    // тип сюжета - только из списка (src/story.ts); незнакомое не храним
+    tags: (() => {
+      const tags = { ...(result.tags ?? {}) };
+      const story = normalizeStory(tags.story);
+      if (story) tags.story = story;
+      else delete tags.story;
+      return tags;
+    })(),
     unsafe: Boolean(result.unsafe),
     caption: result.caption ?? "",
     quote: result.quote ?? "",

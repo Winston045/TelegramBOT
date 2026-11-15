@@ -54,6 +54,7 @@ import {
   type ListItem,
   type Screen,
 } from "../_shared/menu.ts";
+import { storyLine } from "../_shared/story.ts";
 import {
   EVENT_MEMORY_DAYS,
   HISTORY_WINDOW,
@@ -1323,7 +1324,23 @@ async function buildHome(): Promise<Screen> {
   void oldestDays;
 
   const nextTitle = next ? headline(next.candidate.caption_html, 60) : "";
+  // типы сюжетов за неделю: про что лента, а не откуда кадры
+  const { data: weekPosts } = await db
+    .from("candidates")
+    .select("tags, caption_html, attribution, source")
+    .eq("status", "published")
+    .gte("published_at", new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString());
+  const storyWeek = (weekPosts ?? []).length
+    ? storyLine(
+        (weekPosts ?? []).map((p) => ({
+          story: (p.tags as { story?: string } | null)?.story,
+          color: (p.tags as { color?: boolean } | null)?.color,
+          nation: postNation(p),
+        })),
+      )
+    : undefined;
   return homeScreen({
+    storyWeek,
     publishedToday,
     slotsToday: times.length,
     times,
