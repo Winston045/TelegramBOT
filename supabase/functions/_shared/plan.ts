@@ -21,6 +21,8 @@ export type PlanTags = {
   rubric?: string;
   /** Статья о знаковом событии кадра (analyze.ts): ключ правила «событие раз в неделю». */
   event_wiki?: string;
+  /** Тип сюжета (_shared/story.ts): «про что» пост - по нему сетка ленты. */
+  story?: string;
 } | null;
 
 export type PlanCandidate = {
@@ -388,6 +390,23 @@ export function headline(captionHtml: string | null, limit = 70): string {
  * Место в очереди: качество кадра плюс редакционные предпочтения.
  * Оценка отвечает за качество, здесь - за характер ленты.
  */
+/**
+ * Сетка ленты по типам сюжетов (редакция 15.11). Разбор 60 постов:
+ * «будни армии» - 48% ленты (солдаты строят блиндаж, расчёт ведёт огонь),
+ * «человек» - 6%, «поворот» - ни одного. Источников сорок, а сюжет один.
+ *
+ * - «будни армии» - не чаще раза в SERVICE_WINDOW постов (раз в день
+ *   при трёх слотах);
+ * - история про человека, поворот и знаковое событие - фора в очереди:
+ *   при равном качестве такой пост выходит первым, и в день находится
+ *   хотя бы один, если резерв их держит;
+ * - «будни армии» уступают при равном качестве.
+ */
+export const HEADLINE_STORIES = new Set(["human", "twist", "landmark"]);
+export const STORY_BONUS = 10;
+export const SERVICE_PENALTY = 6;
+export const SERVICE_WINDOW = 3;
+
 export function rank(
   c: PlanCandidate,
   archiveShare?: Record<string, number>,
@@ -423,8 +442,13 @@ export function rank(
   const nShare = nation ? (nationShare?.[nation] ?? 0) : 0;
   const nationSoft = nation ? nationSoftShare(nation) : NATION_SHARE_SOFT;
   const nationOver = nShare > nationSoft ? (nShare - nationSoft) * NATION_SHARE_PENALTY : 0;
+  const story = c.tags?.story;
+  const storyBonus = story && HEADLINE_STORIES.has(story) ? STORY_BONUS : 0;
+  const servicePenalty = story === "service" ? SERVICE_PENALTY : 0;
   return (
     (c.score ?? 0) +
+    storyBonus -
+    servicePenalty +
     (home ? HOME_BONUS : 0) +
     quote +
     color -
@@ -572,6 +596,8 @@ export type RecentContext = {
   nations?: string[];
   /** Рубрики последних постов, свежие первыми ("" - военное ядро). */
   rubrics?: string[];
+  /** Типы сюжетов последних постов, свежие первыми ("" - без разметки). */
+  stories?: string[];
   /** Сколько постов каждой рубрики вышло за неделю: {"poster": 1}. */
   rubricWeek?: Record<string, number>;
   /**
@@ -683,6 +709,7 @@ export function planAuto(
   );
   // рубрики: недельный счётчик растёт и от постов этого же плана
   const rubrics = [...(recent.rubrics ?? [])];
+  const stories = [...(recent.stories ?? [])];
   const rubricWeek: Record<string, number> = { ...(recent.rubricWeek ?? {}) };
   // события недели: план не повторяет ни их, ни свои же
   const events = new Set(recent.weekEvents ?? []);
@@ -743,6 +770,15 @@ export function planAuto(
         c.tags?.subject === "leader" &&
         subjects.slice(0, RECENT_WINDOW).filter((s) => s === "leader").length >=
           MAX_LEADERS_IN_WINDOW
+      ) {
+        return false;
+      }
+      // сетка ленты: «будни армии» не чаще раза в SERVICE_WINDOW постов -
+      // держится до последней ступени лестницы вместе с окном архива
+      if (
+        relax < 3 &&
+        c.tags?.story === "service" &&
+        stories.slice(0, SERVICE_WINDOW - 1).includes("service")
       ) {
         return false;
       }
@@ -852,6 +888,7 @@ export function planAuto(
     staticsWindow.unshift(pick.tags?.action === false);
     longsWindow.unshift(quoteLength(pick.caption_html ?? null) >= LONG_QUOTE);
     rubrics.unshift(pick.tags?.rubric ?? "");
+    stories.unshift(pick.tags?.story ?? "");
     if (pick.tags?.rubric) rubricWeek[pick.tags.rubric] = (rubricWeek[pick.tags.rubric] ?? 0) + 1;
     for (const k of eventKeys(pick)) events.add(k);
   }

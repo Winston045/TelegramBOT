@@ -89,6 +89,8 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
         ((p as { source?: string | null }).source ?? ""),
     ),
     rubrics: posts.map((p) => (p.tags as { rubric?: string } | null)?.rubric ?? ""),
+    // типы сюжетов - для сетки ленты («будни армии» раз в три поста)
+    stories: history.map((p) => (p.tags as { story?: string } | null)?.story ?? ""),
     // страна поста - по тому, о ком подпись, а не по архиву
     nations: history.map((p) =>
       postNation(p as { caption_html?: string | null; attribution?: string | null; source?: string | null }),

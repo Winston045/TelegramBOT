@@ -14,6 +14,7 @@ import { loadConfig } from "../src/config.js";
 import { getDb } from "../src/db.js";
 import { collectRaw, interleaveBySource, lastSourceCounts } from "../src/sources/index.js";
 import { loadArchiveWeights, YIELD_DAYS } from "../src/yield.js";
+import { storyLine } from "../src/story.js";
 import { byPromise } from "../src/promise.js";
 import { buildAnalysisQueue } from "../src/queue.js";
 import { memoryCursorStore } from "../src/cursors.js";
@@ -191,6 +192,7 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
       archives: window.slice(0, HISTORY_WINDOW).map((p) => archiveKey(p.attribution) || (p.source ?? "")),
       nations: window.slice(0, HISTORY_WINDOW).map((p) => postNation(p)),
       rubrics: w.map((p) => p.tags?.rubric ?? ""),
+      stories: window.slice(0, HISTORY_WINDOW).map((p) => p.tags?.story ?? ""),
       ...shares,
     };
     let fallback = false;
@@ -215,7 +217,8 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
     const forced = fallbacks.has(row.id) ? " [добор]" : "";
     console.log(
       `${String(i + 1).padStart(2)}. #${row.id} ${kind} ${row.score ?? "?"} [${archiveKey(row.attribution) || "?"} · ${postNation(row) || "?"}]` +
-        ` ${row.tags?.period ?? "?"}/${row.tags?.subject ?? "?"}${rubric}${forced} - ${head}`,
+        ` ${row.tags?.period ?? "?"}/${row.tags?.subject ?? "?"}${rubric}` +
+        `${row.tags?.story ? ` <${row.tags.story}>` : ""}${forced} - ${head}`,
     );
   });
 
@@ -227,6 +230,10 @@ async function simulateFeed(cfg: ReturnType<typeof loadConfig>, steps = 21) {
   console.log("архивы:", spread(archives));
   console.log("эпохи:", spread(periods));
   console.log("темы:", spread(subjects));
+  console.log(
+    "сюжеты:",
+    storyLine(feed.map((r) => ({ story: r.tags?.story, color: r.tags?.color, nation: postNation(r) }))),
+  );
   console.log(
     `одобренных в ленте: ${feed.filter((r) => r.status === "approved").length} из ${feed.length}, ` +
       `изюминок: ${feed.filter((r) => quoteLength(r.caption_html ?? null) >= LONG_QUOTE).length}, ` +

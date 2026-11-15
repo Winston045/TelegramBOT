@@ -31,7 +31,18 @@ export type YieldRow = {
   status: string;
   attribution?: string | null;
   source?: string | null;
+  tags?: { story?: string } | null;
 };
+
+/**
+ * Сетка ленты (15.11): в день нужен хотя бы один пост про человека,
+ * поворот или знаковое событие, а «будни армии» - половина ленты. Архив,
+ * чьи прошедшие кадры чаще дают такие истории, получает добавку к весу,
+ * архив «просто солдат» - скидку. Множитель в этих рамках.
+ */
+export const STORY_MIN_FACTOR = 0.8;
+export const STORY_MAX_FACTOR = 1.3;
+const HEADLINE = new Set(["human", "twist", "landmark"]);
 
 /**
  * Веса архивов по истории анализа: сглаженный выход архива, делённый на
@@ -55,13 +66,37 @@ export function archiveWeights(rows: YieldRow[]): Map<string, number> {
     }
     stats.set(key, s);
   }
+  // доля историй (человек, поворот, событие) среди размеченных прошедших
+  const stories = new Map<string, { tagged: number; headline: number }>();
+  let taggedAll = 0;
+  let headlineAll = 0;
+  for (const r of rows) {
+    if (!PASSED.has(r.status) || !r.tags?.story) continue;
+    const key = archiveKey(r.attribution) || r.source || "";
+    if (!key) continue;
+    const st = stories.get(key) ?? { tagged: 0, headline: 0 };
+    st.tagged++;
+    taggedAll++;
+    if (HEADLINE.has(r.tags.story)) {
+      st.headline++;
+      headlineAll++;
+    }
+    stories.set(key, st);
+  }
+  const headlineMean = taggedAll ? headlineAll / taggedAll : 0;
+
   const weights = new Map<string, number>();
   if (!total) return weights;
   const mean = passed / total;
   if (mean <= 0) return weights;
   for (const [key, s] of stats) {
     const smoothed = (s.ok + YIELD_PRIOR * mean) / (s.n + YIELD_PRIOR);
-    const w = Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, smoothed / mean));
+    let w = Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, smoothed / mean));
+    const st = stories.get(key);
+    if (st && headlineMean > 0) {
+      const share = (st.headline + YIELD_PRIOR * headlineMean) / (st.tagged + YIELD_PRIOR);
+      w *= Math.min(STORY_MAX_FACTOR, Math.max(STORY_MIN_FACTOR, share / headlineMean));
+    }
     weights.set(key, Math.round(w * 100) / 100);
   }
   return weights;
@@ -74,7 +109,7 @@ export async function loadArchiveWeights(db: ReturnType<typeof getDb>): Promise<
     const rows = await selectAll<YieldRow>((from, to) =>
       db
         .from("candidates")
-        .select("status, attribution, source")
+        .select("status, attribution, source, tags")
         .gte("created_at", since)
         .order("id")
         .range(from, to),
