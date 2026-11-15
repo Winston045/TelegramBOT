@@ -184,14 +184,25 @@ async function fetchImage(url: string): Promise<Response | null> {
   }
 }
 
+/**
+ * Сколько запасных кадров держим за очередью анализа. Сбор 14.11: из
+ * десяти кадров очереди четыре потерялись на скачивании (Викимедиа
+ * ответила 429 и закрылась до конца прогона), и на анализ ушло шесть -
+ * в резерв попали два поста. Выпавший кадр теперь замещается запасным.
+ */
+const DEDUP_SPARE = 10;
+
 async function hashAndDedup(
   items: CollectedItem[],
   known: string[],
   cfg: ReturnType<typeof loadConfig>,
+  /** сколько уникальных нужно: дальше списка не идём (остальное - запас) */
+  target = items.length,
 ): Promise<HashedItem[]> {
   const out: HashedItem[] = [];
   const batchHashes: string[] = [];
   for (const item of items) {
+    if (out.length >= target) break;
     // скачивание тоже ест бюджет прогона: архив с ретраями 2+20+45 с на
     // файл мог оставить на анализ меньше, чем стоит один кадр
     if (timeLeftMs() < 8 * 60_000) {
@@ -296,6 +307,16 @@ async function main() {
     console.log(`вес архивов по выходу за ${YIELD_DAYS} дн.: ${shown}`);
   }
   const { queue: survivors, cuts } = buildAnalysisQueue(interleaveBySource(ranked, weights), keepLimit);
+  // запас за очередью - тем же порядком из оставшихся: заменит кадр,
+  // выпавший на скачивании или дедупе
+  const queued = new Set(survivors);
+  const { queue: spares } = buildAnalysisQueue(
+    interleaveBySource(
+      ranked.filter((it) => !queued.has(it)),
+      weights,
+    ),
+    DEDUP_SPARE,
+  );
   const avg = survivors.length
     ? survivors.reduce((s, it) => s + promise(it), 0) / survivors.length
     : 0;
@@ -336,8 +357,11 @@ async function main() {
   // вся история канала и все кандидаты, постранично: одним запросом
   // Supabase отдавал лишь первую тысячу хэшей
   const known = await loadKnownHashes(db, { candidates: true });
-  const hashed = await hashAndDedup(fresh, known, cfg);
-  console.log(`уникальных: ${hashed.length}`);
+  const hashed = await hashAndDedup([...fresh, ...spares], known, cfg, fresh.length);
+  // хэшированный кадр - новый объект, поэтому сверяем по ключу источника
+  const mainKeys = new Set(fresh.map((i) => `${i.source}:${i.sourceId}`));
+  const fromSpare = hashed.filter((h) => !mainKeys.has(`${h.source}:${h.sourceId}`)).length;
+  console.log(`уникальных: ${hashed.length}` + (fromSpare ? ` (из них запасных: ${fromSpare})` : ""));
 
   // один запрос Gemini на фото: оценка + подпись сразу. Все прошедшие
   // порог кандидаты пишутся в базу со статусом new — это резерв, из
