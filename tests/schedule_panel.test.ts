@@ -77,8 +77,8 @@ describe("клавиатуры панели", () => {
 
   it("текст панели показывает число постов и слоты по порядку", () => {
     const text = schedulePanelText(["09:00", "21:00"]);
-    expect(text).toContain("2 поста в день");
-    expect(text).toContain("09:00, 21:00");
+    expect(text).toContain("Постов в день: 2");
+    expect(text).toContain("Время (МСК): 09:00, 21:00");
     // стиль меню: тире - знаком минус, не дефисом
     expect(text).not.toContain(" - ");
     expect(text).not.toMatch(/\p{Extended_Pictographic}/u);

@@ -9,9 +9,13 @@
  *   на месте: разделы, пост, назад. Чат не засыпается ответами;
  * - команды остались запасным путём, но знать их не нужно.
  *
- * Правила текста (редакция): по-человечески, коротко, без канцелярита и
- * восклицаний, без эмодзи и капса. Вместо дефиса в роли тире - знак
- * минус «−». Дефис внутри слов («из-за», «кто-то») остаётся дефисом.
+ * Правила текста (редакция 15.11): интерфейс, а не собеседник. Первая
+ * версия меню говорила фразами («Всё, что здесь лежит, выйдет само, если
+ * не удалить», «Откройте пост по номеру») - редакция: «похоже на ответ
+ * чат-бота, а должно объяснять техническим понятным текстом». Поэтому:
+ * поле и значение («Готово: 18, запас 6 дн.»), без пояснений очевидного,
+ * без вежливых оборотов, эмодзи и капса. Вместо дефиса в роли тире -
+ * знак минус «−»; дефис внутри слов («из-за») остаётся дефисом.
  *
  * Файл без импортов: собирается и Deno (вебхук), и Node (тесты).
  */
@@ -51,7 +55,7 @@ export const MAIN_KEYBOARD = {
   ],
   resize_keyboard: true,
   is_persistent: true,
-  input_field_placeholder: "Ответьте на карточку, чтобы поправить подпись",
+  input_field_placeholder: "Ответ на карточку − правка подписи",
 };
 
 type Button = { text: string; callback_data?: string; url?: string };
@@ -99,49 +103,35 @@ export type HomeData = {
   autoOn: boolean;
   /** типы сюжетов за неделю (_shared/story.ts): «своё 5, человек 3...» */
   storyWeek?: string;
-  /** что сломалось: каждая строка - готовая фраза */
+  /** неполадки: короткие строки «поле: значение» */
   alerts: string[];
 };
+
+const onOff = (on: boolean) => (on ? "вкл" : "выкл");
 
 export function homeScreen(d: HomeData): Screen {
   const perDay = Math.max(1, d.times.length);
   const days = Math.floor(d.ready / perDay);
-  const lines: string[] = [];
-  lines.push("<b>Лента</b>");
-  lines.push(`Сегодня вышло ${d.publishedToday} из ${d.slotsToday}. Слоты ${d.times.join(", ")}.`);
-  lines.push(
-    d.nextPost
-      ? `Следующий пост ${d.nextPost.when}: ${d.nextPost.title}`
-      : "Следующего поста нет: очередь пуста.",
-  );
-  lines.push(
-    `Готово к выходу ${d.ready} ${plural(d.ready, "пост", "поста", "постов")}` +
-      (d.ready ? `, хватит на ${days} ${plural(days, "день", "дня", "дней")}.` : "."),
-  );
-  if (d.stale) {
-    lines.push(`Ещё ${d.stale} ${plural(d.stale, "лежит", "лежат", "лежат")} дольше двух недель и сами не выйдут.`);
-  }
+  const lines: string[] = ["<b>Сводка</b>"];
+  lines.push(`Сегодня: ${d.publishedToday} из ${d.slotsToday} (${d.times.join(", ")})`);
+  lines.push(d.nextPost ? `Следующий: ${d.nextPost.when}\n${d.nextPost.title}` : "Следующий: нет");
+  lines.push(`Готово: ${d.ready}${d.ready ? `, запас ${days} дн.` : ""}`);
+  if (d.stale) lines.push(`Просрочено: ${d.stale}`);
+  lines.push(`Автопостинг: ${onOff(d.autoOn)}`);
   lines.push("");
-  lines.push("<b>Сбор</b>");
   lines.push(
     d.lastRun
-      ? `${d.lastRun.when} разобрано ${d.lastRun.analyzed}, в резерв ${d.lastRun.written}.`
-      : "Сборов ещё не было.",
+      ? `<b>Сбор</b> ${d.lastRun.when}\nРазобрано: ${d.lastRun.analyzed}, в резерв: ${d.lastRun.written}`
+      : "<b>Сбор</b>\nНе было",
   );
   if (d.storyWeek) {
     lines.push("");
-    lines.push("<b>Сюжеты за неделю</b>");
+    lines.push("<b>Сюжеты за 7 дней</b>");
     lines.push(d.storyWeek);
   }
-  lines.push("");
-  lines.push(
-    d.autoOn
-      ? "Автопостинг включён: всё, что не удалено, выходит само."
-      : "Автопостинг выключен: выходят только посты «следующим» и на время.",
-  );
   if (d.alerts.length) {
     lines.push("");
-    lines.push("<b>Обратите внимание</b>");
+    lines.push("<b>Неполадки</b>");
     for (const a of d.alerts) lines.push(a);
   }
   return {
@@ -149,7 +139,7 @@ export function homeScreen(d: HomeData): Screen {
     keyboard: {
       inline_keyboard: [
         [cb("Очередь", "m:queue"), cb("Резерв", "m:res:0")],
-        [cb("Вышедшие", "m:pub"), cb("Собрать ещё", "m:more")],
+        [cb("Вышедшие", "m:pub"), cb("Собрать", "m:more")],
         [cb("Настройки", "m:set"), cb("Обновить", "m:home")],
       ],
     },
@@ -170,19 +160,15 @@ function numberRow(items: ListItem[], from: string): Button[][] {
 export function queueScreen(items: ListItem[], autoOn: boolean): Screen {
   if (!items.length) {
     return {
-      text:
-        "<b>Очередь</b>\n" +
-        (autoOn
-          ? "Пусто: резерв кончился. Утренний сбор наполнит его сам, можно и ускорить."
-          : "Пусто. Автопостинг выключен, а постов «следующим» и на время нет."),
-      keyboard: { inline_keyboard: [[cb("Собрать ещё", "m:more")], [cb("Назад", "m:home")]] },
+      text: `<b>Очередь</b>\nПусто\nАвтопостинг: ${onOff(autoOn)}`,
+      keyboard: { inline_keyboard: [[cb("Собрать", "m:more")], [cb("Назад", "m:home")]] },
     };
   }
   const lines = items.map(
-    (it, i) => `${i + 1}. ${it.when ?? ""}${it.mark ? ` (${it.mark})` : ""}\n${it.title}`,
+    (it, i) => `${i + 1}. ${it.when ?? ""}${it.mark ? ` · ${it.mark}` : ""}\n${it.title}`,
   );
   return {
-    text: `<b>Очередь</b>\nЧто выйдет ближайшим, по порядку.\n\n${lines.join("\n\n")}\n\nОткройте пост по номеру.`,
+    text: `<b>Очередь</b> · ${items.length}\n\n${lines.join("\n\n")}`,
     keyboard: { inline_keyboard: [...numberRow(items, "q"), [cb("Назад", "m:home")]] },
   };
 }
@@ -193,19 +179,18 @@ export function reserveScreen(items: ListItem[], page: number, total: number, st
   const pages = Math.max(1, Math.ceil(total / RESERVE_PAGE));
   if (!items.length) {
     return {
-      text: "<b>Резерв</b>\nПусто. Утренний сбор наполнит его сам.",
-      keyboard: { inline_keyboard: [[cb("Собрать ещё", "m:more")], [cb("Назад", "m:home")]] },
+      text: "<b>Резерв</b>\nПусто" + (stale ? `\nПросрочено: ${stale}` : ""),
+      keyboard: { inline_keyboard: [[cb("Собрать", "m:more")], [cb("Назад", "m:home")]] },
     };
   }
   const lines = items.map((it, i) => `${i + 1}. ${it.title}${it.mark ? `\n${it.mark}` : ""}`);
   const nav: Button[] = [];
-  if (page > 0) nav.push(cb("‹ Раньше", `m:res:${page - 1}`));
-  if (page + 1 < pages) nav.push(cb("Дальше ›", `m:res:${page + 1}`));
+  if (page > 0) nav.push(cb("‹", `m:res:${page - 1}`));
+  if (page + 1 < pages) nav.push(cb("›", `m:res:${page + 1}`));
   const head =
-    `<b>Резерв</b> ${DASH} ${total} ${plural(total, "пост", "поста", "постов")}` +
-    (pages > 1 ? `, страница ${page + 1} из ${pages}` : "") +
-    "\nЛучшие по оценке сверху. Всё, что здесь лежит, выйдет само, если не удалить." +
-    (stale ? `\nСтарше двух недель: ${stale}, такие сами уже не выходят.` : "");
+    `<b>Резерв</b> · ${total}` +
+    (pages > 1 ? ` · стр. ${page + 1}/${pages}` : "") +
+    (stale ? `\nПросрочено: ${stale}` : "");
   return {
     text: `${head}\n\n${lines.join("\n\n")}`,
     keyboard: {
@@ -220,11 +205,11 @@ export function reserveScreen(items: ListItem[], page: number, total: number, st
 
 export function publishedScreen(items: ListItem[]): Screen {
   if (!items.length) {
-    return { text: "<b>Вышедшие</b>\nПока ничего не вышло.", keyboard: { inline_keyboard: [[cb("Назад", "m:home")]] } };
+    return { text: "<b>Вышедшие</b>\nПусто", keyboard: { inline_keyboard: [[cb("Назад", "m:home")]] } };
   }
   const lines = items.map((it, i) => `${i + 1}. ${it.when ?? ""}\n${it.title}`);
   return {
-    text: `<b>Вышедшие</b>\nПоследние посты в канале.\n\n${lines.join("\n\n")}`,
+    text: `<b>Вышедшие</b> · ${items.length}\n\n${lines.join("\n\n")}`,
     keyboard: { inline_keyboard: [...numberRow(items, "p"), [cb("Назад", "m:home")]] },
   };
 }
@@ -235,10 +220,11 @@ export type ItemData = {
   id: number;
   title: string;
   status: string;
-  /** «выйдет сегодня в 14:00», «вышел 14.11 в 16:05» */
-  whenLine?: string;
+  /** значение поля «Статус»: «в резерве», «следующий», «выйдет 15.11, 14:00» */
+  statusLine?: string;
   score?: number | null;
-  ageLine?: string;
+  /** «2 дня назад» */
+  age?: string;
   stale?: boolean;
   scheduled?: boolean;
   channelUrl?: string;
@@ -254,18 +240,15 @@ export function backFor(from: string): string {
 
 export function itemScreen(d: ItemData, from: string): Screen {
   const back = cb("Назад", backFor(from));
-  const facts = [
-    d.score !== undefined && d.score !== null ? `оценка ${d.score}` : "",
-    d.ageLine ?? "",
-  ].filter(Boolean);
-  const lines = [`<b>Пост ${d.id}</b>`, d.title];
-  if (d.whenLine) lines.push("", d.whenLine);
-  if (facts.length) lines.push(facts.join(", "));
-  if (d.stale && !d.scheduled) lines.push("Лежит дольше двух недель, сам уже не выйдет.");
+  const lines = [`<b>Пост #${d.id}</b>`, d.title, ""];
+  if (d.statusLine) lines.push(`Статус: ${d.statusLine}`);
+  if (d.score !== undefined && d.score !== null) lines.push(`Оценка: ${d.score}`);
+  if (d.age) lines.push(`Собран: ${d.age}`);
+  if (d.stale && !d.scheduled) lines.push("Просрочен: старше 14 дн., автопостинг не берёт");
 
   if (d.status === "published") {
     const row: Button[] = [];
-    if (d.channelUrl) row.push({ text: "Открыть в канале", url: d.channelUrl });
+    if (d.channelUrl) row.push({ text: "В канале", url: d.channelUrl });
     row.push(cb("Удалить из канала", `m:delask:${d.id}:${from}`));
     return { text: lines.join("\n"), keyboard: { inline_keyboard: [row, [back]] } };
   }
@@ -273,8 +256,8 @@ export function itemScreen(d: ItemData, from: string): Screen {
     text: lines.join("\n"),
     keyboard: {
       inline_keyboard: [
-        [cb("Показать как в канале", `show:${d.id}`)],
-        [cb("Опубликовать сейчас", `m:now:${d.id}:${from}`), cb("На время", `m:when:${d.id}:${from}`)],
+        [cb("Предпросмотр", `show:${d.id}`)],
+        [cb("Опубликовать", `m:now:${d.id}:${from}`), cb("На время", `m:when:${d.id}:${from}`)],
         [cb("Следующим", `m:next:${d.id}:${from}`), cb("Удалить", `m:drop:${d.id}:${from}`)],
         [back],
       ],
@@ -296,16 +279,16 @@ export function whenScreen(
     );
   }
   rows.push([cb("Отмена", `m:item:${id}:${from}`)]);
-  return { text: `<b>Пост ${id}</b>\n${title}\n\nКогда выпустить? Время московское.`, keyboard: { inline_keyboard: rows } };
+  return { text: `<b>Пост #${id}</b>\n${title}\n\nВремя выхода (МСК):`, keyboard: { inline_keyboard: rows } };
 }
 
 /** Подтверждение удаления из канала - необратимо, поэтому спрашиваем. */
 export function deleteAskScreen(id: number, title: string, from: string): Screen {
   return {
-    text: `<b>Пост ${id}</b>\n${title}\n\nУдалить его из канала? Вернуть потом не получится.`,
+    text: `<b>Пост #${id}</b>\n${title}\n\nУдалить из канала? Действие необратимо.`,
     keyboard: {
       inline_keyboard: [
-        [cb("Да, удалить", `m:delyes:${id}:${from}`), cb("Нет", `m:item:${id}:${from}`)],
+        [cb("Удалить", `m:delyes:${id}:${from}`), cb("Отмена", `m:item:${id}:${from}`)],
       ],
     },
   };
@@ -316,17 +299,12 @@ export function deleteAskScreen(id: number, title: string, from: string): Screen
 export type SettingsData = { autoOn: boolean; times: string[]; tidyHours: number };
 
 export function settingsScreen(d: SettingsData): Screen {
-  const tidy = d.tidyHours
-    ? `Служебные сообщения бота удаляются через ${d.tidyHours} ${plural(d.tidyHours, "час", "часа", "часов")}.`
-    : "Служебные сообщения бота не удаляются.";
   const text = [
     "<b>Настройки</b>",
-    d.autoOn
-      ? "Автопостинг включён: всё, что собрано и не удалено, выходит само по расписанию."
-      : "Автопостинг выключен: выходят только посты «следующим» и на время.",
-    `Расписание: ${d.times.join(", ")} по Москве.`,
-    tidy,
-  ].join("\n\n");
+    `Автопостинг: ${onOff(d.autoOn)}`,
+    `Расписание (МСК): ${d.times.join(", ")}`,
+    `Очистка чата: ${d.tidyHours ? `через ${d.tidyHours} ч` : "выкл"}`,
+  ].join("\n");
   return {
     text,
     keyboard: {
@@ -344,27 +322,28 @@ export function tidyScreen(hours: number): Screen {
   return {
     text:
       "<b>Очистка чата</b>\n" +
-      "Через сколько удалять служебные сообщения бота. Карточки постов и сам канал это не трогает.",
+      `Сейчас: ${hours ? `через ${hours} ч` : "выкл"}\n` +
+      "Касается служебных сообщений бота. Карточки постов и канал не затрагиваются.",
     keyboard: {
       inline_keyboard: [
-        [opt(0, "Не удалять"), opt(1, "1 час")],
-        [opt(6, "6 часов"), opt(24, "24 часа")],
+        [opt(0, "Выкл"), opt(1, "1 ч")],
+        [opt(6, "6 ч"), opt(24, "24 ч")],
         [cb("Назад", "m:set")],
       ],
     },
   };
 }
 
-/** Короткие ответы на нажатия (всплывашки) - тоже живым языком. */
+/** Всплывающие ответы на нажатия. */
 export const TOAST = {
   published: "Опубликовано",
-  next: "Выйдет следующим",
-  dropped: "Удалено, в канал не выйдет",
-  gone: "Этот пост уже обработан",
+  next: "Следующий в очереди",
+  dropped: "Удалено",
+  gone: "Пост уже обработан",
   deleted: "Удалено из канала",
-  collecting: "Сбор запущен, новые посты появятся минут через двадцать",
-  collectFailed: "Сбор не запустился",
-  autoOn: "Автопостинг включён",
-  autoOff: "Автопостинг выключен",
+  collecting: "Сбор запущен",
+  collectFailed: "Сбор не запущен",
+  autoOn: "Автопостинг: вкл",
+  autoOff: "Автопостинг: выкл",
   saved: "Сохранено",
 } as const;

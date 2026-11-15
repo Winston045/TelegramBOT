@@ -37,14 +37,13 @@ export function unpackTime(packed: string): string | undefined {
 }
 
 export function schedulePanelText(times: string[]): string {
-  // стиль меню (_shared/menu.ts): по-человечески, тире - знаком минус
-  const n = times.length;
-  const posts = n % 10 === 1 && n % 100 !== 11 ? "пост" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? "поста" : "постов";
+  // стиль меню (_shared/menu.ts): поле и значение, тире - знаком минус
   const lines = [
     "<b>Расписание</b>",
-    `${n} ${posts} в день, время московское: ${times.join(", ")}.`,
+    `Постов в день: ${times.length}`,
+    `Время (МСК): ${times.join(", ")}`,
     "",
-    "Нажмите на время, чтобы убрать его, или добавьте новое.",
+    "Кнопка со временем − удалить слот.",
   ];
   return lines.join("\n");
 }

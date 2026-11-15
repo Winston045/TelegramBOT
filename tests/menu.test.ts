@@ -29,7 +29,7 @@ const home: Screen = homeScreen({
   stale: 2,
   lastRun: { when: "15.11, 11:05", analyzed: 22, written: 10 },
   autoOn: true,
-  alerts: ["По расписанию уже должно было выйти 2, а вышло 1."],
+  alerts: ["Пропущен слот: вышло 1 из 2"],
 });
 const items = [1, 2, 3, 4, 5, 6].map((i) => ({ id: 700 + i, when: "сегодня 14:00", title: `Пост ${i}`, mark: "оценка 70" }));
 const screens: Screen[] = [
@@ -42,8 +42,8 @@ const screens: Screen[] = [
   reserveScreen([], 0, 0, 0),
   publishedScreen(items.slice(0, 5)),
   publishedScreen([]),
-  itemScreen({ id: 712, title: "Пост", status: "shown", whenLine: "Ждёт своей очереди в резерве.", score: 65, ageLine: "собран 1 день назад" }, "r0"),
-  itemScreen({ id: 712, title: "Пост", status: "published", whenLine: "Вышел 14.11, 16:05.", channelUrl: "https://t.me/Story_Teams/7213" }, "p"),
+  itemScreen({ id: 712, title: "Пост", status: "shown", statusLine: "в резерве", score: 65, age: "1 день назад", stale: true }, "r0"),
+  itemScreen({ id: 712, title: "Пост", status: "published", statusLine: "вышел 14.11, 16:05", channelUrl: "https://t.me/Story_Teams/7213" }, "p"),
   whenScreen(712, "Пост", [{ label: "15.11 14:00", iso: "2026-11-15T14:00:00+03:00" }], "q"),
   deleteAskScreen(712, "Пост", "p"),
   settingsScreen({ autoOn: true, times: ["12:00", "14:00", "16:00"], tidyHours: 6 }),
@@ -67,6 +67,27 @@ describe("меню: стиль текста (редакция 15.11)", () => {
   it("без капса и канцелярита старой сводки", () => {
     const all = screens.map((s) => s.text).join("\n");
     expect(all).not.toMatch(/СВОДКА|ВКЛЮЧЁН|Требует внимания|Запас хода/);
+  });
+
+  it("интерфейс, а не собеседник: без обращений, уговоров и восклицаний (редакция 15.11)", () => {
+    // первая версия меню говорила фразами чат-бота: «Откройте пост по
+    // номеру», «Всё, что здесь лежит, выйдет само, если не удалить»
+    const all = screens.map((s) => s.text.replace(/<[^>]+>/g, "")).join("\n");
+    expect(all).not.toMatch(/откройте|нажмите|выберите|стоит|можно|если не|обратите|\bвы\b|\bвас\b|!/i);
+    // строки короткие: поле и значение, не абзацы (заголовки постов - исключение)
+    for (const line of all.split("\n")) {
+      if (/^(Пост|\d+\.)/.test(line) || line.length < 3) continue;
+      expect(line.length).toBeLessThanOrEqual(90);
+    }
+  });
+
+  it("сводка - поля со значениями", () => {
+    expect(home.text).toContain("Сегодня: 1 из 3 (12:00, 14:00, 16:00)");
+    expect(home.text).toContain("Готово: 18, запас 6 дн.");
+    expect(home.text).toContain("Просрочено: 2");
+    expect(home.text).toContain("Автопостинг: вкл");
+    expect(home.text).toContain("Разобрано: 22, в резерв: 10");
+    expect(home.text).toContain("<b>Неполадки</b>");
   });
 
   it("тире в служебных сообщениях превращается в минус, дефис в словах остаётся", () => {
@@ -105,6 +126,7 @@ describe("меню: кнопки", () => {
     const s = itemScreen({ id: 712, title: "Пост", status: "shown" }, "r2");
     const data = s.keyboard.inline_keyboard.flat().map((b) => b.callback_data);
     expect(data).toEqual(["show:712", "m:now:712:r2", "m:when:712:r2", "m:next:712:r2", "m:drop:712:r2", "m:res:2"]);
+    expect(s.text).toContain("Пост #712");
   });
 
   it("вышедший пост: ссылка в канал и удаление только через подтверждение", () => {

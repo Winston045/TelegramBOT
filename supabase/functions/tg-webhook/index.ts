@@ -602,8 +602,8 @@ async function buildReserve(page: number): Promise<Screen> {
     id: c.id,
     title: shortTitle(c.caption_html),
     mark:
-      `оценка ${c.score ?? "?"}, собран ${ageWords(c.created_at, now)}` +
-      (c.status === "approved" ? ", следующим" : ""),
+      `оценка ${c.score ?? "?"} · ${ageWords(c.created_at, now)}` +
+      (c.status === "approved" ? " · следующий" : ""),
   }));
   return reserveScreen(items, page, total ?? 0, stale ?? 0);
 }
@@ -640,20 +640,20 @@ async function buildItem(id: number, from: string): Promise<Screen | undefined> 
   if (!c) return undefined;
   const now = new Date();
   const stale = new Date(c.created_at).getTime() < Date.now() - RESERVE_TTL_DAYS * 24 * 3600 * 1000;
-  let whenLine: string | undefined;
-  if (c.status === "published") whenLine = `Вышел ${moscowTime(c.published_at)}.`;
-  else if (c.scheduled_at) whenLine = `Выйдет ${moscowTime(c.scheduled_at)}.`;
-  else if (c.status === "approved") whenLine = "Выйдет следующим.";
-  else if (c.status === "rejected") whenLine = "Удалён, в канал не выйдет.";
-  else if (!stale) whenLine = "Ждёт своей очереди в резерве.";
+  let statusLine: string | undefined;
+  if (c.status === "published") statusLine = `вышел ${moscowTime(c.published_at)}`;
+  else if (c.scheduled_at) statusLine = `на время, ${moscowTime(c.scheduled_at)}`;
+  else if (c.status === "approved") statusLine = "следующий";
+  else if (c.status === "rejected") statusLine = "удалён";
+  else statusLine = "в резерве";
   return itemScreen(
     {
       id: c.id,
       title: shortTitle(c.caption_html, 200),
       status: c.status,
-      whenLine,
+      statusLine,
       score: c.score,
-      ageLine: c.status === "published" ? undefined : `собран ${ageWords(c.created_at, now)}`,
+      age: c.status === "published" ? undefined : ageWords(c.created_at, now),
       stale,
       scheduled: Boolean(c.scheduled_at),
       channelUrl: c.channel_msg_id ? `https://t.me/${CHANNEL_SLUG}/${c.channel_msg_id}` : undefined,
@@ -770,7 +770,7 @@ async function handleMenu(ctx: CbCtx, parts: string[]): Promise<void> {
       const isoShort = `${c}:${parts[4] ?? "00"}`;
       const scheduledAt = new Date(`${isoShort}:00${TZ_OFFSET}`).toISOString();
       if (new Date(scheduledAt).getTime() <= Date.now()) {
-        return void (await ctx.answerCallbackQuery({ text: "Это время уже прошло, выберите другое", show_alert: true }));
+        return void (await ctx.answerCallbackQuery({ text: "Время уже прошло", show_alert: true }));
       }
       const { data } = await db
         .from("candidates")
@@ -886,7 +886,7 @@ bot.on("callback_query:data", async (ctx) => {
         // выпустил бы ближайшим заходом, мимо любого слота
         if (new Date(scheduledAt).getTime() <= Date.now()) {
           await ctx.answerCallbackQuery({
-            text: "Это время уже прошло − нажмите «Перенести» ещё раз",
+            text: "Время уже прошло",
             show_alert: true,
           });
           return;
@@ -1080,7 +1080,7 @@ bot.on("callback_query:data", async (ctx) => {
       case "tidy": {
         const hours = Number(ctx.callbackQuery.data.split(":")[1]);
         if (!Number.isFinite(hours) || hours < 0) {
-          await ctx.answerCallbackQuery({ text: "Не понял настройку" });
+          await ctx.answerCallbackQuery({ text: "Неизвестная настройка" });
           return;
         }
         const { error } = await db.from("settings").upsert({
@@ -1142,7 +1142,7 @@ bot.on("callback_query:data", async (ctx) => {
         return;
       }
       case "tadd": {
-        await ctx.editMessageText("Новый слот − выберите час (МСК):", {
+        await ctx.editMessageText("Новый слот. Час (МСК):", {
           reply_markup: { inline_keyboard: hourKeyboard() },
         });
         await ctx.answerCallbackQuery();
@@ -1151,11 +1151,11 @@ bot.on("callback_query:data", async (ctx) => {
       case "th": {
         const hour = Number(idStr);
         if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
-          await ctx.answerCallbackQuery({ text: "Не понял час" });
+          await ctx.answerCallbackQuery({ text: "Неизвестный час" });
           return;
         }
         await ctx.editMessageText(
-          `Час ${String(hour).padStart(2, "0")} − выберите минуты (МСК):`,
+          `Новый слот ${String(hour).padStart(2, "0")}:__. Минуты:`,
           { reply_markup: { inline_keyboard: minuteKeyboard(hour) } },
         );
         await ctx.answerCallbackQuery();
@@ -1164,7 +1164,7 @@ bot.on("callback_query:data", async (ctx) => {
       case "tset": {
         const t = unpackTime(idStr ?? "");
         if (!t) {
-          await ctx.answerCallbackQuery({ text: "Не понял время" });
+          await ctx.answerCallbackQuery({ text: "Неизвестное время" });
           return;
         }
         const times = await getPublishTimes();
@@ -1307,19 +1307,19 @@ async function buildHome(): Promise<Screen> {
   // молчание блока само по себе значит «здесь порядок».
   const alerts: string[] = [];
   if (run && (run.quota_failed ?? 0) > 0) {
-    alerts.push(`Последний сбор упёрся в лимит Gemini, ${run.quota_failed} ${plural(run.quota_failed ?? 0, "кадр остался", "кадра остались", "кадров остались")} без разбора. Лимит обновится в 11:00.`);
+    alerts.push(`Сбор: лимит Gemini, не разобрано ${run.quota_failed} (сброс в 11:00)`);
   }
   if (passed > publishedToday) {
-    alerts.push(`По расписанию уже должно было выйти ${passed}, а вышло ${publishedToday}.`);
+    alerts.push(`Пропущен слот: вышло ${publishedToday} из ${passed}`);
   }
-  if (ready < perDay) alerts.push("Готовых постов меньше, чем нужно на день. Стоит нажать «Собрать ещё».");
+  if (ready < perDay) alerts.push(`Готово меньше дневной нормы: ${ready} из ${perDay}`);
   const pubBeat = beat("publisher");
   const pubSilent = pubBeat?.last_ok
     ? now.getTime() - new Date(pubBeat.last_ok).getTime() > 2 * 3600 * 1000
     : true;
-  if (pubSilent) alerts.push(`Публикатор не отзывается с ${moscowTime(pubBeat?.last_ok ?? null)}.`);
+  if (pubSilent) alerts.push(`Публикатор: нет отклика с ${moscowTime(pubBeat?.last_ok ?? null)}`);
   const colBeat = beat("collector");
-  if (colBeat?.last_error) alerts.push("Последний сбор закончился ошибкой.");
+  if (colBeat?.last_error) alerts.push("Сбор: ошибка в последнем прогоне");
   // просроченные - не тревога: они просто не выйдут (строка ниже)
   void oldestDays;
 
@@ -1514,10 +1514,8 @@ bot.command("auto", async (ctx) => {
 
 function tidyPanelText(ttl: number): string {
   return (
-    (ttl
-      ? `Автоочистка чата ВКЛЮЧЕНА: служебные ответы бота удаляются через ${ttl} ч.`
-      : "Автоочистка чата выключена: служебные ответы бота остаются навсегда.") +
-    "\nКарточки кандидатов и посты канала не трогаются никогда."
+    `Очистка чата: ${ttl ? `через ${ttl} ч` : "выкл"}` +
+    "\nКасается служебных сообщений бота. Карточки постов и канал не затрагиваются."
   );
 }
 
@@ -1563,11 +1561,9 @@ async function triggerCollect(): Promise<"ok" | "no_token" | number> {
 }
 
 function collectReply(r: "ok" | "no_token" | number): string {
-  if (r === "ok") return "Сбор запущен. Новые посты появятся в резерве минут через двадцать.";
-  if (r === "no_token") {
-    return "Сбор отсюда не запустить: у бота нет токена GitHub (секрет GH_PAT). Утренний сбор в 11:05 придёт сам.";
-  }
-  return `Сбор не запустился, GitHub ответил ${r}. Утренний сбор в 11:05 придёт сам.`;
+  if (r === "ok") return "Сбор запущен. Результат в резерве через ~20 мин.";
+  if (r === "no_token") return "Сбор не запущен: нет токена GitHub (GH_PAT). Плановый сбор − 11:05.";
+  return `Сбор не запущен: GitHub ${r}. Плановый сбор − 11:05.`;
 }
 
 bot.command("more", async (ctx) => {
@@ -1610,7 +1606,7 @@ bot.command("quote", async (ctx) => {
   if (error) throw new Error(error.message);
   if (!candidate?.caption_html) return;
   if (!["new", "shown", "approved"].includes(candidate.status)) {
-    await ctx.reply(`#${id}: пост уже вышел или снят − цитату не трогаю.`);
+    await ctx.reply(`#${id}: пост уже вышел или снят, цитата не изменена.`);
     return;
   }
 
@@ -1682,7 +1678,7 @@ bot.command("undo", async (ctx) => {
  * сводку; дальше команды знать не нужно.
  */
 async function openMenu(ctx: PanelCtx & Ctx): Promise<void> {
-  await ctx.reply("Меню внизу. Сводка, очередь, резерв и настройки открываются кнопками.", {
+  await ctx.reply("Меню закреплено внизу.", {
     reply_markup: MAIN_KEYBOARD,
   });
   await showPanel(ctx, await buildHome());
@@ -1717,9 +1713,8 @@ bot.on("message:text", async (ctx) => {
   const text = ctx.message.text.trim();
   if (text.length < 20) {
     await ctx.reply(
-      "Короткий реплай не считаю правкой подписи. " +
-        "Выпустить раньше или удалить пост можно кнопками под карточкой; " +
-        "чтобы заменить подпись − ответьте на карточку полным новым текстом.",
+      "Не правка: короче 20 символов.\n" +
+        "Правка подписи − ответ на карточку полным новым текстом.",
     );
     return;
   }
@@ -1732,7 +1727,7 @@ bot.on("message:text", async (ctx) => {
   if (error) throw new Error(error.message);
   if (!candidate?.caption_html) return;
   if (!PUBLISHABLE.includes(candidate.status)) {
-    await ctx.reply(`#${id}: пост уже вышел или снят − подпись не трогаю.`);
+    await ctx.reply(`#${id}: пост уже вышел или снят, подпись не изменена.`);
     return;
   }
 
@@ -1757,7 +1752,7 @@ bot.on("message:text", async (ctx) => {
   if (updErr) throw new Error(updErr.message);
 
   const tag = draftTag(updated);
-  await ctx.reply(`Новая подпись для поста #${id} − проверьте и подтвердите:\n\n${updated}`, {
+  await ctx.reply(`Пост #${id}, новая подпись. Применить?\n\n${updated}`, {
     parse_mode: "HTML",
     link_preview_options: { is_disabled: true },
     reply_markup: {

@@ -64,7 +64,7 @@ describe("типы сюжетов (редакция 15.11)", () => {
       alerts: [],
       storyWeek: storyLine([{ story: "human", nation: "ussr" }]),
     });
-    expect(s.text).toContain("Сюжеты за неделю");
+    expect(s.text).toContain("Сюжеты за 7 дней");
     expect(s.text).toContain("своё 1, человек 1");
     expect(s.text).not.toMatch(/ - /);
   });
