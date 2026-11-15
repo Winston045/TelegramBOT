@@ -47,9 +47,10 @@ async function main() {
 
   let fixedPosts = 0;
   let checked = 0;
-  for (const row of todo) {
+
+  const proofreadRow = async (row: Row): Promise<"done" | "retry" | "stop"> => {
     const segments = textSegments(row.caption_html);
-    if (!segments.length) continue;
+    if (!segments.length) return "done";
     let answer: { segments?: unknown };
     try {
       answer = await geminiJson<{ segments?: unknown }>(
@@ -62,16 +63,16 @@ async function main() {
       const msg = (err as Error).message;
       if (err instanceof GeminiQuotaError || /полноценной модели|квот/i.test(msg)) {
         console.warn(`квота полноценных моделей кончилась - остальное вычитаем следующей ночью (${msg})`);
-        break;
+        return "stop";
       }
       console.warn(`  #${row.id}: корректор не ответил - ${msg}`);
-      continue;
+      return "retry";
     }
     checked++;
     const out = Array.isArray(answer.segments) ? answer.segments : [];
     if (out.length !== segments.length) {
       console.warn(`  #${row.id}: корректор вернул ${out.length} кусков из ${segments.length} - правки отброшены`);
-      continue;
+      return "done";
     }
     const fixes: Array<{ raw: string; text: string }> = [];
     segments.forEach((seg, i) => {
@@ -106,7 +107,7 @@ async function main() {
       }
     }
     if (fixes.length) fixedPosts++;
-    if (DRY) continue;
+    if (DRY) return "done";
     const { error: upErr } = await db
       .from("candidates")
       .update({
@@ -117,6 +118,27 @@ async function main() {
       // пост мог уйти в канал, пока шла вычитка - тогда не трогаем
       .in("status", ["new", "shown", "approved"]);
     if (upErr) console.warn(`  #${row.id}: не записал - ${upErr.message}`);
+    return "done";
+  };
+
+  // корректор не ответил из-за перегрузки - пост пробуем ещё раз в конце,
+  // после минутной паузы: пробная вычитка 15.11 потеряла так два из двенадцати
+  const retry: Row[] = [];
+  let stopped = false;
+  for (const row of todo) {
+    const r = await proofreadRow(row);
+    if (r === "stop") {
+      stopped = true;
+      break;
+    }
+    if (r === "retry") retry.push(row);
+  }
+  if (!stopped && retry.length) {
+    console.log(`повторный заход по ${retry.length} отложенным, пауза 60 с`);
+    await new Promise((r) => setTimeout(r, 60_000));
+    for (const row of retry) {
+      if ((await proofreadRow(row)) === "stop") break;
+    }
   }
   console.log(`вычитано: ${checked}, с правками: ${fixedPosts}${DRY ? " (dry - база не тронута)" : ""}`);
 }
