@@ -37,6 +37,40 @@ jobs:
           grep -oE 'href="/ru/news/[^"]+"' /tmp/n | sort -u | head -15
           grep -oE '<div class="widget__title">[^<]+' /tmp/n | head -10
           grep -oE 'og:image" content="[^"]+' /tmp/n | head -3
+      - name: Страница новости (разметка)
+        run: |
+          url="https://warthunder.com$(curl -sL --max-time 25 -A 'Mozilla/5.0' https://warthunder.com/ru/news/ | grep -oE 'href="/ru/news/[^"]+"' | head -1 | cut -d'"' -f2)"
+          echo "статья: $url"
+          curl -sL --max-time 25 -A "Mozilla/5.0" "$url" -o /tmp/a
+          grep -oE '<meta property="og:[a-z]+" content="[^"]{0,200}' /tmp/a | head -6
+          grep -oE '<meta property="article:[a-z_]+" content="[^"]+' /tmp/a | head -4
+          echo "--- классы вокруг текста"
+          grep -oE 'class="[^"]*(content|article|news|text|g-grid)[^"]*"' /tmp/a | sort | uniq -c | sort -rn | head -15
+          echo "--- кусок текста"
+          python3 - <<'PY'
+          import re
+          h=open('/tmp/a',encoding='utf-8',errors='ignore').read()
+          for cls in ['content__article','article','news__content','g-grid','content']:
+              i=h.find(cls)
+              if i>0:
+                  print('>>',cls,'@',i); print(re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' ',h[i:i+2500]))[:900]); break
+          print('--- даты:', re.findall(r'(\d{1,2} [а-я]+ \d{4})', h)[:3])
+          print('--- картинки:', re.findall(r'src="(https://static[^"]+\.(?:jpg|png|webp))', h)[:4])
+          PY
+      - name: Лента t.me/s/WarThunderRU (разметка поста)
+        run: |
+          curl -s --max-time 20 "https://t.me/s/WarThunderRU" -o /tmp/t
+          python3 - <<'PY'
+          import re
+          h=open('/tmp/t',encoding='utf-8').read()
+          posts=re.findall(r'data-post="([^"]+)"', h)
+          print('посты:', posts[-5:])
+          texts=re.findall(r'tgme_widget_message_text[^>]*>(.*?)</div>', h, re.S)
+          for t in texts[-3:]:
+              print('>>', re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' ',t))[:300])
+          print('фото:', re.findall(r"background-image:url\('([^']+)'\)", h)[-3:])
+          print('ссылки на сайт:', set(re.findall(r'https://warthunder\.com/ru/news/[^"\s<]+', h)))
+          PY
       - name: Датамайны (GitHub)
         run: |
           curl -s --max-time 25 "https://api.github.com/repos/gszabi99/War-Thunder-Datamine/commits?per_page=5" \
