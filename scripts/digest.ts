@@ -7,9 +7,10 @@ import { getDb } from "../src/db.js";
 import { env } from "../src/env.js";
 import { sendMessageHtml } from "../src/telegram.js";
 import { countPublishedToday, slotsPassed } from "../src/schedule.js";
-import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
+import { loadBoolSetting, loadPublishTimes, loadSetting } from "../src/settings.js";
 import { archiveKey, postNation, RESERVE_TTL_DAYS } from "../src/plan.js";
 import { storyLine } from "../src/story.js";
+import { FEED_RUBRICS, feedDeficits, feedOf, normalizeFeedMode, weeklyTargets } from "../src/feed.js";
 import { readFileSync } from "node:fs";
 
 /** Версия из package.json - чтобы подпись в сводке не рассинхронилась. */
@@ -126,6 +127,35 @@ async function main() {
     weekRows.map((r) => (r.tags as { period?: string } | null)?.period ?? ""),
   );
 
+  // сетка рубрик (src/feed.ts): что вышло за неделю против нормы и что
+  // лежит в резерве - голодная рубрика видна цифрой, а не догадкой
+  const feedMode = normalizeFeedMode(await loadSetting("feed_mode"));
+  const { data: reserveRows } = await db
+    .from("candidates")
+    .select("tags")
+    .in("status", ["new", "shown"])
+    .not("caption_html", "is", null)
+    .gte("created_at", freshSince);
+  const perWeek = times.length * 7;
+  const targets = weeklyTargets(perWeek);
+  const weekFeeds = new Map<string, number>();
+  for (const r of weekRows) {
+    const f = feedOf(r as { tags?: { feed?: string } | null });
+    weekFeeds.set(f, (weekFeeds.get(f) ?? 0) + 1);
+  }
+  const gridWeek = FEED_RUBRICS.map(
+    (r) => `${r.label} ${weekFeeds.get(r.key) ?? 0}/${Math.round(targets.get(r.key) ?? 0)}`,
+  ).join(", ");
+  const stock = feedDeficits((reserveRows ?? []) as Array<{ tags?: { feed?: string } | null }>, perWeek);
+  const stockLine = stock.filter((s) => s.stock > 0).map((s) => `${s.label} ${s.stock}`).join(", ");
+  const hungry = stock.filter((s) => s.stock === 0 && s.need >= 1).map((s) => s.label);
+  const gridBlock = [
+    `Сетка рубрик (${feedMode === "on" ? "включена" : feedMode === "shadow" ? "в тени, выбирает старый планировщик" : "выключена"})`,
+    `вышло за неделю / норма − ${gridWeek}`,
+    `в резерве − ${stockLine || "пусто"}`,
+    hungry.length ? `пусто в резерве − ${hungry.join(", ")}: сбор ищет их первыми` : "все рубрики с запасом",
+  ].join("\n");
+
   const lines = [
     "Сводка на утро",
     "",
@@ -144,6 +174,8 @@ async function main() {
     weekRows.length
       ? `За неделю (${weekRows.length} постов):\nсюжеты − ${weekStories}\nархивы − ${archivesLine || "нет данных"}\nэпохи − ${periodsLine || "нет данных"}`
       : "За неделю постов не было",
+    "",
+    gridBlock,
     "",
     `<i>v${botVersion()}</i>`,
   ];

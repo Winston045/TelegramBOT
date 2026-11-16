@@ -15,7 +15,8 @@
  * хвост. Новый или редкий архив получает средний выход - шанс у него есть.
  */
 import { getDb, selectAll } from "./db.js";
-import { archiveKey } from "./plan.js";
+import { RESERVE_TTL_DAYS, archiveKey } from "./plan.js";
+import { feedDeficits, feedOf, type FeedTags } from "./feed.js";
 
 /** За сколько дней считаем выход. */
 export const YIELD_DAYS = 30;
@@ -31,24 +32,24 @@ export type YieldRow = {
   status: string;
   attribution?: string | null;
   source?: string | null;
-  tags?: { story?: string } | null;
+  tags?: FeedTags;
+  created_at?: string | null;
 };
 
 /**
- * Сетка ленты (15.11): в день нужен хотя бы один пост про человека,
- * поворот или знаковое событие, а «будни армии» - половина ленты. Архив,
- * чьи прошедшие кадры чаще дают такие истории, получает добавку к весу,
- * архив «просто солдат» - скидку. Множитель в этих рамках.
+ * Сбор под заказ (сетка рубрик, 16.11): архив, чьи прошедшие кадры чаще
+ * попадают в рубрики с недобором в резерве, получает добавку к весу;
+ * архив, кормящий переполненные рубрики, - скидку. Квота Gemini уходит
+ * туда, где не хватает, а не на десятый танк. Множитель в этих рамках.
  */
-export const STORY_MIN_FACTOR = 0.8;
-export const STORY_MAX_FACTOR = 1.3;
-const HEADLINE = new Set(["human", "twist", "landmark"]);
+export const FEED_MIN_FACTOR = 0.6;
+export const FEED_MAX_FACTOR = 1.6;
 
 /**
  * Веса архивов по истории анализа: сглаженный выход архива, делённый на
  * общий выход. 1 - средний архив, меньше - хвост очереди, больше - голова.
  */
-export function archiveWeights(rows: YieldRow[]): Map<string, number> {
+export function archiveWeights(rows: YieldRow[], deficits?: Map<string, number>): Map<string, number> {
   const stats = new Map<string, { n: number; ok: number }>();
   let total = 0;
   let passed = 0;
@@ -66,24 +67,33 @@ export function archiveWeights(rows: YieldRow[]): Map<string, number> {
     }
     stats.set(key, s);
   }
-  // доля историй (человек, поворот, событие) среди размеченных прошедших
-  const stories = new Map<string, { tagged: number; headline: number }>();
-  let taggedAll = 0;
-  let headlineAll = 0;
+  // в какие рубрики ленты уходят прошедшие кадры архива
+  const feeds = new Map<string, Map<string, number>>();
+  const feedAll = new Map<string, number>();
+  let passedAll = 0;
   for (const r of rows) {
-    if (!PASSED.has(r.status) || !r.tags?.story) continue;
+    if (!PASSED.has(r.status)) continue;
     const key = archiveKey(r.attribution) || r.source || "";
     if (!key) continue;
-    const st = stories.get(key) ?? { tagged: 0, headline: 0 };
-    st.tagged++;
-    taggedAll++;
-    if (HEADLINE.has(r.tags.story)) {
-      st.headline++;
-      headlineAll++;
-    }
-    stories.set(key, st);
+    const f = feedOf(r);
+    const m = feeds.get(key) ?? new Map<string, number>();
+    m.set(f, (m.get(f) ?? 0) + 1);
+    feeds.set(key, m);
+    feedAll.set(f, (feedAll.get(f) ?? 0) + 1);
+    passedAll++;
   }
-  const headlineMean = taggedAll ? headlineAll / taggedAll : 0;
+  // доля рубрики в общем недоборе: 0 - рубрика сыта, не ищем
+  const needTotal = deficits ? [...deficits.values()].reduce((a, b) => a + b, 0) : 0;
+  const value = (m: Map<string, number> | undefined, n: number, prior: number) => {
+    let v = 0;
+    for (const [f, d] of deficits ?? []) {
+      const pAll = passedAll ? (feedAll.get(f) ?? 0) / passedAll : 0;
+      const p = ((m?.get(f) ?? 0) + prior * pAll) / (n + prior);
+      v += p * (d / needTotal);
+    }
+    return v;
+  };
+  const feedMean = needTotal > 0 && passedAll ? value(feedAll, passedAll, 0) : 0;
 
   const weights = new Map<string, number>();
   if (!total) return weights;
@@ -92,10 +102,10 @@ export function archiveWeights(rows: YieldRow[]): Map<string, number> {
   for (const [key, s] of stats) {
     const smoothed = (s.ok + YIELD_PRIOR * mean) / (s.n + YIELD_PRIOR);
     let w = Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, smoothed / mean));
-    const st = stories.get(key);
-    if (st && headlineMean > 0) {
-      const share = (st.headline + YIELD_PRIOR * headlineMean) / (st.tagged + YIELD_PRIOR);
-      w *= Math.min(STORY_MAX_FACTOR, Math.max(STORY_MIN_FACTOR, share / headlineMean));
+    if (feedMean > 0) {
+      const m = feeds.get(key);
+      const n = m ? [...m.values()].reduce((a, b) => a + b, 0) : 0;
+      w *= Math.min(FEED_MAX_FACTOR, Math.max(FEED_MIN_FACTOR, value(m, n, YIELD_PRIOR) / feedMean));
     }
     weights.set(key, Math.round(w * 100) / 100);
   }
@@ -103,18 +113,37 @@ export function archiveWeights(rows: YieldRow[]): Map<string, number> {
 }
 
 /** Веса архивов по выходу за YIELD_DAYS дней - из истории анализа в базе. */
-export async function loadArchiveWeights(db: ReturnType<typeof getDb>): Promise<Map<string, number>> {
+export async function loadArchiveWeights(
+  db: ReturnType<typeof getDb>,
+  /** постов в неделю по расписанию: от него норма рубрик */
+  postsPerWeek?: number,
+  log?: (line: string) => void,
+): Promise<Map<string, number>> {
   const since = new Date(Date.now() - YIELD_DAYS * 86_400_000).toISOString();
   try {
     const rows = await selectAll<YieldRow>((from, to) =>
       db
         .from("candidates")
-        .select("status, attribution, source, tags")
+        .select("status, attribution, source, tags, created_at")
         .gte("created_at", since)
         .order("id")
         .range(from, to),
     );
-    return archiveWeights(rows);
+    let deficits: Map<string, number> | undefined;
+    if (postsPerWeek) {
+      // запас резерва по рубрикам: годный, ещё не вышедший
+      const fresh = Date.now() - RESERVE_TTL_DAYS * 86_400_000;
+      const reserve = rows.filter(
+        (r) => (r.status === "new" || r.status === "shown") && Date.parse(r.created_at ?? "") >= fresh,
+      );
+      const table = feedDeficits(reserve, postsPerWeek);
+      deficits = new Map(table.map((t) => [t.key, t.deficit]));
+      log?.(
+        "сетка: запас/норма недели - " +
+          table.map((t) => `${t.label} ${t.stock}/${t.need.toFixed(1)}${t.full ? " (сыта)" : ""}`).join(", "),
+      );
+    }
+    return archiveWeights(rows, deficits);
   } catch (err) {
     // без весов очередь просто чередует архивы поровну, как раньше
     console.warn(`веса архивов не прочитаны: ${(err as Error).message}`);

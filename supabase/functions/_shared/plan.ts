@@ -970,6 +970,11 @@ export type PlanInput = SlotContext & {
   autoPublish: boolean;
   /** Форматирование времени запланированных постов. */
   formatScheduled: (iso: string) => string;
+  /**
+   * Свой подборщик вместо planAuto - сетка рубрик (feed.ts) в режиме on.
+   * Параметром, а не импортом: общие файлы друг друга не импортируют.
+   */
+  planner?: (pool: PlanCandidate[], recent: RecentContext, count: number) => PlanCandidate[];
 };
 
 /**
@@ -1006,7 +1011,7 @@ export function buildPlan(input: PlanInput, count: number): PlanEntry[] {
     ...(input.autoPublish ? input.reserve : []),
   ];
   const want = Math.max(input.approved.length, count - entries.length);
-  const bySlot: Array<{ candidate: PlanCandidate; kind: PlanKind }> = planAuto(
+  const bySlot: Array<{ candidate: PlanCandidate; kind: PlanKind }> = (input.planner ?? planAuto)(
     pool,
     input.recent,
     want,

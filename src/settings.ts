@@ -21,6 +21,17 @@ export async function loadBoolSetting(key: string, fallback: boolean): Promise<b
   }
 }
 
+/** Произвольное значение из settings; нет записи или таблицы - undefined. */
+export async function loadSetting(key: string): Promise<unknown> {
+  try {
+    const { data, error } = await getDb().from("settings").select("value").eq("key", key).maybeSingle();
+    if (error || !data) return undefined;
+    return data.value;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function loadPublishTimes(fallback: string[]): Promise<string[]> {
   try {
     const { data, error } = await getDb()

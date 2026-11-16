@@ -11,7 +11,9 @@ import { getDb, loadKnownHashes } from "../src/db.js";
 import { env } from "../src/env.js";
 import { channelSlug } from "../src/tme.js";
 import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/schedule.js";
-import { loadBoolSetting, loadPublishTimes } from "../src/settings.js";
+import { loadBoolSetting, loadPublishTimes, loadSetting } from "../src/settings.js";
+import { HOME_NATION, eventKeys } from "../src/plan.js";
+import { feedHistory, feedLabel, feedOf, normalizeFeedMode, planGrid, type FeedPost, type GridReason } from "../src/feed.js";
 import { isDuplicate } from "../src/dhash.js";
 import {
   approvedPriority,
@@ -73,7 +75,11 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
     weekEvents: recentEvents(rows),
   };
 
+  // сетка рубрик (src/feed.ts) помнит две недели: рубрики, метки, события
+  const feedPosts: FeedPost[] = feedHistory(rows, (r) => postNation(r), (r) => eventKeys(r));
+
   return {
+    feedPosts,
     subjects: posts
       .map((p) => (p.tags as { subject?: string } | null)?.subject)
       .filter((s): s is string => Boolean(s)),
@@ -227,7 +233,44 @@ async function main() {
       ];
       // тот же планировщик, что показывает /queue - предпросмотр не врёт
       let fallback = false;
-      const [pick] = planAuto(pool, recent, 1, () => (fallback = true));
+      // сетка рубрик (16.11): on - выбирает она, shadow - выбирает старый
+      // планировщик, а сетка пишет в лог, что взяла бы (два дня сравнения)
+      const feedMode = normalizeFeedMode(await loadSetting("feed_mode"));
+      const gridReasons: GridReason[] = [];
+      let gridFallback = false;
+      const [gridPick] =
+        feedMode === "off"
+          ? []
+          : planGrid(
+              pool,
+              recent.feedPosts,
+              1,
+              {
+                now,
+                nationOf: (c) => postNation(c),
+                eventsOf: (c) => eventKeys(c),
+                homeNation: HOME_NATION,
+                postsPerWeek: times.length * 7,
+                onFallback: () => (gridFallback = true),
+              },
+              gridReasons,
+            );
+      const [oldPick] = feedMode === "on" ? [] : planAuto(pool, recent, 1, () => (fallback = true));
+      const pick = feedMode === "on" ? gridPick : oldPick;
+      if (feedMode !== "off") {
+        const why = gridReasons[0]?.why ?? "под жёсткие лимиты не подошёл никто";
+        console.log(
+          `сетка (${feedMode === "on" ? "выбирает" : "тень"}): ` +
+            (gridPick ? `#${gridPick.id} [${feedLabel(feedOf(gridPick))}] - ${why}` : `пусто - ${why}`) +
+            (gridFallback ? " (мягкие правила сняты)" : ""),
+        );
+        if (feedMode === "shadow" && oldPick) {
+          console.log(
+            `старый планировщик: #${oldPick.id} [${feedLabel(feedOf(oldPick))}]` +
+              (gridPick && gridPick.id === oldPick.id ? " - совпали" : " - сетка выбрала бы другой"),
+          );
+        }
+      }
       if (fallback) {
         console.log(
           `аварийный добор: под все правила не подошёл ни один из ${pool.length} - взят лучший из допустимых`,

@@ -44,28 +44,26 @@ describe("сетка ленты: будни армии и истории", () =>
   });
 });
 
-describe("сбор под сетку: архив историй получает больше квоты", () => {
-  const rows = (attribution: string, stories: string[]): YieldRow[] =>
-    stories.map((story) => ({ attribution, status: "published", tags: { story } }));
+describe("сбор под заказ: архив голодной рубрики получает больше квоты", () => {
+  const rows = (attribution: string, feeds: string[]): YieldRow[] =>
+    feeds.map((feed) => ({ attribution, status: "published", tags: { feed } }));
+  const history = [
+    ...rows("NHHC", ["navy", "navy", "navy", "navy", "navy", "navy"]),
+    ...rows("SA-kuva", ["ground", "ground", "ground", "ground", "ground", "ground"]),
+    // одинаковый выход: у каждого 6 прошедших и 6 отсеянных
+    ...Array.from({ length: 6 }, () => ({ attribution: "NHHC", status: "rejected" })),
+    ...Array.from({ length: 6 }, () => ({ attribution: "SA-kuva", status: "rejected" })),
+  ];
 
-  it("при равном выходе архив историй про людей весит больше архива будней армии", () => {
-    const history = [
-      ...rows("Аркадий Шайхет", ["human", "human", "twist", "service", "human", "landmark"]),
-      ...rows("SA-kuva", ["service", "service", "service", "service", "service", "service"]),
-      // одинаковый выход: у каждого 6 прошедших и 6 отсеянных
-      ...Array.from({ length: 6 }, () => ({ attribution: "Аркадий Шайхет", status: "rejected" })),
-      ...Array.from({ length: 6 }, () => ({ attribution: "SA-kuva", status: "rejected" })),
-    ];
-    const w = archiveWeights(history);
-    expect(w.get("аркадий шайхет")!).toBeGreaterThan(w.get("sa-kuva")!);
+  it("при равном выходе вперёд архив, который кормит рубрику с недобором", () => {
+    // флота в резерве нет, техника сыта
+    const w = archiveWeights(history, new Map([["navy", 2], ["ground", 0]]));
+    expect(w.get("nhhc")!).toBeGreaterThan(w.get("sa-kuva")!);
     expect(w.get("sa-kuva")!).toBeLessThan(1);
   });
 
-  it("без разметки сюжетов веса как раньше - только по выходу", () => {
-    const w = archiveWeights([
-      { attribution: "IWM", status: "published" },
-      { attribution: "IWM", status: "rejected" },
-    ]);
-    expect(w.get("iwm")).toBe(1);
+  it("без недобора веса как раньше - только по выходу", () => {
+    const w = archiveWeights(history);
+    expect(w.get("nhhc")).toBe(w.get("sa-kuva"));
   });
 });

@@ -55,9 +55,12 @@ import {
   type Screen,
 } from "../_shared/menu.ts";
 import { storyLine } from "../_shared/story.ts";
+import { feedHistory, normalizeFeedMode, planGrid } from "../_shared/feed.ts";
 import {
   EVENT_MEMORY_DAYS,
   HISTORY_WINDOW,
+  HOME_NATION,
+  eventKeys,
   LONG_QUOTE,
   RECENT_WINDOW,
   RESERVE_TTL_DAYS,
@@ -1363,6 +1366,9 @@ bot.command("status", async (ctx) => {
 async function currentPlan(count: number): Promise<PlanEntry[]> {
   const autoPublish = await getAutoPublish();
   const times = await getPublishTimes();
+  // сетка рубрик: в режиме on план строит она, как и публикатор
+  const { data: modeRow } = await db.from("settings").select("value").eq("key", "feed_mode").maybeSingle();
+  const feedMode = normalizeFeedMode(modeRow?.value);
 
   const [scheduledRes, approvedRes, reserveRes, recentRes, todayRes, weekRes] = await Promise.all([
     db
@@ -1476,6 +1482,17 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       },
       autoPublish,
       formatScheduled: moscowTime,
+      planner:
+        feedMode === "on"
+          ? (pool, _recent, want) =>
+              planGrid(pool, feedHistory(memoryRows, (r) => postNation(r), (r) => eventKeys(r)), want, {
+                now: new Date(),
+                nationOf: (c) => postNation(c),
+                eventsOf: (c) => eventKeys(c),
+                homeNation: HOME_NATION,
+                postsPerWeek: times.length * 7,
+              })
+          : undefined,
     },
     count,
   );

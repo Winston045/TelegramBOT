@@ -24,6 +24,7 @@ import { byPromise, isHome, promise } from "../src/promise.js";
 import { buildAnalysisQueue } from "../src/queue.js";
 import { WIKIMEDIA_UA } from "../src/wiki.js";
 import { loadArchiveWeights, YIELD_DAYS } from "../src/yield.js";
+import { loadPublishTimes } from "../src/settings.js";
 import { hiResLocUrl } from "../src/sources/loc.js";
 import { dhash, isDuplicate } from "../src/dhash.js";
 import { isStereoPair } from "../src/stereo.js";
@@ -346,7 +347,9 @@ async function main() {
   const ranked = byPromise(unseen);
   // квота Gemini кончается на первых 6-15 кадрах очереди: вперёд - архивы,
   // чьи кадры реально проходят сито (src/yield.ts)
-  const weights = db ? await loadArchiveWeights(db) : new Map<string, number>();
+  // сбор под заказ: архивы, кормящие голодные рубрики сетки, - вперёд
+  const postsPerWeek = (await loadPublishTimes(cfg.publish.times)).length * 7;
+  const weights = db ? await loadArchiveWeights(db, postsPerWeek, (l) => console.log(l)) : new Map<string, number>();
   if (weights.size) {
     const shown = [...weights.entries()]
       .sort((a, b) => b[1] - a[1])

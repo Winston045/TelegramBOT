@@ -11,6 +11,7 @@ import { geminiJson, imagePart } from "./gemini.js";
 import { FEW_SHOT, captionRules, metadataBlock } from "./caption.js";
 import { SCORE_FIELDS_SCHEMA, SCORING_CRITERIA } from "./scoring.js";
 import { normalizeStory, storyGuide } from "./story.js";
+import { feedGuide, normalizeFeed, normalizeMarks } from "./feed.js";
 import type { GeneratedCaption } from "./caption.js";
 import type { VisionScore } from "./scoring.js";
 import { rubricOf } from "./rubrics.js";
@@ -100,6 +101,11 @@ ${storyGuide()}
 "service", даже если кадр хороший: по этому типу редакция видит, сколько
 в ленте «просто армии».
 
+${feedGuide()}
+Рубрика решает, в какой день и рядом с чем пост выйдет; метка тяжёлой
+темы ограничивает, как часто такие посты выходят. Ставь честно: пленные
+под конвоем - рубрика по сцене ("combat") плюс метка "pow".
+
 Верни строго JSON без обёрток и без markdown:
 {${SCORE_FIELDS_SCHEMA}, "subject_wiki": "<название статьи или пустая строка>", "people": ["<имя из caption>"], "event_wiki": "<название статьи о событии или пустая строка>", "caption": "...", "quote": "<обычный пост: место и год короткой строкой; изюминка: факт-справка>", "quote_place": "<у изюминки место и дата ВСЕГДА здесь - отдельной второй цитатой после факта; у обычного поста пустая строка>", "quote_kind": "observation" | "context"}`;
 }
@@ -134,6 +140,13 @@ export async function analyzeImage(
       const story = normalizeStory(tags.story);
       if (story) tags.story = story;
       else delete tags.story;
+      // рубрика ленты и метки - только из списков (src/feed.ts)
+      const feed = normalizeFeed(tags.feed);
+      if (feed) tags.feed = feed;
+      else delete tags.feed;
+      const marks = normalizeMarks(tags.marks);
+      if (marks.length) tags.marks = marks;
+      else delete tags.marks;
       return tags;
     })(),
     unsafe: Boolean(result.unsafe),
