@@ -56,6 +56,10 @@ jobs:
             migrate) npm run migrate ;;
             tagleaders) npx tsx scripts/tag-leaders.ts ;;
             simulate) npx tsx scripts/simulate.ts ;;
+            # режим сетки рубрик: feedmode:on | feedmode:shadow | feedmode:off
+            feedmode)
+              m=$(grep -oP 'feedmode:\K[a-z]+' .github/report.trigger || true)
+              npx tsx scripts/feed-mode.ts "$m" ;;
             # сетка рубрик на живом резерве: feedsim:12
             feedsim)
               n=$(grep -oP 'feedsim:\K\d+' .github/report.trigger || true)
