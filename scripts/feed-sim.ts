@@ -21,7 +21,7 @@ import {
   recentEvents,
   type PlanCandidate,
 } from "../src/plan.js";
-import { feedHistory, feedLabel, feedOf, marksOf, planGrid, type GridReason } from "../src/feed.js";
+import { feedHistory, feedLabel, feedOf, markBlocked, marksOf, planGrid, type GridReason } from "../src/feed.js";
 
 async function main() {
   const n = Number(process.argv[2]) || 12;
@@ -82,6 +82,21 @@ async function main() {
     );
     if (r) console.log(`      ${r.why}`);
   });
+
+  // кого сетка не взяла и почему: событие и метки - жёсткие лимиты
+  const taken = new Set(grid.map((c) => c.id));
+  const histEvents = new Set(history.flatMap((p) => p.events));
+  const rest = pool.filter((c) => !taken.has(c.id));
+  if (rest.length) console.log("\nне взяты:");
+  for (const c of rest) {
+    const why: string[] = [];
+    const ev = eventKeys(c).filter((k) => histEvents.has(k));
+    if (ev.length) why.push(`событие уже было за 14 дней: ${ev.join(", ")}`);
+    const blocked = marksOf(c).filter((m) => markBlocked(m, history, now));
+    if (blocked.length) why.push(`лимит метки: ${blocked.join(", ")}`);
+    if (!why.length) why.push("слотов не хватило или событие совпало с выбранным в этом же плане");
+    console.log(`  #${c.id} [${feedLabel(feedOf(c))}] ${headline(c.caption_html, 60)} - ${why.join("; ")}`);
+  }
 
   const weekAgo = new Date(now.getTime() - 7 * 86_400_000).toISOString();
   const recent = {
