@@ -56,6 +56,10 @@ jobs:
             migrate) npm run migrate ;;
             tagleaders) npx tsx scripts/tag-leaders.ts ;;
             simulate) npx tsx scripts/simulate.ts ;;
+            # сетка рубрик на живом резерве: feedsim:12
+            feedsim)
+              n=$(grep -oP 'feedsim:\K\d+' .github/report.trigger || true)
+              npx tsx scripts/feed-sim.ts ${n:-12} ;;
             # типы сюжетов у разобранных до разметки: tagstory (dry - без записи)
             tagstory)
               if grep -q 'dry' .github/report.trigger; then
