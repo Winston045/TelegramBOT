@@ -1,0 +1,126 @@
+name: probe-sources
+# Разовая проба новых источников с раннера GitHub: откуда реально ходит бот.
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - ".github/probe-sources.trigger"
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Commons - кандидаты в архивы
+        run: |
+          cat > /tmp/q.py <<'PY'
+          import json, sys, urllib.request, urllib.parse, time
+          UA = {"User-Agent": "history-channel-bot/1.0 (probe)"}
+          def api(params):
+              url = "https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode({**params, "format": "json", "formatversion": 2})
+              with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
+                  return json.load(r)
+          cats = [l.strip() for l in open(sys.argv[1]) if l.strip()]
+          for i in range(0, len(cats), 40):
+              chunk = cats[i:i+40]
+              d = api({"action": "query", "prop": "categoryinfo", "titles": "|".join("Category:" + c for c in chunk)})
+              for p in d["query"]["pages"]:
+                  ci = p.get("categoryinfo")
+                  print(("НЕТ                " if not ci else f"файлов {ci['files']:>7} подкат {ci['subcats']:>4} ") + p["title"])
+              time.sleep(1.5)
+          PY
+          cat > /tmp/cats.txt <<'TXT'
+          Photographs by Max Alpert
+          Photographs by Emmanuil Evzerikhin
+          Photographs by Ivan Shagin
+          Photographs by Mark Markov-Grinberg
+          Photographs by Boris Kudoyarov
+          Photographs by Yakov Ryumkin
+          Photographs by Mikhail Savin
+          Photographs by Anatoly Garanin
+          Photographs by Georgy Petrusov
+          Photographs by Natalya Bode
+          Photographs by Dmitri Baltermants
+          Photographs by Mikhail Trakhman
+          Photographs by Robert Diament
+          Photographs by Olga Lander
+          Photographs by Viktor Temin
+          Photographs by Mark Redkin
+          Photographs by Sergey Strunnikov
+          Photographs by Oleg Knorring
+          Photographs by Alexander Ustinov
+          Photographs by Ivan Narcissov
+          Photographs by Fyodor Levshin
+          Photographs by Vsevolod Tarasevich
+          Photographs by Pavel Troshkin
+          Photographs by Samary Gurary
+          Photographs by Ivan Kalashnikov
+          Photographs by Viktor Kinelovsky
+          Photographs by Leonid Dorensky
+          Photographs by Alexander Kapustyansky
+          Photographs by Yevgeny Dolmatovsky
+          Photographs by Mikhail Kalashnikov
+          Images from Library and Archives Canada
+          Photographs from Library and Archives Canada
+          Images from the Nationaal Archief
+          Images from the Finnish Heritage Agency
+          Photographs by the Finnish Heritage Agency
+          Images from the National Archives of Australia
+          Images from the State Library of New South Wales
+          Images from the Czech News Agency
+          Images from Deutsche Fotothek
+          Images from the Bundesarchiv
+          Images from the U.S. National Archives
+          Images from the United States Holocaust Memorial Museum
+          Images from the Smithsonian Institution
+          Images from the San Diego Air and Space Museum Archive
+          San Diego Air & Space Museum Archives
+          Images from the Royal Netherlands Air Force
+          Images from the Australian War Memorial
+          Images from the Auckland War Memorial Museum
+          Images from Auckland Museum
+          Images from the Military History Institute (Czech Republic)
+          Images from the Polish National Digital Archive
+          Images from the Estonian National Archives
+          Images from the Latvian War Museum
+          Images from Fortepan
+          Soviet photographs of World War II
+          World War II photographs from RIA Novosti
+          Photographs of the Eastern Front (World War II)
+          Images from the Imperial War Museum
+          Images from the US Navy
+          Photographs by the Royal Australian Navy
+          Images from the National Library of Norway
+          Images from the National Archives of Norway
+          Images from the Norwegian Armed Forces Museum
+          Images from the Danish Arsenal Museum
+          Images from Musée de l'Armée
+          Images from the ECPAD
+          Images from the Bibliothèque nationale de France
+          Images from Gallica
+          Images from the National Library of Wales
+          Images from the National Library of Scotland
+          Images from the National Archives (United Kingdom)
+          Images from the State Archives of Belgium
+          Images from the Army Heritage Center Foundation
+          Images from the United States Army Heritage and Education Center
+          Images from the National Museum of the U.S. Air Force
+          Photographs by the United States Marine Corps
+          Images from the United States Marine Corps
+          Images from DefenseImagery.mil
+          Images from DVIDS
+          TXT
+          sed -i 's/^ *//' /tmp/cats.txt
+          python3 /tmp/q.py /tmp/cats.txt | sort -t' ' -k2 -rn
+      - name: PastVu - военные кадры среди городских
+        run: |
+          for geo in "[55.751,37.617]" "[59.939,30.316]" "[48.708,44.514]" "[44.617,33.525]" "[52.52,13.405]"; do
+            curl -sSG "https://pastvu.com/api2" --data-urlencode "method=photo.giveNearestPhotos" \
+              --data-urlencode "params={\"geo\":$geo,\"limit\":100,\"year\":1939,\"year2\":1945}" \
+            | python3 -c "
+          import json,sys,re
+          ph=json.load(sys.stdin).get('result',{}).get('photos',[])
+          rx=re.compile(r'войн|воен|фронт|солдат|бойц|красноарм|танк|оруди|зенит|самол|парад|оборон|блокад|баррикад|окоп|раненн|госпитал|эвакуац|бомб|разруш|руин|немц|пленн|ополчен|краснофлот|моряк|катюш|победа|освобожд',re.I)
+          hit=[p for p in ph if rx.search(p.get('title',''))]
+          print('$geo всего',len(ph),'военных',len(hit))
+          for p in hit[:6]: print('  ',p.get('year'),p.get('title'))"
+          done
