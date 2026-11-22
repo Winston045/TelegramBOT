@@ -55,7 +55,15 @@ import {
   type Screen,
 } from "../_shared/menu.ts";
 import { storyLine } from "../_shared/story.ts";
-import { feedHistory, normalizeFeedMode, planGrid } from "../_shared/feed.ts";
+import {
+  TASTE_DAYS,
+  feedHistory,
+  normalizeFeedMode,
+  planGrid,
+  tasteKeys,
+  tasteMap,
+  tastePenalty,
+} from "../_shared/feed.ts";
 import {
   EVENT_MEMORY_DAYS,
   HISTORY_WINDOW,
@@ -757,7 +765,8 @@ async function handleMenu(ctx: CbCtx, parts: string[]): Promise<void> {
         .update({ status: "rejected" })
         .eq("id", Number(a))
         .in("status", ["new", "shown", "approved"])
-        .select("id");
+        .select("id, tags");
+      await markEditor(data, "drop");
       if (!data?.length) return void (await toast(TOAST.gone));
       await editPanel(ctx, await buildBack(b ?? "q"));
       return void (await toast(TOAST.dropped));
@@ -799,7 +808,8 @@ async function handleMenu(ctx: CbCtx, parts: string[]): Promise<void> {
         .eq("id", id)
         .eq("status", "published")
         .not("channel_msg_id", "is", null)
-        .select("id, channel_msg_id");
+        .select("id, channel_msg_id, tags");
+      await markEditor(data, "delete_published");
       if (error) throw new Error(error.message);
       const row = data?.[0];
       if (!row) return void (await toast(TOAST.gone));
@@ -850,7 +860,8 @@ bot.on("callback_query:data", async (ctx) => {
           .update({ status: "rejected" })
           .eq("id", id)
           .in("status", ["new", "shown", "approved"])
-          .select("id");
+          .select("id, tags");
+        await markEditor(data, "skip");
         if (!data?.length) {
           await ctx.answerCallbackQuery({ text: "Уже обработано" });
           return;
@@ -980,7 +991,8 @@ bot.on("callback_query:data", async (ctx) => {
           .update({ status: "rejected" })
           .eq("id", id)
           .in("status", ["approved", "new", "shown"])
-          .select("id");
+          .select("id, tags");
+        await markEditor(data, "remove_from_plan");
         if (!data?.length) {
           await ctx.answerCallbackQuery({ text: "Уже обработано" });
           return;
@@ -1059,7 +1071,8 @@ bot.on("callback_query:data", async (ctx) => {
           .eq("id", id)
           .eq("status", "published")
           .not("channel_msg_id", "is", null)
-          .select("id, channel_msg_id");
+          .select("id, channel_msg_id, tags");
+        await markEditor(data, "delete_published");
         if (error) throw new Error(error.message);
         const row = data?.[0];
         if (!row) {
@@ -1369,6 +1382,22 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
   // сетка рубрик: в режиме on план строит она, как и публикатор
   const { data: modeRow } = await db.from("settings").select("value").eq("key", "feed_mode").maybeSingle();
   const feedMode = normalizeFeedMode(modeRow?.value);
+  // вкус редакции - как у публикатора, чтобы план совпадал с выбором
+  const taste =
+    feedMode === "on"
+      ? tasteMap(
+          ((
+            await db
+              .from("candidates")
+              .select("status, caption_html, tags, attribution, source")
+              .in("status", ["rejected", "published"])
+              .not("caption_html", "is", null)
+              .gte("created_at", new Date(Date.now() - TASTE_DAYS * 86_400_000).toISOString())
+              .limit(2000)
+          ).data ?? []) as Array<{ status: string; caption_html: string | null; tags: Record<string, unknown> | null; attribution: string | null; source: string | null }>,
+          (r) => tasteKeys(r, archiveKey(r.attribution) || (r.source ?? "")),
+        )
+      : new Map<string, number>();
 
   const [scheduledRes, approvedRes, reserveRes, recentRes, todayRes, weekRes] = await Promise.all([
     db
@@ -1491,11 +1520,34 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
                 eventsOf: (c) => eventKeys(c),
                 homeNation: HOME_NATION,
                 postsPerWeek: times.length * 7,
+                tasteOf: (c) => tastePenalty(taste, tasteKeys(c, archiveKey(c.attribution) || (c.source ?? ""))),
               })
           : undefined,
     },
     count,
   );
+}
+
+/**
+ * Пометка удаления редакцией (22.11): по ним бот учится, какой контент
+ * редакции не нужен (scripts/editor-taste.ts, вкус в весах архивов и
+ * сетке). Раньше удаление отличалось от отсева только отсутствием
+ * tags.gate - теперь явно. Сбой пометки не мешает самому удалению.
+ */
+async function markEditor(
+  rows: Array<{ id: number; tags?: Record<string, unknown> | null }> | null | undefined,
+  how: string,
+): Promise<void> {
+  for (const r of rows ?? []) {
+    await db
+      .from("candidates")
+      .update({ tags: { ...(r.tags ?? {}), editor: how, editor_at: new Date().toISOString() } })
+      .eq("id", r.id)
+      .then(
+        () => undefined,
+        () => undefined,
+      );
+  }
 }
 
 /** Пометка, откуда пост в плане - объявлена функцией, её зовёт и /status. */
@@ -1606,7 +1658,8 @@ bot.command("skip", async (ctx) => {
     .update({ status: "rejected" })
     .eq("id", id)
     .in("status", ["new", "shown", "approved"])
-    .select("id");
+    .select("id, tags");
+  await markEditor(data, "skip_command");
   if (error) throw new Error(error.message);
   await ctx.reply(data?.length ? `Пост #${id} пропущен.` : `#${id}: уже в другом статусе, не тронул.`);
 });

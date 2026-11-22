@@ -33,9 +33,7 @@ sources:
       # проба 01.09: «color transparencies 1943» отдаёт кадры без места и
       # без описания - всё гибнет на префильтре. Цвет надёжно несёт только
       # формула «war production color»: расширяем её на второй год
-      - "war production color 1943"
       - "guadalcanal 1943 photograph"
-      - "war production color 1942"                       # годных 5
       - "pacific 1944 landing"                            # годных 5
       - "royal air force"                                 # годных 4
       - "berlin wall 1961"                                # годных 4
@@ -62,14 +60,9 @@ sources:
       # ---- Рубрики вне ядра (src/rubrics.ts), проба 18.10 ----
       # плакаты: литографии «1 print (poster) : lithograph» - PD; снимки
       # плакатов на стене префильтр рубрики отсекает по носителю
-      - { q: "world war poster 1917", rubric: "poster" }
       # карикатуры LOC: «1 drawing. | Cartoon shows ...» - газетная сатира ПМВ
-      - { q: "cartoon 1917 war", rubric: "poster" }
       # социальная история: Льюис Хайн для Национального комитета по
       # детскому труду - подробные подписи самого фотографа
-      - { q: "lewis hine 1911", rubric: "social" }
-      - { q: "hine child labor", rubric: "social" }
-      - { q: "dust bowl 1936", rubric: "social" }
   # архивы разных стран на Wikimedia Commons - главный источник разнообразия
   commons:
     enabled: true
@@ -213,29 +206,6 @@ sources:
         terms: ["katona", "harckocsi", "1944", "repülőgép", "1942", "1943"]
       # Национальная библиотека Ирландии: Пасхальное восстание 1916 и
       # гражданская война 1922 - эпоха, которой в ленте не было
-      - category: "Images from the National Library of Ireland"
-        attribution: "National Library of Ireland"
-        lang: "en"
-        terms: ["1916", "1922", "1920", "1921", "1923"]
-      # ---- Рубрики вне ядра (src/rubrics.ts) ----
-      # культура 1945-1989: Anefo ТОЛЬКО по именам мировых звёзд. Редакция
-      # 22.10: слова «popgroep», «zangeres», «actrice», «jazz» приносили
-      # местную эстраду, которую никто не знает. В рубрику пропускаются
-      # лишь кадры, где архив назвал звезду из CULTURE_STARS (src/rubrics.ts)
-      - category: "Images from Anefo"
-        attribution: "Anefo / Nationaal Archief"
-        lang: "nl"
-        rubric: "culture"
-        terms: ["Beatles", "Rolling Stones", "Louis Armstrong", "Ella Fitzgerald", "Duke Ellington",
-                "Marlene Dietrich", "Sophia Loren", "Audrey Hepburn", "Kirk Douglas", "Gloria Swanson",
-                "Josephine Baker", "Count Basie", "Miles Davis", "Jimi Hendrix", "ABBA",
-                "Charles Aznavour", "Jacques Brel", "Yves Montand", "Lionel Hampton", "Harry Belafonte",
-                "Mahalia Jackson", "Ray Charles", "Chuck Berry", "Cliff Richard", "Shirley Bassey",
-                "Danny Kaye", "Jerry Lewis", "Gina Lollobrigida", "Rudolf Noerejev"]
-      # современная армия 1991-2013 (проба 2, 18.10): съёмка Минобороны
-      # США в NARA - на пробе A-7E над Кувейтом, египетский M60 «Щита
-      # пустыни», сербская ЗСУ-57-2 и Т-34 в Боснии 1996, французские САУ
-      # IFOR. Курсоры у записи свои, с записью ядра NARA не путаются
       - category: "Images from the National Archives and Records Administration"
         attribution: "NARA"
         lang: "en"
@@ -249,53 +219,10 @@ sources:
         terms: ["1991", "Desert Storm", "Allied Force"]
       # плакаты Второй мировой: по дереву и со словом poster - без слова
       # дерево приносило фотографии Палмера, попавшие в категорию плакатов
-      - category: "World War II posters"
-        attribution: "WWII posters"
-        lang: "en"
-        rubric: "poster"
-        deep: true
-        terms: ["poster"]
-      # советский плакат: Лисицкий, Апсит, плакаты Туркестана - PD на Commons
-      - category: "Posters of the Soviet Union"
-        attribution: "Soviet posters"
-        lang: "ru"
-        rubric: "poster"
-        deep: true
-        terms: [""]
-      # карикатуры (проба 3): Первая мировая по дереву - PD, рисунки и
-      # страницы «Mr. Punch's history of the Great War»; карикатуры на
-      # Гитлера - Артур Шик и союзная сатира. Марки-пародии и поздний
-      # мусор срежет окно лет рубрики и оценка
-      - category: "World War I cartoons"
-        attribution: "WWI cartoons"
-        lang: "en"
-        rubric: "poster"
-        deep: true
-        terms: [""]
-      - category: "Caricatures of Adolf Hitler"
-        attribution: "Hitler caricatures"
-        lang: "en"
-        rubric: "poster"
-        deep: true
-        terms: [""]
-      # плакаты Первой мировой: категория по дереву - на пробе вербовочные
-      # британские и американские плакаты, все PD
-      - category: "World War I posters"
-        attribution: "WWI posters"
-        lang: "en"
-        rubric: "poster"
-        deep: true
-        terms: [""]
-  # ---- Знаковые события вне войны (решение 01.09) ----
-  # Мирное берём ТОЛЬКО по событиям, не по местам и годам: урок PastVu -
-  # листание городов приносило соборы и колонны без крючка. Здесь каждая
-  # категория - конкретное событие, кадры сами несут момент, редкость или
-  # человеческую историю; пропаганду и памятники отсеет сито. Долю мирного
-  # в ленте держит планировщик (не чаще одного на окно из четырёх постов),
-  # этот источник лишь поставляет сырьё. Категории проверять пробой
-  # sources-check после каждого изменения списка.
   events:
-    enabled: true
+    # выключено 22.11: Гинденбург, Аполлон и прочие мирные события редакция
+    # удаляла - по её удалениям за 30 дней невоенное уходит в 63% случаев
+    enabled: false
     weight: 12
     archives:
       - category: "Apollo 11"                      # высадка на Луну, 1969

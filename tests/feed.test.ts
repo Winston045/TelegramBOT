@@ -174,3 +174,32 @@ describe("сбор под заказ", () => {
     expect(d.get("person")!.full).toBe(false);
   });
 });
+
+describe("вкус редакции по её удалениям", async () => {
+  const { tasteMap, tasteKeys, tastePenalty, isEditorReject } = await import("../src/feed.js");
+  const row = (archive: string, status: string, extra: Record<string, unknown> = {}) => ({
+    status,
+    caption_html: "Пост.",
+    tags: { subject: "culture", ...extra } as Record<string, unknown>,
+    archive,
+  });
+  it("удаление редакцией отличается от отсева сбора", () => {
+    expect(isEditorReject({ status: "rejected", caption_html: "x", tags: {} })).toBe(true);
+    expect(isEditorReject({ status: "rejected", caption_html: "x", tags: { gate: "hookless" } })).toBe(false);
+    expect(isEditorReject({ status: "rejected", caption_html: null, tags: {} })).toBe(false);
+    expect(isEditorReject({ status: "rejected", caption_html: "x", tags: { gate: "old_reserve", editor: "skip" } })).toBe(true);
+  });
+  it("архив, который удаляют чаще среднего, получает штраф; любимый - нет", () => {
+    const rows = [
+      ...Array.from({ length: 11 }, () => row("anefo", "rejected")),
+      ...Array.from({ length: 2 }, () => row("anefo", "published")),
+      ...Array.from({ length: 20 }, () => row("риа новости", "published", { subject: "armor" })),
+      ...Array.from({ length: 4 }, () => row("iwm", "rejected", { subject: "armor" })),
+      ...Array.from({ length: 10 }, () => row("iwm", "published", { subject: "armor" })),
+    ];
+    const map = tasteMap(rows, (r) => tasteKeys(r, r.archive));
+    expect(map.get("a:anefo")).toBeGreaterThanOrEqual(10);
+    expect(map.get("a:риа новости") ?? 0).toBe(0);
+    expect(tastePenalty(map, ["a:anefo", "s:culture"])).toBeGreaterThan(tastePenalty(map, ["a:iwm", "s:armor"]));
+  });
+});

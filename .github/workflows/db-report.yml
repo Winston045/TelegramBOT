@@ -56,6 +56,13 @@ jobs:
             migrate) npm run migrate ;;
             tagleaders) npx tsx scripts/tag-leaders.ts ;;
             simulate) npx tsx scripts/simulate.ts ;;
+            # снять из резерва то, что редакция не берёт (эстрада, плакаты, мирное)
+            purgetaste)
+              if grep -q 'apply' .github/report.trigger; then
+                npx tsx scripts/purge-taste.ts --apply
+              else
+                npx tsx scripts/purge-taste.ts
+              fi ;;
             # вкус редакции по её удалениям: taste:30
             taste)
               n=$(grep -oP 'taste:\K\d+' .github/report.trigger || true)

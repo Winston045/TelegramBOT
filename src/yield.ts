@@ -16,7 +16,7 @@
  */
 import { getDb, selectAll } from "./db.js";
 import { RESERVE_TTL_DAYS, archiveKey } from "./plan.js";
-import { feedDeficits, feedOf, type FeedTags } from "./feed.js";
+import { feedDeficits, feedOf, isEditorReject, type FeedTags } from "./feed.js";
 
 /** За сколько дней считаем выход. */
 export const YIELD_DAYS = 30;
@@ -30,6 +30,7 @@ const PASSED = new Set(["new", "shown", "approved", "published"]);
 
 export type YieldRow = {
   status: string;
+  caption_html?: string | null;
   attribution?: string | null;
   source?: string | null;
   tags?: FeedTags;
@@ -61,6 +62,12 @@ export function archiveWeights(rows: YieldRow[], deficits?: Map<string, number>)
     const s = stats.get(key) ?? { n: 0, ok: 0 };
     s.n++;
     total++;
+    // удалённое редакцией - двойной промах: кадр прошёл сито, но в канал не
+    // годился (разбор 22.11: эстраду Anefo удаляли 11 раз из 13)
+    if (isEditorReject(r)) {
+      s.n++;
+      total++;
+    }
     if (PASSED.has(r.status)) {
       s.ok++;
       passed++;
@@ -124,7 +131,7 @@ export async function loadArchiveWeights(
     const rows = await selectAll<YieldRow>((from, to) =>
       db
         .from("candidates")
-        .select("status, attribution, source, tags, created_at")
+        .select("status, attribution, source, tags, created_at, caption_html")
         .gte("created_at", since)
         .order("id")
         .range(from, to),

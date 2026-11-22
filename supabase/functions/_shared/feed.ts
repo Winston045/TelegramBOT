@@ -47,7 +47,8 @@ export const FEED_RUBRICS: FeedRubric[] = [
   { key: "combat", label: "бой и пехота", hint: "пехота в бою и на марше, расчёты, окопы, штурм", perWeek: 2 },
   { key: "rear", label: "тыл и быт", hint: "тыл, заводы, госпитали, повседневность армии и людей вокруг войны", perWeek: 2 },
   { key: "city", label: "город и разрушения", hint: "город на войне: улицы, руины, последствия бомбёжек", perWeek: 1 },
-  { key: "poster", label: "плакат", hint: "плакат, карикатура, документ эпохи", perWeek: 0.5 },
+  // плакаты редакция удаляла (разбор 22.11) - рубрика без нормы, источники сняты
+  { key: "poster", label: "плакат", hint: "плакат, карикатура, документ эпохи", perWeek: 0 },
 ];
 
 const FEED_KEYS = new Set(FEED_RUBRICS.map((r) => r.key));
@@ -96,7 +97,8 @@ export const MARKS: Mark[] = [
     key: "leader",
     label: "вожди",
     hint: "вождь, политик или генерал - главный герой кадра",
-    gapDays: 7,
+    // было 7: редакция удалила 2 из 3 таких постов (разбор 22.11)
+    gapDays: 14,
     subjects: ["leader"],
   },
   {
@@ -219,6 +221,8 @@ export type GridHelpers<C> = {
   postsPerWeek?: number;
   /** кадр взят с ослабленными мягкими правилами */
   onFallback?: (c: C) => void;
+  /** штраф вкуса редакции (tasteMap): архивы и темы, которые она удаляет */
+  tasteOf?: (c: C) => number;
 };
 
 /** Память событий и меток - 14 дней. */
@@ -341,7 +345,8 @@ export function planGrid<C extends GridCandidate>(
       return db - da || dayHash(a, now) - dayHash(b, now) || (FEED_ORDER.get(a) ?? 0) - (FEED_ORDER.get(b) ?? 0);
     });
     const feed = feeds[0]!;
-    const gridScore = (c: C) => (c.score ?? 0) + (h.homeNation && h.nationOf(c) === h.homeNation ? GRID_HOME_BONUS : 0);
+    const gridScore = (c: C) =>
+      (c.score ?? 0) + (h.homeNation && h.nationOf(c) === h.homeNation ? GRID_HOME_BONUS : 0) - (h.tasteOf?.(c) ?? 0);
     const pick = [...byFeed.get(feed)!].sort((a, b) => gridScore(b) - gridScore(a) || a.id - b.id)[0]!;
 
     if (relaxed) h.onFallback?.(pick);
@@ -406,4 +411,65 @@ export function feedHistory<R extends { tags?: FeedTags; caption_html?: string |
       at: r.published_at as string,
     }))
     .sort((a, b) => b.at.localeCompare(a.at));
+}
+
+/**
+ * Удалено редакцией: rejected с готовой подписью и без пометки отсева
+ * (tags.gate ставят сбор и чистки); с 22.11 бот пишет и явную tags.editor.
+ */
+export function isEditorReject(r: { status?: string | null; caption_html?: string | null; tags?: Record<string, unknown> | null }): boolean {
+  if (r.status !== "rejected" || !r.caption_html) return false;
+  if (r.tags?.editor) return true;
+  return !r.tags?.gate;
+}
+
+/** Ключи вкуса кадра: архив и тема. archiveOf - plan.ts: archiveKey(attribution) || source. */
+export function tasteKeys(c: { tags?: Record<string, unknown> | null }, archiveOf: string): string[] {
+  const subject = typeof c.tags?.subject === "string" ? c.tags.subject : "";
+  return [archiveOf ? `a:${archiveOf}` : "", subject ? `s:${subject}` : ""];
+}
+
+/** Суммарный штраф вкуса кадра по его ключам, с общим потолком. */
+export function tastePenalty(map: Map<string, number>, keys: string[]): number {
+  return Math.min(TASTE_MAX + 5, keys.reduce((s, k) => s + (map.get(k) ?? 0), 0));
+}
+
+/** За сколько дней бот учится на удалениях редакции. */
+export const TASTE_DAYS = 30;
+/** Сила априорного среднего: столько «воображаемых» постов со средней долей удалений. */
+export const TASTE_PRIOR = 4;
+/** Штраф внутри рубрики: баллов за каждые 10% удалений сверх среднего, и потолок. */
+export const TASTE_POINTS = 5;
+export const TASTE_MAX = 15;
+
+/**
+ * Вкус редакции (22.11: «ты видишь, какие посты я удаляю, - сделай вывод»):
+ * по каждому ключу (архив, тема кадра) - доля удалённого редакцией среди
+ * удалённого и вышедшего, сглаженная к средней. Ключ, который удаляют
+ * чаще среднего, получает штраф к оценке при выборе внутри рубрики.
+ * Учится сам: новые удаления меняют штрафы со следующей публикации.
+ */
+export function tasteMap<R extends { status?: string | null; caption_html?: string | null; tags?: Record<string, unknown> | null }>(
+  rows: R[],
+  keysOf: (r: R) => string[],
+): Map<string, number> {
+  const seen = rows.filter((r) => r.status === "published" || isEditorReject(r));
+  const base = seen.filter(isEditorReject).length / Math.max(1, seen.length);
+  const stats = new Map<string, { d: number; n: number }>();
+  for (const r of seen) {
+    for (const k of keysOf(r)) {
+      if (!k) continue;
+      const s = stats.get(k) ?? { d: 0, n: 0 };
+      s.n++;
+      if (isEditorReject(r)) s.d++;
+      stats.set(k, s);
+    }
+  }
+  const out = new Map<string, number>();
+  for (const [k, s] of stats) {
+    const rate = (s.d + TASTE_PRIOR * base) / (s.n + TASTE_PRIOR);
+    const penalty = Math.min(TASTE_MAX, Math.max(0, ((rate - base) * 100 * TASTE_POINTS) / 10));
+    if (penalty >= 1) out.set(k, Math.round(penalty));
+  }
+  return out;
 }

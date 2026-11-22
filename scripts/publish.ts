@@ -13,7 +13,36 @@ import { channelSlug } from "../src/tme.js";
 import { countPublishedToday, shouldPublishNow, slotsPassed } from "../src/schedule.js";
 import { loadBoolSetting, loadPublishTimes, loadSetting } from "../src/settings.js";
 import { HOME_NATION, eventKeys } from "../src/plan.js";
-import { feedHistory, feedLabel, feedOf, normalizeFeedMode, planGrid, type FeedPost, type GridReason } from "../src/feed.js";
+import {
+  TASTE_DAYS,
+  feedHistory,
+  feedLabel,
+  feedOf,
+  normalizeFeedMode,
+  planGrid,
+  tasteKeys,
+  tasteMap,
+  tastePenalty,
+  type FeedPost,
+  type GridReason,
+} from "../src/feed.js";
+
+/** Вкус редакции по её удалениям за TASTE_DAYS дней (src/feed.ts: tasteMap). */
+async function loadTaste(db: ReturnType<typeof getDb>): Promise<Map<string, number>> {
+  const since = new Date(Date.now() - TASTE_DAYS * 86_400_000).toISOString();
+  const { data, error } = await db
+    .from("candidates")
+    .select("status, caption_html, tags, attribution, source")
+    .in("status", ["rejected", "published"])
+    .not("caption_html", "is", null)
+    .gte("created_at", since)
+    .limit(2000);
+  if (error) {
+    console.warn(`вкус редакции не прочитан: ${error.message}`);
+    return new Map();
+  }
+  return tasteMap(data ?? [], (r) => tasteKeys(r, archiveKey(r.attribution) || (r.source ?? "")));
+}
 import { isDuplicate } from "../src/dhash.js";
 import {
   approvedPriority,
@@ -237,6 +266,12 @@ async function main() {
       // планировщик, а сетка пишет в лог, что взяла бы (два дня сравнения)
       const feedMode = normalizeFeedMode(await loadSetting("feed_mode"));
       const gridReasons: GridReason[] = [];
+      const taste = feedMode === "off" ? new Map<string, number>() : await loadTaste(db);
+      if (taste.size) {
+        console.log(
+          `вкус редакции (штрафы по удалениям): ${[...taste].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} -${v}`).join(", ")}`,
+        );
+      }
       let gridFallback = false;
       const [gridPick] =
         feedMode === "off"
@@ -252,6 +287,7 @@ async function main() {
                 homeNation: HOME_NATION,
                 postsPerWeek: times.length * 7,
                 onFallback: () => (gridFallback = true),
+                tasteOf: (c) => tastePenalty(taste, tasteKeys(c, archiveKey(c.attribution) || (c.source ?? ""))),
               },
               gridReasons,
             );

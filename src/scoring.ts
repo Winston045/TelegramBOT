@@ -38,7 +38,7 @@ export const SCORE_FIELDS_SCHEMA = `"score_why": "<до 80 символов: ч�
 export const HOOKS = ["trophy", "wreck", "moment", "rare", "oddity", "human", "action"] as const;
 
 /** Решение о кандидате: пускаем в резерв или отсеиваем и почему. */
-export type GateVerdict = { pass: true } | { pass: false; reason: "dull" | "hookless" };
+export type GateVerdict = { pass: true } | { pass: false; reason: "dull" | "hookless" | "civilian" };
 
 /**
  * Пускать ли кадр в резерв. Вынесено из сборщика отдельной функцией,
@@ -53,6 +53,10 @@ export function passesGate(
   analysis: Pick<VisionScore, "score" | "tags">,
   limits: { minScore: number; hooklessMinScore: number },
 ): GateVerdict {
+  // редакция (22.11, разбор её удалений за 30 дней): невоенный кадр -
+  // эстрада, тыл в цвете, Гинденбург, плакаты - удаляется в 63% случаев,
+  // военный - в 19%. Мирный сюжет в канал больше не берём
+  if (analysis.tags.military === false) return { pass: false, reason: "civilian" };
   if (analysis.score < limits.minScore) return { pass: false, reason: "dull" };
   const hook = analysis.tags.hook ?? "none";
   const known = (HOOKS as readonly string[]).includes(hook);

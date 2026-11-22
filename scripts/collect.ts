@@ -592,6 +592,7 @@ async function main() {
       // SECOND_OPINION_MIN) не перепроверяем: там модели согласны
       if (
         !verdict.pass &&
+        verdict.reason !== "civilian" &&
         secondOpinion &&
         isLiteModel(model) &&
         a.score >= SECOND_OPINION_MIN &&
@@ -626,7 +627,10 @@ async function main() {
       if (!verdict.pass) {
         const why = a.score_why ? ` - ${a.score_why}` : "";
         const tag = item.rubric ? ` {${item.rubric}}` : "";
-        if (verdict.reason === "dull") {
+        if (verdict.reason === "civilian") {
+          skippedDull++;
+          console.log(`  мирный сюжет: [${item.source}] ${item.sourceId}${tag}${why}`);
+        } else if (verdict.reason === "dull") {
           skippedDull++;
           console.log(`  скучное (score ${a.score} < ${gateMin}): [${item.source}] ${item.sourceId}${tag}${why}`);
         } else {

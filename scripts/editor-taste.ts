@@ -11,7 +11,7 @@
  */
 import { getDb, selectAll } from "../src/db.js";
 import { archiveKey, headline, postNation } from "../src/plan.js";
-import { feedLabel, feedOf, marksOf } from "../src/feed.js";
+import { feedLabel, feedOf, isEditorReject, marksOf } from "../src/feed.js";
 
 type Row = {
   id: number;
@@ -25,11 +25,6 @@ type Row = {
   tags: Record<string, unknown> | null;
 };
 
-export function isEditorReject(r: Pick<Row, "status" | "caption_html" | "tags">): boolean {
-  if (r.status !== "rejected" || !r.caption_html) return false;
-  if (r.tags?.editor) return true;
-  return !r.tags?.gate;
-}
 
 async function main() {
   const days = Number(process.argv[2]) || 30;
