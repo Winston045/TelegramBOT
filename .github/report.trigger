@@ -1,1 +1,1 @@
-taste:30 20261122T110908
+purgetaste apply 20261122T111513
