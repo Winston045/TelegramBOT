@@ -180,6 +180,9 @@ export function commonsAdapter(name: string): SourceAdapter {
         });
         if (!item) continue;
         if (archive.rubric) item.rubric = archive.rubric;
+        // свой стоп-фильтр архива: Fortepan по военным словам всё равно
+        // приносил Будапешт-1956, который редакция удаляла (разбор 22.11)
+        if (archive.exclude && new RegExp(archive.exclude, "i").test(`${item.title ?? ""} ${item.description ?? ""}`)) continue;
         // без места пропускаем только записи с содержательным описанием
         if (!item.place && (item.description?.length ?? 0) < MIN_DESC_WITHOUT_PLACE) continue;
         items.push(item);
