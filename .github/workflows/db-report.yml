@@ -56,6 +56,10 @@ jobs:
             migrate) npm run migrate ;;
             tagleaders) npx tsx scripts/tag-leaders.ts ;;
             simulate) npx tsx scripts/simulate.ts ;;
+            # вкус редакции по её удалениям: taste:30
+            taste)
+              n=$(grep -oP 'taste:\K\d+' .github/report.trigger || true)
+              npx tsx scripts/editor-taste.ts ${n:-30} ;;
             # режим сетки рубрик: feedmode:on | feedmode:shadow | feedmode:off
             feedmode)
               m=$(grep -oP 'feedmode:\K[a-z]+' .github/report.trigger || true)
