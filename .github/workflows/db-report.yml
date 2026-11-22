@@ -129,6 +129,14 @@ jobs:
               n=$(grep -oP 'gateaudit:\K\d+' .github/report.trigger || true)
               since=$(grep -oP 'since:\K[0-9-]+' .github/report.trigger || true)
               npx tsx scripts/gate-audit.ts ${n:-14} $since ;;
+            # общеизвестное в цитатах существующих постов: fixbanal [days:30] [apply]
+            fixbanal)
+              d=$(grep -oP 'days:\K\d+' .github/report.trigger || true)
+              if grep -q 'apply' .github/report.trigger; then
+                npx tsx scripts/fix-banal.ts --days ${d:-30} --apply
+              else
+                npx tsx scripts/fix-banal.ts --days ${d:-30}
+              fi ;;
             # переписать резерв на текущих промптах (22.11: общеизвестное - брак)
             requote) npx tsx scripts/caption-preview.ts all --apply ;;
             # цитаты под вышедшими и в резерве: quotes:40

@@ -34,3 +34,20 @@ describe("общеизвестное в изюминке - брак (редак�
     expect(v.caption.quote).toBe("Берлин, май 1945 года.");
   });
 });
+
+describe("правка существующих постов", async () => {
+  const { fixCaption } = await import("../scripts/fix-banal.js");
+  it("вырезает общеизвестное предложение, живое и строку места оставляет", () => {
+    const html =
+      "Работницы в штольнях Инкермана.\n<blockquote expandable>В подземных штольнях работницы шили ушанки и ватники для защитников города, а рядом действовали школа и ясли. Бои за Крым и оборона Севастополя продолжались с 30 октября 1941 года по 4 июля 1942 года.</blockquote>\n<blockquote>Севастополь, 1942 год.</blockquote>\n\n<a href=\"https://t.me/Story_Teams\">STORY | TEAM</a>";
+    const out = fixCaption(html);
+    expect(out).toContain("школа и ясли.</blockquote>");
+    expect(out).not.toContain("продолжались");
+    expect(out).toContain("<blockquote>Севастополь, 1942 год.</blockquote>");
+  });
+  it("цитата целиком из учебника снимается, место и дата остаются", () => {
+    const html =
+      "Советские солдаты на улице Берлина.\n<blockquote expandable>За 17 дней наступления Красная армия заняла Берлин. Взятие столицы привело к безоговорочной капитуляции Германии.</blockquote>\n<blockquote>Берлин, май 1945 года.</blockquote>\n\n<a href=\"x\">S</a>";
+    expect(fixCaption(html)).toBe("Советские солдаты на улице Берлина.\n<blockquote>Берлин, май 1945 года.</blockquote>\n\n<a href=\"x\">S</a>");
+  });
+});

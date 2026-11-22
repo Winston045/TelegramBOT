@@ -149,8 +149,15 @@ const BANAL = new RegExp(
     "открыти\\S* втор\\S* фронт|открыл\\S* втор\\S* фронт",
     "872 дн",
     "(?:Великая Отечественная|Вторая мировая)(?: война)? (?:длилась|шла|началась|закончилась|завершилась)",
-    "самой кровопролитн\\S* (?:битв|сражени|войн)|самая кровопролитн\\S* (?:битв|сражени|войн)",
     "атомн\\S* бомб\\S*[^.]{0,40}Хиросим",
+    "сам(?:ый|ая|ое|ые|ых|ым|ой|ую|ыми) (?:кровопролитн|кровав|смертоносн|страшн|жесток)\\S*",
+    "полностью (?:разгромлен|уничтожен|разбит)\\S*",
+    "(?:убит|погиб|потер)\\S*[^.]{0,40}(?:более|свыше|больше|около) (?:миллиона|\\d+ миллион)",
+    "(?:окруж|разгром|уничтож|гибел|капитуляц)\\S*[^.]{0,30}6-й армии",
+    "(?:завершил|закончил|окончил)\\S* (?:полным )?(?:разгромом|победой|освобождением|окружением|капитуляцией|взятием)",
+    "(?:восстани|революци)\\S*[^.]{0,120}подавлен\\S*",
+    "(?:бои|битва|сражение|оборона|осада|наступление|операция)[^.]{0,60}(?:продолжал|длил|продлил)\\S* (?:с |более|почти|около|меньше|менее)",
+    "(?:величайш|крупнейш)\\S* (?:сражени|битв)\\S* (?:в истории|Второй мировой|войны)",
     "Перл-Харбор[^.]{0,80}вступ",
   ].join("|"),
   "iu",
@@ -160,6 +167,22 @@ const BANAL = new RegExp(
 export function banalIn(quote: string | undefined): string | undefined {
   if (!quote) return undefined;
   return quote.match(BANAL)?.[0];
+}
+
+/** Короче этого остаток изюминки - уже не изюминка. */
+export const MIN_QUOTE_AFTER_STRIP = 60;
+
+/**
+ * Вырезать из цитаты общеизвестные предложения и оставить остальное:
+ * «В подземных штольнях шили ушанки... Бои за Крым продолжались с 30
+ * октября по 4 июля» - первое предложение и есть изюминка. Пусто или
+ * обрывок короче MIN_QUOTE_AFTER_STRIP - значит, изюминки не было.
+ */
+export function stripBanal(quote: string): string {
+  const sentences = quote.match(/[^.!?…]+(?:[.!?…]+|$)/g) ?? [quote];
+  const kept = sentences.filter((x) => !banalIn(x)).map((x) => x.trim()).filter(Boolean);
+  const out = kept.join(" ").trim();
+  return out.length >= MIN_QUOTE_AFTER_STRIP ? out : "";
 }
 
 /** Изюминка из учебника снимается так же, как штамп (guardCliches). */
@@ -173,6 +196,9 @@ export function guardBanal(
   if (reviewed.rewritten && firstPass.quote !== reviewed.caption.quote && !banalIn(firstPass.quote)) {
     return { caption: firstPassQuote(reviewed.caption, firstPass), outcome: "editor_rejected", bad };
   }
+  // остаток без общеизвестного ещё изюминка - оставляем его
+  const rest = stripBanal(reviewed.caption.quote);
+  if (rest) return { caption: { ...reviewed.caption, quote: rest }, outcome: "quote_dropped", bad };
   return {
     caption: {
       ...reviewed.caption,
