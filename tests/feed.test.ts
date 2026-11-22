@@ -203,3 +203,23 @@ describe("вкус редакции по её удалениям", async () => {
     expect(tastePenalty(map, ["a:anefo", "s:culture"])).toBeGreaterThan(tastePenalty(map, ["a:iwm", "s:armor"]));
   });
 });
+
+describe("архив не подряд (22.11)", () => {
+  it("один архив - не чаще раза в четыре поста, если есть другой", () => {
+    const now = new Date("2026-11-22T12:00:00Z");
+    const hist = [
+      { feed: "navy", marks: [], nation: "ussr", events: [], at: "2026-11-22T09:00:00Z", archive: "борис кудояров" },
+    ];
+    const pool = [
+      { id: 1, caption_html: "a", score: 90, tags: { feed: "ground" }, a: "борис кудояров" },
+      { id: 2, caption_html: "b", score: 60, tags: { feed: "ground" }, a: "iwm" },
+    ];
+    const [pick] = planGrid(pool, hist, 1, {
+      now,
+      nationOf: () => "",
+      eventsOf: () => [],
+      archiveOf: (c) => c.a,
+    });
+    expect(pick!.id).toBe(2);
+  });
+});

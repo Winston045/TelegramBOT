@@ -1514,14 +1514,25 @@ async function currentPlan(count: number): Promise<PlanEntry[]> {
       planner:
         feedMode === "on"
           ? (pool, _recent, want) =>
-              planGrid(pool, feedHistory(memoryRows, (r) => postNation(r), (r) => eventKeys(r)), want, {
+              planGrid(
+                pool,
+                feedHistory(
+                  memoryRows,
+                  (r) => postNation(r),
+                  (r) => eventKeys(r),
+                  (r) => archiveKey(r.attribution) || (r.source ?? ""),
+                ),
+                want,
+                {
                 now: new Date(),
                 nationOf: (c) => postNation(c),
                 eventsOf: (c) => eventKeys(c),
                 homeNation: HOME_NATION,
                 postsPerWeek: times.length * 7,
                 tasteOf: (c) => tastePenalty(taste, tasteKeys(c, archiveKey(c.attribution) || (c.source ?? ""))),
-              })
+                archiveOf: (c) => archiveKey(c.attribution) || (c.source ?? ""),
+                },
+              )
           : undefined,
     },
     count,

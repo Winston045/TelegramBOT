@@ -41,6 +41,18 @@ const GEO_POOL: Array<{ name: string; geo: [number, number] }> = [
  */
 const CITIES_PER_FETCH = 5;
 
+/**
+ * PastVu - в основном виды городов: соборы, колонны, открытки (сухой
+ * прогон 12.08). В анализ пускаем только кадры, в названии которых есть
+ * война, армия или техника. Проба 22.11 за 1939-1945: Ленинград 18 таких
+ * из 30, Москва, Сталинград, Севастополь - по 8 (парады, блокада, бои).
+ */
+export const MILITARY_TITLE =
+  /войн|воен|фронт|солдат|бойц|красноарм|танк|оруди|пушк|зенит|самол[её]т|аэродр|парад|оборон|блокад|баррикад|окоп|ранен|госпитал|эвакуац|бомб|немц|немецк|пленн|ополчен|краснофлот|моряк|катюш|освобожд|маршал|генерал|партизан|трофе|бронепо|корабл|крейсер|подлодк|штурм|десант/i;
+
+/** Сколько кадров смотрим у точки ради нескольких военных. */
+const SCAN_PER_CITY = 100;
+
 type PastvuListPhoto = {
   cid: number;
   file: string;
@@ -145,7 +157,7 @@ export const pastvu: SourceAdapter = {
       try {
         const res = await call<{ photos: PastvuListPhoto[] }>("photo.giveNearestPhotos", {
           geo,
-          limit: perCity,
+          limit: SCAN_PER_CITY,
           skip,
           year: yearFrom,
           year2: yearTo,
@@ -156,10 +168,12 @@ export const pastvu: SourceAdapter = {
         continue;
       }
       // выдача кончилась — начинаем город заново со следующего цикла
-      await cursors.set("pastvu", skipKey, photos.length < perCity ? 0 : skip + photos.length);
+      await cursors.set("pastvu", skipKey, photos.length < SCAN_PER_CITY ? 0 : skip + photos.length);
 
+      let taken = 0;
       for (const p of photos) {
-        if (items.length >= limit) break;
+        if (items.length >= limit || taken >= perCity) break;
+        if (!MILITARY_TITLE.test(p.title ?? "")) continue;
         const titleKey = (p.title ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
         if (titleKey && seenTitles.has(titleKey)) continue;
         try {
@@ -173,6 +187,7 @@ export const pastvu: SourceAdapter = {
           if (titleKey) seenTitles.add(titleKey);
           if (placeKey) placeCounts.set(placeKey, (placeCounts.get(placeKey) ?? 0) + 1);
           items.push(item);
+          taken++;
         } catch (err) {
           console.warn(`  pastvu: детали ${p.cid} не получены — ${(err as Error).message}`);
         }

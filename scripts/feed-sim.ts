@@ -13,6 +13,7 @@ import {
   HOME_NATION,
   RESERVE_TTL_DAYS,
   approvedPriority,
+  archiveKey,
   eventKeys,
   headline,
   planAuto,
@@ -49,7 +50,12 @@ async function main() {
     priority: c.status === "approved" ? approvedPriority(c.created_at, now) : 0,
   }));
   const rows = (memory ?? []) as Array<{ tags?: never; caption_html?: string | null; published_at?: string | null; attribution?: string | null; source?: string | null }>;
-  const history = feedHistory(rows, (r) => postNation(r), (r) => eventKeys(r));
+  const history = feedHistory(
+    rows,
+    (r) => postNation(r),
+    (r) => eventKeys(r),
+    (r) => archiveKey(r.attribution) || (r.source ?? ""),
+  );
 
   console.log(`резерв: ${pool.length}, история 14 дней: ${history.length}, постов в неделю: ${times.length * 7}`);
   const byFeed = new Map<string, number>();
@@ -71,6 +77,7 @@ async function main() {
       homeNation: HOME_NATION,
       postsPerWeek: times.length * 7,
       onFallback: () => fallbacks++,
+      archiveOf: (c) => archiveKey(c.attribution) || (c.source ?? ""),
     },
     reasons,
   );

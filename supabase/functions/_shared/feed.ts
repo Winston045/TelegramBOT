@@ -197,6 +197,8 @@ export type FeedPost = {
   events: string[];
   /** ISO-время публикации */
   at: string;
+  /** архив-поставщик (plan.ts: archiveKey) - для правила «архив не подряд» */
+  archive?: string;
 };
 
 export type GridCandidate = {
@@ -223,6 +225,8 @@ export type GridHelpers<C> = {
   onFallback?: (c: C) => void;
   /** штраф вкуса редакции (tasteMap): архивы и темы, которые она удаляет */
   tasteOf?: (c: C) => number;
+  /** архив кадра (plan.ts: archiveKey || source) - лента не витрина одного архива */
+  archiveOf?: (c: C) => string;
 };
 
 /** Память событий и меток - 14 дней. */
@@ -232,6 +236,14 @@ export const NATION_MAX = 2;
 export const NATION_SPAN = 6;
 /** Своя страна внутри рубрики: добавка к оценке при выборе лучшего. */
 export const GRID_HOME_BONUS = 8;
+/**
+ * Один архив - не больше ARCHIVE_MAX на окно из ARCHIVE_SPAN подряд (22.11).
+ * С тридцатью архивами и бонусом своей страны сетка иначе могла поставить
+ * трёх советских фотографов одного имени подряд: у неё было только
+ * правило страны.
+ */
+export const ARCHIVE_MAX = 1;
+export const ARCHIVE_SPAN = 4;
 
 const DAY = 86_400_000;
 
@@ -297,6 +309,7 @@ export function planGrid<C extends GridCandidate>(
     nation: h.nationOf(c),
     events: h.eventsOf(c),
     at: now.toISOString(),
+    archive: h.archiveOf?.(c),
   });
 
   // ручное - вперёд, в порядке яруса, затем оценки
@@ -321,8 +334,11 @@ export function planGrid<C extends GridCandidate>(
 
     const lastFeed = hist[0]?.feed;
     const recentNations = hist.slice(0, NATION_SPAN - 1).map((p) => p.nation);
+    const recentArchives = hist.slice(0, ARCHIVE_SPAN - 1).map((p) => p.archive ?? "");
     const soft = hard.filter((c) => {
       if (feedOf(c) === lastFeed) return false;
+      const a = h.archiveOf?.(c);
+      if (a && recentArchives.filter((x) => x === a).length >= ARCHIVE_MAX) return false;
       const n = h.nationOf(c);
       return !n || recentNations.filter((x) => x === n).length < NATION_MAX;
     });
@@ -400,6 +416,7 @@ export function feedHistory<R extends { tags?: FeedTags; caption_html?: string |
   rows: R[],
   nationOf: (r: R) => string,
   eventsOf: (r: R) => string[],
+  archiveOf?: (r: R) => string,
 ): FeedPost[] {
   return rows
     .filter((r) => r.published_at)
@@ -409,6 +426,7 @@ export function feedHistory<R extends { tags?: FeedTags; caption_html?: string |
       nation: nationOf(r),
       events: eventsOf(r),
       at: r.published_at as string,
+      archive: archiveOf?.(r),
     }))
     .sort((a, b) => b.at.localeCompare(a.at));
 }

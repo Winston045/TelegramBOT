@@ -105,7 +105,12 @@ async function recentContext(db: ReturnType<typeof getDb>, now: Date) {
   };
 
   // сетка рубрик (src/feed.ts) помнит две недели: рубрики, метки, события
-  const feedPosts: FeedPost[] = feedHistory(rows, (r) => postNation(r), (r) => eventKeys(r));
+  const feedPosts: FeedPost[] = feedHistory(
+    rows,
+    (r) => postNation(r),
+    (r) => eventKeys(r),
+    (r) => archiveKey(r.attribution) || (r.source ?? ""),
+  );
 
   return {
     feedPosts,
@@ -288,6 +293,7 @@ async function main() {
                 postsPerWeek: times.length * 7,
                 onFallback: () => (gridFallback = true),
                 tasteOf: (c) => tastePenalty(taste, tasteKeys(c, archiveKey(c.attribution) || (c.source ?? ""))),
+                archiveOf: (c) => archiveKey(c.attribution) || (c.source ?? ""),
               },
               gridReasons,
             );

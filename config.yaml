@@ -120,6 +120,23 @@ sources:
         lang: "ru"
         deep: true
         terms: [""]
+      # ---- советские фронтовые фотографы (проба 22.11 с раннера) ----
+      # Советское редакция не удалила ни разу (0 из 24 за 30 дней), а Шайхет,
+      # Халдей и Зельма - лидеры по выходу (вес 1.6-2.3). Тот же пласт:
+      # фронтовые корреспонденты, у которых на Commons сотни кадров
+      - { category: "Photographs by Boris Kudoyarov", attribution: "Борис Кудояров", lang: "ru", deep: true, terms: [""] }        # 246, блокадный Ленинград
+      - { category: "Photographs by Mikhail Trakhman", attribution: "Михаил Трахман", lang: "ru", deep: true, terms: [""] }       # 148, партизаны
+      - { category: "Photographs by Pavel Troshkin", attribution: "Павел Трошкин", lang: "ru", deep: true, terms: [""] }         # 98
+      - { category: "Photographs by Leonid Dorensky", attribution: "Леонид Доренский", lang: "ru", deep: true, terms: [""] }     # 79
+      - { category: "Photographs by Mark Redkin", attribution: "Марк Редкин", lang: "ru", deep: true, terms: [""] }              # 54
+      - { category: "Photographs by Anatoly Garanin", attribution: "Анатолий Гаранин", lang: "ru", deep: true, terms: [""] }     # 50
+      - { category: "Photographs by Alexander Ustinov", attribution: "Александр Устинов", lang: "ru", deep: true, terms: [""] }  # 47
+      - { category: "Photographs by Olga Lander", attribution: "Ольга Ландер", lang: "ru", deep: true, terms: [""] }             # 35
+      # Канада: 4724 файла, Вторая мировая и Корея
+      - category: "Images from Library and Archives Canada"
+        attribution: "Library and Archives Canada"
+        lang: "en"
+        terms: ["1944", "1943", "army", "tank", "aircraft", "Korea"]
       - category: "Images from the National Archives and Records Administration"
         attribution: "NARA"
         lang: "en"
@@ -273,17 +290,14 @@ sources:
     weight: 0
     categories: ["1939", "1940", "1941", "1942", "1943", "1944", "1945"]
   pastvu:
-    # ВЫКЛЮЧЕН 12.08 по итогам сухого прогона. PastVu - гражданская
-    # городская съёмка, и в очередь на анализ он приносил соборы,
-    # иконостасы и колонны: «Domkirche St. Stephan», «Иконостас церкви
-    # Ризположения», «Александровская колонна», «Дворцовая площадь».
-    # Шесть кадров из тридцати, то есть пятая часть анализа и двенадцать
-    # запросов к Gemini - на архитектурные открытки, у которых по
-    # определению не может быть крючка. Включать обратно, только если
-    # найдём способ просить у него именно военную хронику.
-    enabled: false
-    weight: 25
-    years: [1914, 1990]
+    # ВЫКЛЮЧЕН 12.08: городская съёмка - соборы, колонны, открытки. Включён
+    # 22.11: из выдачи берутся только кадры с войной, армией и техникой в
+    # названии (src/sources/pastvu.ts: MILITARY_TITLE). Проба с раннера за
+    # 1939-1945: Ленинград 18 военных из 30, Москва, Сталинград и
+    # Севастополь - по 8 (парады, блокада, бои, трофейная техника)
+    enabled: true
+    weight: 10
+    years: [1939, 1946]
   nara:
     enabled: false       # нужен бесплатный ключ: секрет NARA_API_KEY
     weight: 20
