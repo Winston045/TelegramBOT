@@ -1,1 +1,1 @@
-fixbanal days:30 20261122T131258
+fixbanal days:30 apply 20261122T131332
