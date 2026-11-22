@@ -14,7 +14,7 @@ on:
 jobs:
   report:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -129,6 +129,12 @@ jobs:
               n=$(grep -oP 'gateaudit:\K\d+' .github/report.trigger || true)
               since=$(grep -oP 'since:\K[0-9-]+' .github/report.trigger || true)
               npx tsx scripts/gate-audit.ts ${n:-14} $since ;;
+            # переписать резерв на текущих промптах (22.11: общеизвестное - брак)
+            requote) npx tsx scripts/caption-preview.ts all --apply ;;
+            # цитаты под вышедшими и в резерве: quotes:40
+            quotes)
+              n=$(grep -oP 'quotes:\K\d+' .github/report.trigger || true)
+              npx tsx scripts/quotes-report.ts ${n:-40} ;;
             preview)
               # подписи на текущих промптах по готовым кадрам: было → стало,
               # без записи в базу; ids:445,419 - какие кадры взять

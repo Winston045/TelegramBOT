@@ -127,6 +127,64 @@ export function clicheIn(quote: string): string | undefined {
 }
 
 /** Изюминка-штамп: правка редактора уступает первому заходу, штамп первого захода снимается. */
+/**
+ * Общеизвестное (редакция 22.11): «под постом с Красной армией в Берлине -
+ * тяжелейший бой, взяли Берлин, 9 мая. Это очевидно, никому не интересно,
+ * аудитория продвинутая». Изюминка с фактом из школьного учебника о
+ * знаменитом событии - брак, как и штамп: она снимается, остаётся место
+ * и дата. Список - самые затёртые факты; тоньше ловит промпт.
+ */
+const BANAL = new RegExp(
+  [
+    "(?:взял[аи]?|взяти[еяю]|овладел\\S*|штурмом взял\\S*|пад(?:ение|ения)|пал(?!\\p{L}))[^.]{0,40}Берлин",
+    "Берлин[^.]{0,40}(?:был[аи]? )?(?:взят|пал)",
+    "Знам\\S* Победы[^.]{0,60}Рейхстаг|Рейхстаг[^.]{0,60}Знам\\S* Победы",
+    "капитуляци\\S* (?:нацистской |фашистской |гитлеровской )?Германии",
+    "(?:8|9) мая 1945",
+    "День Победы",
+    "22 июня 1941",
+    "коренн\\S* перелом|переломн\\S* (?:момент|этап|сражени|битв)|перелом\\S* в (?:ходе )?(?:войн|Великой)",
+    "крупнейш\\S* танков\\S* (?:сражени|битв)",
+    "крупнейш\\S* (?:морск\\S* )?десантн\\S* операци",
+    "открыти\\S* втор\\S* фронт|открыл\\S* втор\\S* фронт",
+    "872 дн",
+    "(?:Великая Отечественная|Вторая мировая)(?: война)? (?:длилась|шла|началась|закончилась|завершилась)",
+    "самой кровопролитн\\S* (?:битв|сражени|войн)|самая кровопролитн\\S* (?:битв|сражени|войн)",
+    "атомн\\S* бомб\\S*[^.]{0,40}Хиросим",
+    "Перл-Харбор[^.]{0,80}вступ",
+  ].join("|"),
+  "iu",
+);
+
+/** Общеизвестный факт в цитате - что именно (для лога) или undefined. */
+export function banalIn(quote: string | undefined): string | undefined {
+  if (!quote) return undefined;
+  return quote.match(BANAL)?.[0];
+}
+
+/** Изюминка из учебника снимается так же, как штамп (guardCliches). */
+export function guardBanal(
+  reviewed: { caption: GeneratedCaption; rewritten: boolean },
+  firstPass: GeneratedCaption,
+): NumbersVerdict {
+  const hit = banalIn(reviewed.caption.quote);
+  if (!hit) return { caption: reviewed.caption, outcome: "ok", bad: [] };
+  const bad = [`общеизвестное «${hit}»`];
+  if (reviewed.rewritten && firstPass.quote !== reviewed.caption.quote && !banalIn(firstPass.quote)) {
+    return { caption: firstPassQuote(reviewed.caption, firstPass), outcome: "editor_rejected", bad };
+  }
+  return {
+    caption: {
+      ...reviewed.caption,
+      quote: reviewed.caption.quote_place ?? "",
+      quote_place: undefined,
+      quote_kind: "context",
+    },
+    outcome: "quote_dropped",
+    bad,
+  };
+}
+
 export function guardCliches(
   reviewed: { caption: GeneratedCaption; rewritten: boolean },
   firstPass: GeneratedCaption,

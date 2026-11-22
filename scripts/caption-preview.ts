@@ -10,6 +10,11 @@
  * или по номерам постов канала: npx tsx scripts/caption-preview.ts msg:7187,7179
  * (без номеров - шесть свежих кадров резерва с подписью).
  *
+ * Переписать резерв (22.11: общеизвестное в цитатах - брак):
+ *   npx tsx scripts/caption-preview.ts all --apply
+ * all - весь неопубликованный резерв; --apply - записать новую подпись в
+ * базу, если валидатор её пропускает. Без --apply база не трогается.
+ *
  * Доводка подписи - тот же конвейер, что у сбора (src/pipeline.ts): что
  * показал предпросмотр, то и уйдёт в канал.
  */
@@ -57,6 +62,9 @@ async function main() {
   const cfg = loadConfig();
   const db = getDb();
   const arg = process.argv[2] ?? "";
+  const apply = process.argv.includes("--apply");
+  const all = arg === "all";
+  let written = 0;
   // msg:7187,7179 - номера постов канала, а не кадров в базе
   const byMessage = arg.startsWith("msg:");
   const ids = arg
@@ -72,7 +80,10 @@ async function main() {
     .not("caption_html", "is", null);
   const { data, error } = ids.length
     ? await query.in(byMessage ? "channel_msg_id" : "id", ids)
-    : await query.in("status", ["new", "shown", "approved"]).order("id", { ascending: false }).limit(6);
+    : await query
+        .in("status", ["new", "shown", "approved"])
+        .order("id", { ascending: false })
+        .limit(all ? 200 : 6);
   if (error) throw new Error(error.message);
 
   for (const r of (data ?? []) as Row[]) {
@@ -128,11 +139,37 @@ async function main() {
       console.log(`СТАЛО${done.rewritten ? " (редактор переписал)" : ""}:\n  ${plain(done.html)}`);
       if (done.rubricFlaw) console.log(`  ! рубрика не пропустила бы: ${done.rubricFlaw}`);
       if (!done.check.ok) console.log(`  ! валидатор не пропустил бы: ${done.check.reason}`);
+      if (apply && done.check.ok && !done.rubricFlaw && done.html !== r.caption_html) {
+        const { error: upErr } = await db
+          .from("candidates")
+          .update({
+            caption_html: done.html,
+            tags: {
+              ...(r.tags ?? {}),
+              ...(a.subject_wiki ? { subject_wiki: a.subject_wiki } : {}),
+              ...(a.event_wiki ? { event_wiki: a.event_wiki } : {}),
+              requoted: new Date().toISOString().slice(0, 10),
+            },
+          })
+          .eq("id", r.id)
+          .in("status", ["new", "shown", "approved"]);
+        if (upErr) console.log(`  ! не записано: ${upErr.message}`);
+        else {
+          written++;
+          console.log("  записано в базу");
+        }
+      }
     } catch (err) {
       console.log(`  сбой: ${(err as Error).message}`);
     }
+    // Викимедиа отбивает частые скачивания (HTTP 429) - пауза между кадрами
+    await new Promise((res) => setTimeout(res, 4000));
   }
-  console.log("\nпредпросмотр завершён: база не тронута, в канал ничего не ушло");
+  console.log(
+    apply
+      ? `\nпереписано в базе: ${written}; в канал ничего не ушло`
+      : "\nпредпросмотр завершён: база не тронута, в канал ничего не ушло",
+  );
 }
 
 main().catch((err) => {

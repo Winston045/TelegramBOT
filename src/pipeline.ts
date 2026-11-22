@@ -15,7 +15,7 @@ import type { AppConfig } from "./config.js";
 import type { Analysis } from "./analyze.js";
 import { assembleCaptionHtml, descriptiveSentences, type GeneratedCaption } from "./caption.js";
 import { reviewQuote } from "./critic.js";
-import { guardCliches, guardCopies, guardNumbers, withoutQuote, type NumbersVerdict } from "./factcheck.js";
+import { guardBanal, guardCliches, guardCopies, guardNumbers, withoutQuote, type NumbersVerdict } from "./factcheck.js";
 import { rubricCaptionFlaw, type Rubric } from "./rubrics.js";
 import type { RawItem } from "./sources/types.js";
 import { validateCaption, type ValidationResult } from "./validate.js";
@@ -90,6 +90,7 @@ export async function finishCaption(o: FinishOptions): Promise<FinishResult> {
     (r) => guardNumbers(r, a, sources),
     (r) => guardCopies(r, a),
     (r) => guardCliches(r, a),
+    (r) => guardBanal(r, a),
   ];
   for (const guard of guards) {
     const check = guard(reviewed);
