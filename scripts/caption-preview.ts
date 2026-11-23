@@ -87,7 +87,10 @@ async function main() {
         .limit(all ? 200 : 6);
   if (error) throw new Error(error.message);
 
+  const today = new Date().toISOString().slice(0, 10);
   for (const r of (data ?? []) as Row[]) {
+    // повторный прогон резерва: уже переписанное сегодня не трогаем
+    if (apply && all && (r.tags as { requoted?: string } | null)?.requoted === today) continue;
     const item: RawItem = {
       sourceId: r.source_id,
       sourceUrl: r.source_url,
@@ -170,7 +173,7 @@ async function main() {
       console.log(`  сбой: ${(err as Error).message}`);
     }
     // Викимедиа отбивает частые скачивания (HTTP 429) - пауза между кадрами
-    await new Promise((res) => setTimeout(res, 4000));
+    await new Promise((res) => setTimeout(res, apply ? 10_000 : 4000));
   }
   console.log(
     apply

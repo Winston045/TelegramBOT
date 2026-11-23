@@ -321,7 +321,6 @@ sources:
       - { q: "front 1915", theme: "ww1" }
       - { q: "soldiers 1944", theme: "photography" }
       - { q: "soldiers 1941", theme: "photography" }
-      - { q: "1956 revolution", theme: "photography" }
 
 collect:
   raw_limit: 150         # сколько тянем из архивов

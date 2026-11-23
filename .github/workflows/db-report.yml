@@ -129,6 +129,7 @@ jobs:
               n=$(grep -oP 'gateaudit:\K\d+' .github/report.trigger || true)
               since=$(grep -oP 'since:\K[0-9-]+' .github/report.trigger || true)
               npx tsx scripts/gate-audit.ts ${n:-14} $since ;;
+            purge1956) npx tsx scripts/purge-1956.ts ;;
             # общеизвестное в цитатах существующих постов: fixbanal [days:30] [apply]
             fixbanal)
               d=$(grep -oP 'days:\K\d+' .github/report.trigger || true)
