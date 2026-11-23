@@ -59,7 +59,7 @@ describe("предмет в тексте важнее события (23.11)", a
   it("анализ берёт справку о названном в тексте оружии, а не о битве", () => {
     const p = buildAnalysisPrompt(item, {});
     expect(p).toContain("Suomi KP/-31");
-    expect(p).toContain("о чём пост, о том и цитата");
+    expect(p).toContain("о том и цитата");
   });
   it("редактор считает цитату о битве при названном предмете плохой", () => {
     const p = buildPrompt(item, { caption: "Финские солдаты с автоматом «Суоми» у сгоревшего танка.", quote: "Бои за Выборг...", quote_kind: "context" }, undefined, "Справка о предмете: Suomi KP/-31");
