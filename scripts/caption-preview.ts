@@ -65,6 +65,7 @@ async function main() {
   const apply = process.argv.includes("--apply");
   const all = arg === "all";
   let written = 0;
+  let skippedBusy = 0;
   // msg:7187,7179 - номера постов канала, а не кадров в базе
   const byMessage = arg.startsWith("msg:");
   const ids = arg
@@ -115,6 +116,7 @@ async function main() {
       console.log(
         `предмет: ${a.subject_wiki ?? "-"}; событие: ${a.event_wiki ?? "-"}; люди: ${a.people?.join(", ") || "-"}`,
       );
+      let editorBusy = false;
       // первый заход отдельно: видно, кто сделал изюминку, а кто её снял
       console.log(`ПЕРВЫЙ ЗАХОД:\n  ${plain(assembleCaptionHtml(a, item, cfg.channel))}`);
       const done = await finishCaption({
@@ -131,6 +133,7 @@ async function main() {
           } catch (err) {
             if (!(err instanceof GeminiBusyError)) throw err;
             console.log("  ! редактор пропущен: полноценные модели заняты");
+            editorBusy = true;
             return { caption: generated, rewritten: false };
           }
         },
@@ -139,7 +142,11 @@ async function main() {
       console.log(`СТАЛО${done.rewritten ? " (редактор переписал)" : ""}:\n  ${plain(done.html)}`);
       if (done.rubricFlaw) console.log(`  ! рубрика не пропустила бы: ${done.rubricFlaw}`);
       if (!done.check.ok) console.log(`  ! валидатор не пропустил бы: ${done.check.reason}`);
-      if (apply && done.check.ok && !done.rubricFlaw && done.html !== r.caption_html) {
+      // без редактора подпись сырая - в базу не пишем, перепроверим позже
+      if (apply && editorBusy) {
+        skippedBusy++;
+        console.log("  не записано: редактор был занят");
+      } else if (apply && done.check.ok && !done.rubricFlaw && done.html !== r.caption_html) {
         const { error: upErr } = await db
           .from("candidates")
           .update({
@@ -167,7 +174,7 @@ async function main() {
   }
   console.log(
     apply
-      ? `\nпереписано в базе: ${written}; в канал ничего не ушло`
+      ? `\nпереписано в базе: ${written}; пропущено из-за занятого редактора: ${skippedBusy}; в канал ничего не ушло`
       : "\nпредпросмотр завершён: база не тронута, в канал ничего не ушло",
   );
 }
