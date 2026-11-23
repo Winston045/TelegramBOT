@@ -33,6 +33,26 @@ import { finishCaption } from "../src/pipeline.js";
 import { rubricOf } from "../src/rubrics.js";
 import type { RawItem } from "../src/sources/types.js";
 import { env } from "../src/env.js";
+import { WIKIMEDIA_UA } from "../src/wiki.js";
+import { retryAfterMs } from "../src/hostguard.js";
+
+/**
+ * Скачивание как у сбора (scripts/collect.ts): правильный User-Agent для
+ * Викимедиа и ожидание по Retry-After. Первый прогон резерва 22.11 качал
+ * своим заголовком без ожидания - 15 кадров из 27 упали на HTTP 429.
+ */
+async function fetchImage(url: string): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, {
+      headers: { "user-agent": WIKIMEDIA_UA, accept: "image/*" },
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (res.status !== 429 || attempt >= 2) return res;
+    const wait = Math.min(retryAfterMs(res.headers.get("retry-after")), 120_000);
+    console.log(`  429: жду ${Math.round(wait / 1000)} с и повторяю`);
+    await new Promise((ok) => setTimeout(ok, wait));
+  }
+}
 import { getTelegram } from "../src/telegram.js";
 
 type Row = {
@@ -121,10 +141,7 @@ async function main() {
     console.log(`#${r.id} [${r.source}] ${(r.raw_title ?? "").slice(0, 80)}`);
     console.log(`БЫЛО:\n  ${plain(r.caption_html)}`);
     try {
-      const res = await fetch(r.image_url, {
-        headers: { "user-agent": "story-team-bot/0.1 (Telegram history channel; contact via t.me/Story_Teams)" },
-        signal: AbortSignal.timeout(60_000),
-      });
+      const res = await fetchImage(r.image_url);
       if (!res.ok) throw new Error(`картинка: HTTP ${res.status}`);
       const image = Buffer.from(await res.arrayBuffer());
       const extra = await ADAPTERS[r.source]?.details?.(item).catch(() => undefined);
