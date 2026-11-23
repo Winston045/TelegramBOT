@@ -77,3 +77,12 @@ describe("ход операций - тоже брак (23.11)", () => {
     expect(stripBanal(q)).toBe("");
   });
 });
+
+describe("предложения и сокращения (23.11)", async () => {
+  const { splitSentences, stripBanal } = await import("../src/factcheck.js");
+  it("«Pz. Kpfw. IV» - одно предложение", () => {
+    const q = "Pz. Kpfw. IV штурмом взял Берлин вместе с пехотой. Экипажи прозвали эту модификацию «окурком» за короткий ствол орудия.";
+    expect(splitSentences(q).length).toBe(2);
+    expect(stripBanal(q)).toBe("Экипажи прозвали эту модификацию «окурком» за короткий ствол орудия.");
+  });
+});

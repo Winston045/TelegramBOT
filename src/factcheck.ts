@@ -177,6 +177,27 @@ export function banalIn(quote: string | undefined): string | undefined {
   return quote.match(BANAL)?.[0];
 }
 
+/**
+ * Предложения цитаты. Точка после короткого сокращения - не конец
+ * предложения: 23.11 «Pz. Kpfw. IV стал самым массовым...» резалось на
+ * «Pz.» и «Kpfw. IV...», и в посте осталось «Pz. Kpfw. С 1937 по 1945...».
+ */
+export function splitSentences(text: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  const re = /[^.!?…]+(?:[.!?…]+|$)/g;
+  for (const piece of text.match(re) ?? [text]) {
+    cur += piece;
+    const lastWord = cur.trim().match(/(\S+)[.!?…]+$/)?.[1] ?? "";
+    const abbrev = /^(?:[A-Za-z]{1,5}|[а-яё]{1,3}|т|г|гг|им|ок|см|мм|св|ст|тыс|млн)$/u.test(lastWord) && /\.$/.test(cur.trim());
+    if (abbrev && cur.length < text.length) continue;
+    out.push(cur);
+    cur = "";
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
 /** Короче этого остаток изюминки - уже не изюминка. */
 export const MIN_QUOTE_AFTER_STRIP = 60;
 
@@ -187,7 +208,7 @@ export const MIN_QUOTE_AFTER_STRIP = 60;
  * обрывок короче MIN_QUOTE_AFTER_STRIP - значит, изюминки не было.
  */
 export function stripBanal(quote: string): string {
-  const sentences = quote.match(/[^.!?…]+(?:[.!?…]+|$)/g) ?? [quote];
+  const sentences = splitSentences(quote);
   const kept = sentences.filter((x) => !banalIn(x)).map((x) => x.trim()).filter(Boolean);
   const out = kept.join(" ").trim();
   return out.length >= MIN_QUOTE_AFTER_STRIP ? out : "";
