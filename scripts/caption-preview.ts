@@ -15,6 +15,11 @@
  * all - весь неопубликованный резерв; --apply - записать новую подпись в
  * базу, если валидатор её пропускает. Без --apply база не трогается.
  *
+ * Переписать последние вышедшие посты - и в канале (23.11):
+ *   npx tsx scripts/caption-preview.ts recent:10 --apply
+ * Подпись меняется, только если редактор цитат отработал, валидатор
+ * пропускает и цитата стала другой.
+ *
  * Доводка подписи - тот же конвейер, что у сбора (src/pipeline.ts): что
  * показал предпросмотр, то и уйдёт в канал.
  */
@@ -27,6 +32,8 @@ import { GeminiBusyError } from "../src/gemini.js";
 import { finishCaption } from "../src/pipeline.js";
 import { rubricOf } from "../src/rubrics.js";
 import type { RawItem } from "../src/sources/types.js";
+import { env } from "../src/env.js";
+import { getTelegram } from "../src/telegram.js";
 
 type Row = {
   id: number;
@@ -43,6 +50,8 @@ type Row = {
   attribution: string | null;
   caption_html: string | null;
   tags: { rubric?: string } | null;
+  status?: string;
+  channel_msg_id?: number | null;
 };
 
 /** Подпись без футера канала, цитаты - строками «» с отступом. */
@@ -64,6 +73,8 @@ async function main() {
   const arg = process.argv[2] ?? "";
   const apply = process.argv.includes("--apply");
   const all = arg === "all";
+  // recent:10 - последние вышедшие посты, правка и в канале
+  const recent = Number(arg.match(/^recent:(\d+)$/)?.[1] ?? 0);
   let written = 0;
   let skippedBusy = 0;
   // msg:7187,7179 - номера постов канала, а не кадров в базе
@@ -76,10 +87,12 @@ async function main() {
   const query = db
     .from("candidates")
     .select(
-      "id, source, source_id, source_url, image_url, raw_title, raw_desc, raw_lang, year, place, license, attribution, caption_html, tags",
+      "id, source, source_id, source_url, image_url, raw_title, raw_desc, raw_lang, year, place, license, attribution, caption_html, tags, status, channel_msg_id",
     )
     .not("caption_html", "is", null);
-  const { data, error } = ids.length
+  const { data, error } = recent
+    ? await query.eq("status", "published").not("channel_msg_id", "is", null).order("published_at", { ascending: false }).limit(recent)
+    : ids.length
     ? await query.in(byMessage ? "channel_msg_id" : "id", ids)
     : await query
         .in("status", ["new", "shown", "approved"])
@@ -149,6 +162,21 @@ async function main() {
       if (apply && editorBusy) {
         skippedBusy++;
         console.log("  не записано: редактор был занят");
+      } else if (apply && recent && r.status === "published" && r.channel_msg_id) {
+        const quoteOf = (h: string | null) =>
+          [...(h ?? "").matchAll(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/g)].map((m) => m[1]).join("|");
+        if (!done.check.ok || done.rubricFlaw) console.log("  в канале не меняю: подпись не прошла проверку");
+        else if (quoteOf(done.html) === quoteOf(r.caption_html)) console.log("  в канале не меняю: цитата та же");
+        else {
+          try {
+            await getTelegram().editMessageCaption(env.channelId, r.channel_msg_id, { caption: done.html, parse_mode: "HTML" });
+            await db.from("candidates").update({ caption_html: done.html, tags: { ...(r.tags ?? {}), requoted: today } }).eq("id", r.id);
+            written++;
+            console.log(`  заменено в канале (пост ${r.channel_msg_id})`);
+          } catch (err) {
+            console.log(`  ! канал: ${(err as Error).message}`);
+          }
+        }
       } else if (apply && done.check.ok && !done.rubricFlaw && done.html !== r.caption_html) {
         const { error: upErr } = await db
           .from("candidates")
