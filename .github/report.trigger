@@ -1,1 +1,1 @@
-fixbanal days:30 apply 20261122T131332
+quotes:3 20261123T141036
