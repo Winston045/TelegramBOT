@@ -51,3 +51,19 @@ describe("правка существующих постов", async () => {
     expect(fixCaption(html)).toBe("Советские солдаты на улице Берлина.\n<blockquote>Берлин, май 1945 года.</blockquote>\n\n<a href=\"x\">S</a>");
   });
 });
+
+describe("предмет в тексте важнее события (23.11)", async () => {
+  const { buildPrompt } = await import("../src/critic.js");
+  const { buildAnalysisPrompt } = await import("../src/analyze.js");
+  const item = { sourceId: "1", sourceUrl: "https://x", imageUrl: "https://x.jpg", lang: "fi", license: "PD" };
+  it("анализ берёт справку о названном в тексте оружии, а не о битве", () => {
+    const p = buildAnalysisPrompt(item, {});
+    expect(p).toContain("Suomi KP/-31");
+    expect(p).toContain("о чём пост, о том и цитата");
+  });
+  it("редактор считает цитату о битве при названном предмете плохой", () => {
+    const p = buildPrompt(item, { caption: "Финские солдаты с автоматом «Суоми» у сгоревшего танка.", quote: "Бои за Выборг...", quote_kind: "context" }, undefined, "Справка о предмете: Suomi KP/-31");
+    expect(p).toContain("ПРЕДМЕТ, НАЗВАННЫЙ В ТЕКСТЕ ПОСТА, ВАЖНЕЕ СОБЫТИЯ");
+    expect(p).toContain("перепиши её о предмете");
+  });
+});

@@ -73,7 +73,13 @@ export async function finishCaption(o: FinishOptions): Promise<FinishResult> {
   if (references.subject) log(`  справка о предмете: «${a.subject_wiki}» ${tag}`);
   if (references.event) log(`  справка о событии: «${a.event_wiki}» ${tag}`);
   // для редактора и проверок справки - одно поле контекста
-  const refs = [references.subject, references.event].filter(Boolean).join("\n\n") || undefined;
+  // справка о предмете - тема изюминки, о событии при ней - только фон
+  // (редакция 23.11: автомат назван в тексте, а цитата о битве за Выборг)
+  const eventRef =
+    references.event && references.subject
+      ? `ФОН, НЕ ТЕМА ЦИТАТЫ: в посте есть предмет со справкой выше - изюминка о нём, отсюда разве что одна деталь.\n${references.event}`
+      : references.event;
+  const refs = [references.subject, eventRef].filter(Boolean).join("\n\n") || undefined;
 
   const reviewed: Reviewed = o.full
     ? await o.review(
