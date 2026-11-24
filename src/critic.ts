@@ -265,7 +265,7 @@ export async function reviewQuote(
     /** люди, названные в тексте поста: с ними редактор смотрит и обычный пост */
     people?: string[];
   } = {},
-): Promise<{ caption: GeneratedCaption; rewritten: boolean }> {
+): Promise<{ caption: GeneratedCaption; rewritten: boolean; checked?: boolean }> {
   // пустую цитату и штатное «место, год» без справки о предмете не
   // проверяем - экономим квоту: сделать из них изюминку не из чего.
   // Справка о предмете в кадре - ровно тот материал, которого не было у
@@ -288,12 +288,12 @@ export async function reviewQuote(
       generated = { ...generated, caption: body };
     }
     if (res.verdict !== "weak") {
-      return { caption: generated, rewritten: bodyChanged };
+      return { caption: generated, rewritten: bodyChanged, checked: true };
     }
     const quote = res.quote?.trim() ?? "";
     if (!quote) {
       // сильной замены не нашлось - цитата убирается, пост выходит коротким
-      return { caption: { ...generated, quote: "" }, rewritten: true };
+      return { caption: { ...generated, quote: "" }, rewritten: true, checked: true };
     }
     // замена - голые место и год, значит пост становится ОБЫЧНЫМ, и
     // цитата места должна остаться ОДНА. Если у изюминки уже стояла своя
@@ -304,7 +304,7 @@ export async function reviewQuote(
     // ДВЕ цитаты места подряд
     if (isBarePlaceDate(quote)) {
       // обычный пост и так был обычным - менять нечего
-      if (plain) return { caption: generated, rewritten: bodyChanged };
+      if (plain) return { caption: generated, rewritten: bodyChanged, checked: true };
       const finalQuote =
         generated.quote_place && isBarePlaceDate(generated.quote_place)
           ? generated.quote_place
@@ -312,11 +312,12 @@ export async function reviewQuote(
       // дата, уже стоящая в теле поста, дала бы дубль - тогда цитату убрать
       const years = finalQuote.match(/(18|19|20)\d{2}/g) ?? [];
       if (years.some((y) => generated.caption.includes(y))) {
-        return { caption: { ...generated, quote: "", quote_place: undefined }, rewritten: true };
+        return { caption: { ...generated, quote: "", quote_place: undefined }, rewritten: true, checked: true };
       }
       return {
         caption: { ...generated, quote: finalQuote, quote_place: undefined, quote_kind: "context" },
         rewritten: true,
+        checked: true,
       };
     }
     // обычный пост стал изюминкой: его «место и год» уходят второй
@@ -333,6 +334,7 @@ export async function reviewQuote(
         quote_kind: res.quote_kind === "observation" ? "observation" : "context",
       },
       rewritten: true,
+      checked: true,
     };
   } catch (err) {
     if (opts.throwBusy && err instanceof GeminiBusyError) throw err;

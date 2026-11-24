@@ -179,6 +179,10 @@ async function main() {
       if (apply && editorBusy) {
         skippedBusy++;
         console.log("  не записано: редактор был занят");
+      } else if (apply && !done.checked) {
+        // 23.11 (копия друга): сбой Gemini «пропускал» редактора, а запись шла
+        skippedBusy++;
+        console.log("  не записано: редактор не смотрел цитату");
       } else if (apply && recent && r.status === "published" && r.channel_msg_id) {
         const quoteOf = (h: string | null) =>
           [...(h ?? "").matchAll(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/g)].map((m) => m[1]).join("|");

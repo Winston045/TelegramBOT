@@ -21,7 +21,8 @@ import type { RawItem } from "./sources/types.js";
 import { validateCaption, type ValidationResult } from "./validate.js";
 import { eventReference, subjectReference } from "./wiki.js";
 
-export type Reviewed = { caption: GeneratedCaption; rewritten: boolean };
+/** checked - редактор действительно ответил (не сбой, не пропуск) */
+export type Reviewed = { caption: GeneratedCaption; rewritten: boolean; checked?: boolean };
 
 export type FinishOptions = {
   item: RawItem & { source?: string };
@@ -45,6 +46,8 @@ export type FinishResult = {
   html: string;
   check: ValidationResult;
   rewritten: boolean;
+  /** редактор посмотрел цитату: без этого перепись ничего не пишет */
+  checked: boolean;
   /** кадр рубрики не дотянул до рубрики - в резерв не идёт */
   rubricFlaw?: string;
   /** сколько предложений в теле (норма - одно) */
@@ -136,6 +139,7 @@ export async function finishCaption(o: FinishOptions): Promise<FinishResult> {
     html,
     check,
     rewritten: reviewed.rewritten,
+    checked: reviewed.checked === true,
     rubricFlaw,
     sentences,
     references,
